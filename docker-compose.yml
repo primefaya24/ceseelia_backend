@@ -1,0 +1,38 @@
+services:
+  node:
+    container_name: node
+    build:
+      context: ./node
+    expose:
+      - "3100"
+    restart: always
+    networks:
+      - internal
+
+  nginx:
+    container_name: nginx
+    image: nginx:latest
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./certbot/webroot:/var/www/certbot
+      - ./certbot/ssl:/etc/letsencrypt
+    depends_on:
+      - node
+    restart: always
+    networks:
+      - internal
+
+  certbot:
+    image: certbot/certbot
+    container_name: certbot
+    volumes:
+      - ./certbot/webroot:/var/www/certbot
+      - ./certbot/ssl:/etc/letsencrypt
+    restart: "no"
+
+networks:
+  internal:
+    driver: bridge
