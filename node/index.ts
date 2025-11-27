@@ -1,13 +1,10 @@
 import express, { Express } from 'express';
 import * as appConfig from './config/index';
 import apiRouter from "./api/v1";
-const mustacheEngine = require("mustache-express");
 const cookieParser = require('cookie-parser');
 const cors = require('cors');
 import {DQS} from "./layers/core/utils/dqs/dqs";
 import {dqsHandler} from "./layers/core/utils/dqs";
-import {registerTimer} from "./layers/core/utils";
-import {checkForLostOrders} from "./layers/aws/dynamodb/dynamo-entities/website";
 
 const app: Express = express();
 
@@ -36,9 +33,6 @@ app.post(
 
 // DQS
 export const dqs: DQS = new DQS(dqsHandler);
-
-// Lost orders checker
-registerTimer(appConfig.SERVER_WATCH_CHECK_FOR_LOST_ORDERS_INTERVAL, checkForLostOrders);
 
 // Http Routes
 import {domainRouterWithLogger} from "./middleware";

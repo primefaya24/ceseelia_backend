@@ -5,7 +5,6 @@ import {appConstants} from "../../../../constants";
 import {validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
 import {IN_DEV} from "../../../../config";
 import {fetchUserUUID, getMyProfile, updateUserLocale} from '../../../../layers/aws/dynamodb/dynamo-entities/user';
-import {getWebsiteMemberships} from "../../../../layers/aws/dynamodb/dynamo-entities/website";
 dotenv.config();
 
 /*
@@ -59,9 +58,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
 
         // Fetch user profile
         const profile = await getMyProfile(userId);
-        const websites: any[] = await getWebsiteMemberships(profile.info["userEmailAddress"]);
         profile.info["userIsAdmin"] = isAdmin;
-        profile.info["onlineOrderingWebsite"] = websites.length == 1 && websites[0]["websiteOnlineOrderingIncluded"] ? websites[0] : null;
 
         // Update locale if applicable
         if (userPreferredLocale) {

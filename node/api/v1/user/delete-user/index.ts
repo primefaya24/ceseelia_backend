@@ -59,11 +59,11 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         await deleteUser(userCognitoData);
 
         // Delete DB records
-        const userWebsiteIds: any[] = await deleteUserDB(userId, userEmail);
+        // const userWebsiteIds: any[] = await deleteUserDB(userId, userEmail);
 
         // Delete s3 assets
-        const allS3DeletePromises: Promise<void>[] = userWebsiteIds.map(userWebsiteId => deleteS3FilesPrefixed(S3_STORAGE_BUCKET_NAME, `website/${userWebsiteId}/`));
-        await Promise.all(allS3DeletePromises);
+        // const allS3DeletePromises: Promise<void>[] = userWebsiteIds.map(userWebsiteId => deleteS3FilesPrefixed(S3_STORAGE_BUCKET_NAME, `website/${userWebsiteId}/`));
+        // await Promise.all(allS3DeletePromises);
 
         // Respond to user
         res.send();

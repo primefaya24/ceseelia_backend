@@ -11,7 +11,6 @@ import * as ULID from "ulid";
 import {appConstants} from "../../../../../constants";
 import {dynamoWriteManyItems} from "../../dynamo-batch-ops";
 import {DB_TABLE_NAME} from "../../../../../config";
-import {getAllWebsiteDataKeys, getWebsiteMemberships} from "../website";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient = DynamoDBDocumentClient.from(
@@ -501,46 +500,6 @@ export async function getMyRewards(
 }
 
 ////////////////////////////////////////
-// Helper: Fetch user operational data (ancestorItem GSI)
-////////////////////////////////////////
-export async function fetchUserOperationDataPrimaryKeys(
-    userId: any, 
-    tableName: string | undefined = DEFAULT_TABLE_NAME,
-    ) {
-    try {
-        let result: any[] = [];
-        let query: any, command: any, dataItemKeys: any, exclusiveStartKey: any;
-        do {
-            query = {
-                TableName: tableName,
-                IndexName: appConstants.INDEX_NAME_ITEM_ANCESTRY_GSI,
-                KeyConditionExpression: '#itemAncestor = :itemAncestor',
-                ProjectionExpression: '#pk, #itemAncestor, #sk',
-                ExpressionAttributeNames: {
-                    "#pk": "pk",
-                    "#itemAncestor": "itemAncestor",
-                    "#sk": "sk",
-                },
-                ExpressionAttributeValues: {
-                    ":itemAncestor": appConstants.DYNAMO_ENTITY_USER + "#" + userId,
-                },
-            };
-            if (exclusiveStartKey) {
-                query["ExclusiveStartKey"] = exclusiveStartKey;
-            }
-            command = new QueryCommand(query);
-            dataItemKeys = await dynamoDbDocumentClient.send(command);
-            result = [...result, ...dataItemKeys["Items"]];
-            exclusiveStartKey = dataItemKeys["LastEvaluatedKey"];
-        } while (exclusiveStartKey);
-        return result;
-    } catch (e) {
-        console.error("In fetchUserOperationDataPrimaryKeys", e);
-        throw "Could not fetch user operation data primary keys";
-    }
-}
-
-////////////////////////////////////////
 // Get user record keys
 ////////////////////////////////////////
 export async function getUserRecordKeys(
@@ -589,52 +548,6 @@ export async function deleteUserDB(
     tableName: string | undefined = DEFAULT_TABLE_NAME,
     ) {
     try {
-        // Construct batch of delete requests
-        const deleteRequests = [];
-
-        // Get websites items created by user
-        const websites = await getWebsiteMemberships(userEmail);
-        const websiteIds = [];
-        for (let website of websites) {
-            if (website["websiteMemberPermission"] === appConstants.USER_PERMISSION_ADMIN && website["websiteMemberStatus"] === appConstants.DYNAMO_ENTITY_APPROVED) {
-                websiteIds.push(website["websiteId"]);
-                deleteRequests.push({
-                    DeleteRequest: {
-                        Key: {
-                            "pk": appConstants.DYNAMO_ENTITY_APP + "#" + appConstants.DYNAMO_ENTITY_WEBSITE,
-                            "sk": appConstants.DYNAMO_ENTITY_INFO + "#" + website["websiteId"],
-                        },
-                    }
-                });
-            }
-        }
-
-        // Query data for all user websites
-        const allWebsiteDataPromises = websiteIds.map(websiteId => getAllWebsiteDataKeys(websiteId));
-        const allWebsiteDataResults = await Promise.all(allWebsiteDataPromises);
-        const flattenedResults = allWebsiteDataResults.flat();
-        for (let websiteItemKey of flattenedResults) {
-            deleteRequests.push({
-                DeleteRequest: {
-                    Key: websiteItemKey,
-                }
-            });
-        }
-
-        // Get user records
-        const userRecordKeys = await getUserRecordKeys(userId);
-        for (let userRecordKey of userRecordKeys) {
-            deleteRequests.push({
-                DeleteRequest: {
-                    Key: userRecordKey,
-                }
-            });
-        }
-
-        // Perform delete
-        await dynamoWriteManyItems(tableName, deleteRequests);
-
-        return websiteIds;
     } catch (e) {
         console.error("In deleteUser", e);
         throw "Could not delete user";

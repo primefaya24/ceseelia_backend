@@ -1,7 +1,8 @@
 import {appConstants} from "../../../constants";
 import {Request, Response} from 'express';
 import {isUserAdmin} from "../utils";
-import {getCognitoPoolId, isCognitoTokenValid} from "../../aws/cognito";
+import {isCognitoTokenValid} from "../../aws/cognito";
+import { COGNITO_USER_POOL_ID } from "../../../config";
 const jwt = require('jsonwebtoken');
 
 ////////////////////////////////////////
@@ -58,7 +59,7 @@ export async function validateAndExecuteHttpApiRoute(
     executeRouteCore: any,
     withAuth: boolean = true,
     adminOnly: boolean = false,
-    userPoolId: string = getCognitoPoolId()
+    userPoolId: string = COGNITO_USER_POOL_ID
     ): Promise<void> {
     if (pureRequestParams(req)) {
         if (validRequestParams(req)) {

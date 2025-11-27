@@ -39,14 +39,7 @@ const cognitoClient: CognitoIdentityProviderClient = new CognitoIdentityProvider
 });
 
 const jwksClientInstance: jwksClient.JwksClient = jwksClient({
-    jwksUri: `https://cognito-idp.${appConstants.DEFAULT_REGION}.amazonaws.com/${getCognitoPoolId()}/.well-known/jwks.json`,
-    cache: true,
-    cacheMaxEntries: 5,
-    cacheMaxAge: 10 * 60 * 1000 // 10 minutes
-});
-
-const jwksClientInstanceWoo: jwksClient.JwksClient = jwksClient({
-    jwksUri: `https://cognito-idp.${appConstants.DEFAULT_REGION}.amazonaws.com/${getCognitoPoolIdWoo()}/.well-known/jwks.json`,
+    jwksUri: `https://cognito-idp.${appConstants.DEFAULT_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}/.well-known/jwks.json`,
     cache: true,
     cacheMaxEntries: 5,
     cacheMaxAge: 10 * 60 * 1000 // 10 minutes
@@ -193,42 +186,6 @@ export async function processAuthCode(code: string): Promise<UserCognitoInfo | n
 }
 
 /**
- * Get Cognito pool ID based on environment
- */
-export function getCognitoPoolId(): string {
-    return IN_DEV
-        ? "us-east-1_fY0cbRBIl"
-        : "us-east-1_TuqME5zjJ";
-}
-
-/**
- * Get Cognito pool Client ID based on environment
- */
-export function getCognitoPoolClientId(): string {
-    return IN_DEV
-        ? "1qltt5stlpd1v26pi70cb2el0d"
-        : "5o5od38tol2jc7pg6l8vptp4tp";
-}
-
-/**
- * Get WOO Cognito pool ID based on environment
- */
-export function getCognitoPoolIdWoo(): string {
-    return IN_DEV
-        ? "us-east-1_BalfHiOud"
-        : "us-east-1_hJcgbGvzZ";
-}
-
-/**
- * Get WOO Cognito pool Client ID based on environment
- */
-export function getCognitoPoolClientIdWoo(): string {
-    return IN_DEV
-        ? "6luq2dc04v8j3983rupqhsh3bl"
-        : "4plut45qrvc22p5n0fb70cvgvv";
-}
-
-/**
  * Extract Cognito usernames from social login/user data
  */
 function extractCognitoUsernamesFromCognitoData(
@@ -263,7 +220,7 @@ export async function deleteUser(
 
         for (const username of cognitoUsernames) {
             const command = new AdminDeleteUserCommand({
-                UserPoolId: getCognitoPoolId(),
+                UserPoolId: COGNITO_USER_POOL_ID,
                 Username: username
             });
             await cognitoClient.send(command);
@@ -315,7 +272,7 @@ async function isTokenActive(accessToken: string): Promise<boolean> {
  */
 export async function verifyCognitoAccessToken(
     token: string,
-    userPoolId: string = getCognitoPoolId(),
+    userPoolId: string = COGNITO_USER_POOL_ID,
 ): Promise<jwt.JwtPayload> {
     const decoded = jwt.decode(token, { complete: true }) as {
         header: JwtHeader;
@@ -339,7 +296,7 @@ export async function verifyCognitoAccessToken(
         return decoded;
     }
 
-    const publicKey: string = await getSigningKey(decoded.header.kid!, userPoolId === getCognitoPoolId() ? jwksClientInstance : jwksClientInstanceWoo);
+    const publicKey: string = await getSigningKey(decoded.header.kid!, jwksClientInstance);
 
     const verifiedToken = jwt.verify(token, publicKey, {
         algorithms: ["RS256"]
@@ -359,7 +316,7 @@ export async function verifyCognitoAccessToken(
 
 export async function isCognitoTokenValid(
     token: string,
-    userPoolId: string = getCognitoPoolId()
+    userPoolId: string = COGNITO_USER_POOL_ID
 ): Promise<boolean> {
     try {
         if (!token) {
