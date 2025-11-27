@@ -66,12 +66,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         }
 
         // Respond to user
-        let responseBody = {
-            profile: profile,
-        };
-
-        // Respond to user
-        res.send(responseBody);
+        res.send(profile);
     } catch (e) {
         if (IN_DEV) {
             console.error(e);
