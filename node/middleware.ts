@@ -16,7 +16,7 @@ export function domainRouterWithLogger(req: Request, res: Response, next: NextFu
 
     console.warn(`[${datetime}] IP: ${ip} | Host: ${host} | Path: ${path}`);
 
-    if (IN_DEV && (host === 'localhost' || host === '192.168.1.102')) {
+    if (IN_DEV && (host === 'localhost' || host === '192.168.1.100')) {
         if (path.startsWith('/api/v1')) {
             return apiV1Router(req, res, next);
         }
