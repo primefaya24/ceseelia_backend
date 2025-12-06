@@ -29,12 +29,13 @@ export function initMerchant(): Merchant {
 // APP_STORE, STORE#store_id
 export interface StoreOverview {
   storeId: string;
-  name: string;
+  storeName: string;
   storeSlug: string;
   storeOrderCount: number;
   storeCompletedOrdersCount: number;
   storeCancelledOrdersCount: number;
-  storeOrderLastCompleted: number;
+  storeOrderLastCompletedTimestamp: number;
+  storeOrderLastCompletedDateStr: string;
 }
 
 export function initStore(
@@ -44,12 +45,13 @@ export function initStore(
 ): StoreOverview {
   return {
     storeId: storeId,
-    name: storeName,
+    storeName: storeName,
     storeSlug: storeSlug,
     storeOrderCount: 0,
     storeCompletedOrdersCount: 0,
     storeCancelledOrdersCount: 0,
-    storeOrderLastCompleted: -1,
+    storeOrderLastCompletedTimestamp: 0,
+    storeOrderLastCompletedDateStr: appConstants.NA,
   };
 }
 

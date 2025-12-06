@@ -10,7 +10,7 @@ const router: Router = Router();
 require('./create/index')(router);
 require('./delete/index')(router);
 require('./suspend/index')(router);
-require('./update/index')(router);
+require('./update-settings/index')(router);
 
 // Export Router
 export default router;

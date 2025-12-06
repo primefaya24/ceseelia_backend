@@ -7,6 +7,8 @@ dotenv.config();
 const adminRouter: Router = Router();
 
 // Routes
+require('./get-overview-data/index')(adminRouter);
+require('./update-store-info/index')(adminRouter);
 
 // Export Router
 export default adminRouter;
