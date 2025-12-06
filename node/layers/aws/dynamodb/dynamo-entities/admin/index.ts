@@ -84,7 +84,7 @@ export async function updateStoreInfo(
   storeId: string,
   storeName: string,
   storeSlug: string
-) {
+): Promise<StoreOverview> {
   try {
     const command = new UpdateCommand({
       TableName: DEFAULT_TABLE_NAME,
@@ -107,8 +107,25 @@ export async function updateStoreInfo(
         ":storeName": storeName,
         ":storeSlug": storeSlug,
       },
+      ReturnValues: "ALL_NEW",
     });
-    await dynamoDbDocumentClient.send(command);
+    const response = await dynamoDbDocumentClient.send(command);
+    const record = response.Attributes;
+    if (record) {
+      delete record.pk;
+      delete record.sk;
+
+      record.storeOrderLastCompletedDateStr =
+        record.storeOrderLastCompletedTimestamp <= 0
+          ? appConstants.NA
+          : formatEpochToFullReadableDate(
+              record.storeOrderLastCompletedTimestamp,
+              true
+            );
+    }
+    return (
+      (record as StoreOverview) ?? initStore(storeId, storeName, storeSlug)
+    );
   } catch (e) {
     console.error("In updateStoreInfo", e);
     throw e;

@@ -5,6 +5,7 @@ import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { IN_DEV } from "../../../../config";
 import { appConstants } from "../../../../constants";
 import { updateStoreInfo } from "../../../../layers/aws/dynamodb/dynamo-entities/admin";
+import { StoreOverview } from "../../../../layers/core/interfaces/store";
 dotenv.config();
 
 /*
@@ -62,10 +63,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeSlug = req.body.storeSlug;
 
     // Update store info
-    await updateStoreInfo(storeId, storeName, storeSlug);
+    const storeOverview: StoreOverview = await updateStoreInfo(storeId, storeName, storeSlug);
 
     // Respond to user
-    res.send({});
+    res.send(storeOverview);
   } catch (e) {
     if (IN_DEV) {
       console.error(e);
