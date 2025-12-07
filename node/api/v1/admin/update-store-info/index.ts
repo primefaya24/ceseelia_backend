@@ -6,7 +6,6 @@ import { IN_DEV } from "../../../../config";
 import { appConstants } from "../../../../constants";
 import { updateStoreInfo } from "../../../../layers/aws/dynamodb/dynamo-entities/admin";
 import { StoreOverview } from "../../../../layers/core/interfaces/store";
-import { sleep } from "../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -67,7 +66,6 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
 
     // Update store info
     const storeOverview: StoreOverview = await updateStoreInfo(storeId, storeName, storeSlug);
-    await sleep(4000);
 
     // Respond to user
     res.send(storeOverview);
