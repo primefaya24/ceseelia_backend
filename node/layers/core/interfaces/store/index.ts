@@ -58,6 +58,7 @@ export function initStore(
 // STORE#store_id, SETTINGS
 export interface StoreSettings {
   // Merchant
+  templateId: string;
   themeId: string;
   logoUri: string;
   bannerUri: string;
@@ -102,7 +103,8 @@ export interface StoreSettings {
 export function initStoreSettings(): StoreSettings {
   return {
     // Merchant
-    themeId: appConstants.STORE_THEME_DIGITAL_STORE,
+    templateId: appConstants.STORE_TEMPLATE_DIGITAL_STORE,
+    themeId: appConstants.STORE_THEME_DEFAULT,
     logoUri: "",
     bannerUri: "",
     promoImageUri: "",
