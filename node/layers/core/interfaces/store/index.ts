@@ -148,26 +148,46 @@ export function initStoreSettings(): StoreSettings {
 }
 
 /*
+ * Store Categories
+ */
+// STORE#STORE_ID, CATEGORY#CATEGORY_ID
+export interface StoreCategory {
+  storeCategoriyId: string;
+  storeCategoryName: string;
+  storeCategoryDescription: string;
+  storeCategoryBannerUri: string;
+  storeCategoryIsHidden: boolean;
+  storeCategoryDiscountPercent: number;
+  storeCategoryItemCount: number;
+}
+
+export function initStoreCategory(
+  storeCategoriyId: string,
+  storeCategoryName: string
+): StoreCategory {
+  return {
+    storeCategoriyId: storeCategoriyId,
+    storeCategoryName: storeCategoryName,
+    storeCategoryDescription: "",
+    storeCategoryBannerUri: "",
+    storeCategoryIsHidden: false,
+    storeCategoryDiscountPercent: 0,
+    storeCategoryItemCount: 0,
+  };
+}
+
+/*
  * Store Inventory
  */
 // STORE#STORE_ID, ITEM#ITEM_ID
 export interface StoreItem {
   storeItemId: string;
-  storeItemCategoryId: string; // StoreId_CategoryId
-  storeItemCategory: {
-    name: number;
-    bannerUri: string;
-    description: string;
-    highlights: string[];
-    isHidden: boolean;
-    discountPercent: number;
-  };
-  storeItemImageUri: string;
+  storeItemCategoryId: string;
+  storeItemImageUris: string[];
   storeItemName: string;
   storeItemPrice: number;
   storeItemDescription: string;
-  storeItemHighlights: string[];
-  storeItemIsHidden: boolean;
+  storeItemIsActive: boolean;
   storeItemTags: string;
   storeItemDiscountPercent: number;
   storeItemCustomAttributes: {
@@ -176,6 +196,24 @@ export interface StoreItem {
     isMandatory: boolean;
     options: string[];
   }[];
+}
+
+export function initStoreItem(
+  storeItemId: string,
+  storeItemCategoryId: string
+): StoreItem {
+  return {
+    storeItemId: storeItemId,
+    storeItemCategoryId: storeItemCategoryId,
+    storeItemImageUris: [],
+    storeItemName: "",
+    storeItemPrice: 0,
+    storeItemDescription: "",
+    storeItemIsActive: true,
+    storeItemTags: "",
+    storeItemDiscountPercent: 0,
+    storeItemCustomAttributes: [],
+  };
 }
 
 /*
