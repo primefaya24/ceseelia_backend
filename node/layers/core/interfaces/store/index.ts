@@ -148,7 +148,7 @@ export function initStoreSettings(): StoreSettings {
 }
 
 /*
- * Store Categories
+ * Store Category
  */
 // STORE#STORE_ID, CATEGORY#CATEGORY_ID
 export interface StoreCategory {
@@ -177,12 +177,25 @@ export function initStoreCategory(
 }
 
 /*
- * Store Inventory
+ * Store Parameter
+ */
+// STORE#STORE_ID, PARAM#PARAM_ID
+export interface StoreParameter {
+  storeParamId: string;
+  storeParamLabel: string;
+  storeParamType: "MULTI_SELECT" | "COUNTER";
+  storeParamIsMandatory: boolean;
+  storeParamOptions: string[];
+}
+
+/*
+ * Store Items
  */
 // STORE#STORE_ID, ITEM#ITEM_ID
 export interface StoreItem {
   storeItemId: string;
   storeItemCategoryId: string;
+  storeItemCategory: StoreCategory; // Assigned in frontend
   storeItemImageUris: string[];
   storeItemName: string;
   storeItemPrice: number;
@@ -190,12 +203,8 @@ export interface StoreItem {
   storeItemIsActive: boolean;
   storeItemTags: string;
   storeItemDiscountPercent: number;
-  storeItemCustomAttributes: {
-    label: string;
-    type: "MULTI_SELECT" | "COUNTER";
-    isMandatory: boolean;
-    options: string[];
-  }[];
+  storeItemCustomParamIds: string[];
+  storeItemCustomParams: StoreParameter[]; // Assigned in frontend
 }
 
 export function initStoreItem(
@@ -205,6 +214,7 @@ export function initStoreItem(
   return {
     storeItemId: storeItemId,
     storeItemCategoryId: storeItemCategoryId,
+    storeItemCategory: initStoreCategory(storeItemCategoryId, ""),
     storeItemImageUris: [],
     storeItemName: "",
     storeItemPrice: 0,
@@ -212,7 +222,8 @@ export function initStoreItem(
     storeItemIsActive: true,
     storeItemTags: "",
     storeItemDiscountPercent: 0,
-    storeItemCustomAttributes: [],
+    storeItemCustomParamIds: [],
+    storeItemCustomParams: [],
   };
 }
 
@@ -250,18 +261,7 @@ export interface StoreOrder {
   storeOrderCustomerShippingAddressStreetNumber: string;
   storeOrderCustomerAuthenticatedUserId: string;
   storeOrderStatusCustomerUpdate: boolean;
-  storeOrderItems: {
-    id: string;
-    categoryId: number;
-    imageUri: string;
-    name: string;
-    price: number;
-    attributes: {
-      label: string;
-      type: "MULTI_SELECT" | "COUNTER";
-      value: string | number;
-    }[];
-  }[];
+  storeOrderItems: StoreOrderItem[];
   storeOrderNote: string;
   storeOrderSubtotalAmount: number;
   storeOrderDeliveryAmount: number;
@@ -269,6 +269,16 @@ export interface StoreOrder {
   storeOrderTaxAmount: number;
   storeOrderCreatedAt: number;
   storeOrderUpdatedAt: number;
+}
+
+export interface StoreOrderItem {
+  id: string;
+  price: number;
+  parameters: {
+    id: string;
+    label: string;
+    value: string;
+  }[];
 }
 
 // APP, ORDER#CREATE_AT_TIMESTAMP#STORE#STORE_ID (For Sales acitivty graph)
