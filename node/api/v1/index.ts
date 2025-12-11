@@ -2,19 +2,21 @@
 import {Router} from 'express';
 import dotenv from 'dotenv';
 dotenv.config();
-import adminRoutes from './admin/index';
-import userRoutes from './user/index';
-import merchantRoutes from './merchant/index';
-import storeRoutes from './store/index';
+import adminRouter from './admin/index';
+import customerRouter from './customer/index';
+import merchantRouter from './merchant/index';
+import storeRouter from './store/index';
+import userRouter from './user/index';
 
 // Api Router
 const apiRouter: Router = Router();
 
 // Routes
-apiRouter.use("/admin", adminRoutes);
-apiRouter.use("/user", userRoutes);
-apiRouter.use("/merchant", merchantRoutes);
-apiRouter.use("/store", storeRoutes);
+apiRouter.use("/admin", adminRouter);
+apiRouter.use("/customer", customerRouter);
+apiRouter.use("/merchant", merchantRouter);
+apiRouter.use("/store", storeRouter);
+apiRouter.use("/user", userRouter);
 
 // Export Router
 export default apiRouter;

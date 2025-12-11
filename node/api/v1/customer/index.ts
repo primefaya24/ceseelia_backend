@@ -4,10 +4,9 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 // User Router
-const merchantRouter: Router = Router();
+const customerRouter: Router = Router();
 
 // Routes
-require('./get-overview-data/index')(merchantRouter);
 
 // Export Router
-export default merchantRouter;
+export default customerRouter;

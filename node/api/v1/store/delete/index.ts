@@ -19,7 +19,7 @@ interface ResBody {
 * Module Route
 */
 module.exports = function (router: Router): void {
-    router.get('/delete/:storeId', (req: Request, res: Response): void => {
+    router.delete('/delete/:storeId', (req: Request, res: Response): void => {
         validateAndExecuteHttpApiRoute(req, res, pureRequestParams, validRequestParams, executeRouteCore);
     });
 };
