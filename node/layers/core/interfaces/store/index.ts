@@ -156,7 +156,7 @@ export interface StoreCategory {
   storeCategoryName: string;
   storeCategoryDescription: string;
   storeCategoryBannerUri: string;
-  storeCategoryIsHidden: boolean;
+  storeCategoryIsActive: boolean;
   storeCategoryDiscountPercent: number;
   storeCategoryItemCount: number;
 }
@@ -170,10 +170,28 @@ export function initStoreCategory(
     storeCategoryName: storeCategoryName,
     storeCategoryDescription: "",
     storeCategoryBannerUri: "",
-    storeCategoryIsHidden: false,
+    storeCategoryIsActive: true,
     storeCategoryDiscountPercent: 0,
     storeCategoryItemCount: 0,
   };
+}
+
+export function isStoreCategoryPure(storeCategory: StoreCategory): boolean {
+  return (
+    typeof storeCategory.storeCategoryName === "string" &&
+    typeof storeCategory.storeCategoryDescription === "string" &&
+    typeof storeCategory.storeCategoryBannerUri === "string" &&
+    typeof storeCategory.storeCategoryIsActive === "boolean" &&
+    typeof storeCategory.storeCategoryDiscountPercent === "number" &&
+    typeof storeCategory.storeCategoryItemCount === "number"
+  );
+}
+
+export function isStoreCategoryValid(storeCategory: StoreCategory): boolean {
+  return (
+    storeCategory.storeCategoryName.length > 0 &&
+    storeCategory.storeCategoryDiscountPercent >= 0
+  );
 }
 
 /*
@@ -183,9 +201,22 @@ export function initStoreCategory(
 export interface StoreParameter {
   storeParamId: string;
   storeParamLabel: string;
-  storeParamType: "MULTI_SELECT" | "COUNTER";
+  storeParamType: "SINGLE_SELECT" | "MULTI_SELECT" | "COUNTER";
   storeParamIsMandatory: boolean;
   storeParamOptions: string[];
+}
+
+export function initStoreParameter(
+  storeParamId: string,
+  storeParamLabel: string
+): StoreParameter {
+  return {
+    storeParamId: storeParamId,
+    storeParamLabel: storeParamLabel,
+    storeParamType: "SINGLE_SELECT",
+    storeParamIsMandatory: false,
+    storeParamOptions: [],
+  };
 }
 
 /*

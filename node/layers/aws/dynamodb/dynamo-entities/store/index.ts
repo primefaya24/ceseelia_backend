@@ -14,6 +14,7 @@ import { DB_TABLE_NAME } from "../../../../../config";
 import {
   initStore,
   initStoreSettings,
+  StoreCategory,
   StoreOverview,
   StoreSettings,
 } from "../../../../core/interfaces/store";
@@ -35,7 +36,11 @@ export async function createStore(
 ): Promise<StoreOverview> {
   try {
     const storeId: string = ULID.ulid();
-    const storeOverview: StoreOverview = initStore(storeId, storeName, storeSlug);
+    const storeOverview: StoreOverview = initStore(
+      storeId,
+      storeName,
+      storeSlug
+    );
     const storeSettings: StoreSettings = initStoreSettings();
     await dynamoWriteManyItems(DEFAULT_TABLE_NAME, [
       // Store overview
@@ -67,6 +72,35 @@ export async function createStore(
     return storeOverview;
   } catch (e) {
     console.error("In createStore", e);
+    throw e;
+  }
+}
+
+export async function createStoreCategory(
+  storeId: string,
+  storeCategory: StoreCategory
+): Promise<string> {
+  try {
+    const categoryId: string = ULID.ulid();
+    const command = new PutCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Item: {
+        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+        sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + categoryId,
+        storeCategoriyId: storeId,
+        storeCategoryName: storeCategory.storeCategoryName,
+        storeCategoryDescription: storeCategory.storeCategoryDescription,
+        storeCategoryBannerUri: storeCategory.storeCategoryBannerUri,
+        storeCategoryIsActive: storeCategory.storeCategoryIsActive,
+        storeCategoryDiscountPercent:
+          storeCategory.storeCategoryDiscountPercent,
+        storeCategoryItemCount: 0,
+      },
+    });
+    await dynamoDbDocumentClient.send(command);
+    return categoryId;
+  } catch (e) {
+    console.error("In createStoreCategory", e);
     throw e;
   }
 }

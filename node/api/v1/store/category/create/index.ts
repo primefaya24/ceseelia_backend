@@ -4,6 +4,8 @@ import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
+import { isStoreCategoryPure, isStoreCategoryValid } from "../../../../../layers/core/interfaces/store";
+import { createStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
 
 /*
@@ -30,17 +32,14 @@ module.exports = function (router: Router): void {
 };
 
 function pureRequestParams(req: Request): boolean {
-  return (
-    typeof req.body.storeName === "string" &&
-    typeof req.body.storeSlug === "string"
-  );
+  return typeof req.body.storeId === "string" && isStoreCategoryPure(req.body.storeCategory);
 }
 
 /*
  * Ensure request params are valid
  */
 function validRequestParams(req: Request): boolean {
-  return req.body.storeName.length > 0 && req.body.storeSlug.length > 0;
+  return req.body.storeId.length > 0 && isStoreCategoryValid(req.body.storeCategory);
 }
 
 /*
@@ -49,9 +48,14 @@ function validRequestParams(req: Request): boolean {
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     // Extract params
+    const storeId = req.body.storeId;
+    const storeCategory = req.body.storeCategory;
+
+    // Create category
+    const categoryId: string = await createStoreCategory(storeId, storeCategory);
 
     // Respond to user
-    res.send({});
+    res.send(categoryId);
   } catch (e) {
     if (IN_DEV) {
       console.error(e);
