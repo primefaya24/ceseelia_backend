@@ -40,7 +40,6 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     // Fetch data
     const storeId = req.params["storeId"];
-    console.log("storeId", storeId)
 
     // Respond to user
     res.send({});

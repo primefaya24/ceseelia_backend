@@ -9,6 +9,7 @@ const storeCategoryRouter: Router = Router();
 // Routes
 require("./create/index")(storeCategoryRouter);
 require("./delete/index")(storeCategoryRouter);
+require("./get-banner-upload-url/index")(storeCategoryRouter);
 require("./update/index")(storeCategoryRouter);
 
 // Export Router
