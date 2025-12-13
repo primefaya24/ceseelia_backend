@@ -289,6 +289,15 @@ export interface StoreInventoryData {
   settings: StoreSettings;
 }
 
+export function initStoreInventoryData(): StoreInventoryData {
+  return {
+    categories: [],
+    parameters: [],
+    items: [],
+    settings: initStoreSettings(),
+  };
+}
+
 /*
  * Store Members
  */
