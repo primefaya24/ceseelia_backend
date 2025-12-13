@@ -16,6 +16,7 @@ import {
   initStoreSettings,
   StoreCategory,
   StoreInventoryData,
+  StoreItem,
   StoreOverview,
   StoreParameter,
   StoreSettings,
@@ -107,6 +108,39 @@ export async function createStoreCategory(
   }
 }
 
+export async function updateStoreCategory(
+  storeId: string,
+  categoryId: string,
+  storeCategory: StoreCategory
+): Promise<string> {
+  try {
+    const command = new UpdateCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: {
+        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+        sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + categoryId,
+      },
+      UpdateExpression:
+        "SET storeCategoriyId = :storeCategoriyId, storeCategoryName = :storeCategoryName, storeCategoryDescription = :storeCategoryDescription, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoryItemCount = :storeCategoryItemCount",
+      ExpressionAttributeValues: {
+        ":storeCategoriyId": categoryId,
+        ":storeCategoryName": storeCategory.storeCategoryName,
+        ":storeCategoryDescription": storeCategory.storeCategoryDescription,
+        ":storeCategoryBannerUri": storeCategory.storeCategoryBannerUri,
+        ":storeCategoryIsActive": storeCategory.storeCategoryIsActive,
+        ":storeCategoryDiscountPercent":
+          storeCategory.storeCategoryDiscountPercent,
+        ":storeCategoryItemCount": 0,
+      },
+    });
+    await dynamoDbDocumentClient.send(command);
+    return categoryId;
+  } catch (e) {
+    console.error("In updateStoreCategory", e);
+    throw e;
+  }
+}
+
 export async function createStoreParameter(
   storeId: string,
   storeParameter: StoreParameter
@@ -134,11 +168,81 @@ export async function createStoreParameter(
 }
 
 export async function getStoreInventoryData(
-  storeId: string,
+  storeId: string
 ): Promise<StoreInventoryData> {
   try {
-    // TODO
-    return {} as StoreInventoryData;
+    const storePk = appConstants.DYNAMO_ENTITY_STORE + "#" + storeId;
+    const categoriesCommand = new QueryCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      KeyConditionExpression: "#pk = :pk and begins_with(#sk, :sk_prefix)",
+      ExpressionAttributeNames: { "#pk": "pk", "#sk": "sk" },
+      ExpressionAttributeValues: {
+        ":pk": storePk,
+        ":sk_prefix": appConstants.DYNAMO_ENTITY_CATEGORY + "#",
+      },
+    });
+    const parametersCommand = new QueryCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      KeyConditionExpression: "#pk = :pk and begins_with(#sk, :sk_prefix)",
+      ExpressionAttributeNames: { "#pk": "pk", "#sk": "sk" },
+      ExpressionAttributeValues: {
+        ":pk": storePk,
+        ":sk_prefix": appConstants.DYNAMO_ENTITY_PARAMETER + "#",
+      },
+    });
+    const itemsCommand = new QueryCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      KeyConditionExpression: "#pk = :pk and begins_with(#sk, :sk_prefix)",
+      ExpressionAttributeNames: { "#pk": "pk", "#sk": "sk" },
+      ExpressionAttributeValues: {
+        ":pk": storePk,
+        ":sk_prefix": "ITEM#",
+      },
+    });
+    const settingsCommand = new GetCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: {
+        pk: storePk,
+        sk: appConstants.DYNAMO_ENTITY_SETTINGS,
+      },
+    });
+
+    const [categoriesResult, parametersResult, itemsResult, settingsResult] =
+      await Promise.all([
+        dynamoDbDocumentClient.send(categoriesCommand),
+        dynamoDbDocumentClient.send(parametersCommand),
+        dynamoDbDocumentClient.send(itemsCommand),
+        dynamoDbDocumentClient.send(settingsCommand),
+      ]);
+
+    const categories: StoreCategory[] = (categoriesResult.Items ?? []).map(
+      (record) => {
+        const { pk: _pk, sk: _sk, ...rest } = record;
+        return rest as StoreCategory;
+      }
+    );
+    const parameters: StoreParameter[] = (parametersResult.Items ?? []).map(
+      (record) => {
+        const { pk: _pk, sk: _sk, ...rest } = record;
+        return rest as StoreParameter;
+      }
+    );
+    const items: StoreItem[] = (itemsResult.Items ?? []).map((record) => {
+      const { pk: _pk, sk: _sk, ...rest } = record;
+      return rest as StoreItem;
+    });
+    let settings: StoreSettings = initStoreSettings();
+    if (settingsResult.Item) {
+      const { pk: _pk, sk: _sk, ...rest } = settingsResult.Item;
+      settings = rest as StoreSettings;
+    }
+
+    return {
+      categories,
+      parameters,
+      items,
+      settings,
+    };
   } catch (e) {
     console.error("In getStoreInventoryData", e);
     throw e;

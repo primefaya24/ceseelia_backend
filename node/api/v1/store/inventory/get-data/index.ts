@@ -11,7 +11,7 @@ dotenv.config();
  * Module Route
  */
 module.exports = function (router: Router): void {
-  router.get("/get-inventory-data/:storeId", (req: Request, res: Response): void => {
+  router.get("/get-data/:storeId", (req: Request, res: Response): void => {
     validateAndExecuteHttpApiRoute(
       req,
       res,
