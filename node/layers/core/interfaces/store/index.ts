@@ -156,6 +156,7 @@ export interface StoreCategory {
   storeCategoryName: string;
   storeCategoryDescription: string;
   storeCategoryBannerUri: string;
+  storeCategoryBannerUrl: string;
   storeCategoryIsActive: boolean;
   storeCategoryDiscountPercent: number;
   storeCategoryItemCount: number;
@@ -170,6 +171,7 @@ export function initStoreCategory(
     storeCategoryName: storeCategoryName,
     storeCategoryDescription: "",
     storeCategoryBannerUri: "",
+    storeCategoryBannerUrl: "",
     storeCategoryIsActive: true,
     storeCategoryDiscountPercent: 0,
     storeCategoryItemCount: 0,

@@ -473,6 +473,13 @@ export function validateImageType(imageType: string): string | null {
 }
 
 /*
+ * Covvert Uri to Url
+ */
+export function getStorageImageUrl(imageUri: string) {
+  return `https://dev.storage.ceseelia.com/${imageUri}`;
+}
+
+/*
  * S3 uri to url
  */
 export function uriToUrl(

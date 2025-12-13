@@ -21,6 +21,7 @@ import {
   StoreParameter,
   StoreSettings,
 } from "../../../../core/interfaces/store";
+import { getStorageImageUrl } from "../../../../core/utils";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient =
@@ -94,6 +95,7 @@ export async function createStoreCategory(
         storeCategoryName: storeCategory.storeCategoryName,
         storeCategoryDescription: storeCategory.storeCategoryDescription,
         storeCategoryBannerUri: storeCategory.storeCategoryBannerUri,
+        storeCategoryBannerUrl: storeCategory.storeCategoryBannerUri.length > 0 ? getStorageImageUrl(storeCategory.storeCategoryBannerUri) : '',
         storeCategoryIsActive: storeCategory.storeCategoryIsActive,
         storeCategoryDiscountPercent:
           storeCategory.storeCategoryDiscountPercent,
@@ -121,12 +123,13 @@ export async function updateStoreCategory(
         sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + categoryId,
       },
       UpdateExpression:
-        "SET storeCategoriyId = :storeCategoriyId, storeCategoryName = :storeCategoryName, storeCategoryDescription = :storeCategoryDescription, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoryItemCount = :storeCategoryItemCount",
+        "SET storeCategoriyId = :storeCategoriyId, storeCategoryName = :storeCategoryName, storeCategoryDescription = :storeCategoryDescription, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryBannerUrl = :storeCategoryBannerUrl, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoryItemCount = :storeCategoryItemCount",
       ExpressionAttributeValues: {
         ":storeCategoriyId": categoryId,
         ":storeCategoryName": storeCategory.storeCategoryName,
         ":storeCategoryDescription": storeCategory.storeCategoryDescription,
         ":storeCategoryBannerUri": storeCategory.storeCategoryBannerUri,
+        ":storeCategoryBannerUrl": storeCategory.storeCategoryBannerUri.length > 0 ? getStorageImageUrl(storeCategory.storeCategoryBannerUri) : '',
         ":storeCategoryIsActive": storeCategory.storeCategoryIsActive,
         ":storeCategoryDiscountPercent":
           storeCategory.storeCategoryDiscountPercent,
