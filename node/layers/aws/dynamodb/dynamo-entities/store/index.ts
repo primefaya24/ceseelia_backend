@@ -15,6 +15,7 @@ import {
   initStore,
   initStoreSettings,
   StoreCategory,
+  StoreInventoryData,
   StoreOverview,
   StoreParameter,
   StoreSettings,
@@ -128,6 +129,18 @@ export async function createStoreParameter(
     return parameterId;
   } catch (e) {
     console.error("In createStoreParameter", e);
+    throw e;
+  }
+}
+
+export async function getStoreInventoryData(
+  storeId: string,
+): Promise<StoreInventoryData> {
+  try {
+    // TODO
+    return {} as StoreInventoryData;
+  } catch (e) {
+    console.error("In getStoreInventoryData", e);
     throw e;
   }
 }

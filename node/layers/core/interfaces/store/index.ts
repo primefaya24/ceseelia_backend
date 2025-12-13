@@ -243,6 +243,13 @@ export function isStoreParameterValid(storeParameter: StoreParameter): boolean {
   return true;
 }
 
+export interface StoreInventoryData {
+  categories: StoreCategory[];
+  parameters: StoreParameter[];
+  items: StoreItem[];
+  settings: StoreSettings;
+}
+
 /*
  * Store Items
  */

@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
+import { getStoreInventoryData } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
 
 /*
@@ -41,8 +42,11 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Fetch data
     const storeId = req.params["storeId"];
 
+    // Fetch store inventory data
+    const storeInventoryData = await getStoreInventoryData(storeId);
+
     // Respond to user
-    res.send({});
+    res.send(storeInventoryData);
   } catch (e) {
     if (IN_DEV) {
       console.error(e);
