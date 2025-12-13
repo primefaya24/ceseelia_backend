@@ -2,7 +2,7 @@
  * Merchant Join Requests
  */
 
-import { appConstants } from "../../../../constants";
+import { appConstants, STORE_PARAM_TYPE } from "../../../../constants";
 
 // JOIN_REQUEST, REQUEST_ID
 export interface Merchant {
@@ -201,7 +201,7 @@ export function isStoreCategoryValid(storeCategory: StoreCategory): boolean {
 export interface StoreParameter {
   storeParamId: string;
   storeParamLabel: string;
-  storeParamType: "SINGLE_SELECT" | "MULTI_SELECT" | "COUNTER";
+  storeParamType: STORE_PARAM_TYPE;
   storeParamIsMandatory: boolean;
   storeParamOptions: string[];
 }
@@ -217,6 +217,30 @@ export function initStoreParameter(
     storeParamIsMandatory: false,
     storeParamOptions: [],
   };
+}
+
+export function isStoreParameterPure(storeParameter: StoreParameter): boolean {
+  return (
+    typeof storeParameter.storeParamLabel === "string" &&
+    typeof storeParameter.storeParamType === "string" &&
+    typeof storeParameter.storeParamIsMandatory === "boolean" &&
+    Array.isArray(storeParameter.storeParamOptions)
+  );
+}
+
+export function isStoreParameterValid(storeParameter: StoreParameter): boolean {
+  if (storeParameter.storeParamLabel.length === 0) {
+    return false;
+  }
+  if (storeParameter.storeParamType !== 'SINGLE_SELECT' && storeParameter.storeParamType !== 'MULTI_SELECT' && storeParameter.storeParamType !== 'COUNTER') {
+    return false;
+  }
+  for (let option of storeParameter.storeParamOptions) {
+    if (option.length === 0) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /*

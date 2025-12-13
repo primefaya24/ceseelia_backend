@@ -16,6 +16,7 @@ import {
   initStoreSettings,
   StoreCategory,
   StoreOverview,
+  StoreParameter,
   StoreSettings,
 } from "../../../../core/interfaces/store";
 
@@ -87,7 +88,7 @@ export async function createStoreCategory(
       Item: {
         pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
         sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + categoryId,
-        storeCategoriyId: storeId,
+        storeCategoriyId: categoryId,
         storeCategoryName: storeCategory.storeCategoryName,
         storeCategoryDescription: storeCategory.storeCategoryDescription,
         storeCategoryBannerUri: storeCategory.storeCategoryBannerUri,
@@ -101,6 +102,32 @@ export async function createStoreCategory(
     return categoryId;
   } catch (e) {
     console.error("In createStoreCategory", e);
+    throw e;
+  }
+}
+
+export async function createStoreParameter(
+  storeId: string,
+  storeParameter: StoreParameter
+): Promise<string> {
+  try {
+    const parameterId: string = ULID.ulid();
+    const command = new PutCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Item: {
+        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+        sk: appConstants.DYNAMO_ENTITY_PARAMETER + "#" + parameterId,
+        storeParamId: parameterId,
+        storeParamLabel: storeParameter.storeParamLabel,
+        storeParamType: storeParameter.storeParamType,
+        storeParamIsMandatory: storeParameter.storeParamIsMandatory,
+        storeParamOptions: storeParameter.storeParamOptions,
+      },
+    });
+    await dynamoDbDocumentClient.send(command);
+    return parameterId;
+  } catch (e) {
+    console.error("In createStoreParameter", e);
     throw e;
   }
 }
