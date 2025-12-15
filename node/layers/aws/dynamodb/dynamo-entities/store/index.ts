@@ -80,6 +80,37 @@ export async function createStore(
   }
 }
 
+export async function createStoreItem(
+  storeId: string,
+  storeItem: StoreItem
+): Promise<string> {
+  try {
+    const itemId: string = ULID.ulid();
+    const command = new PutCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Item: {
+        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+        sk: appConstants.DYNAMO_ENTITY_ITEM + "#" + itemId,
+        storeItemId: itemId,
+        storeItemCategoryId: storeItem.storeItemCategoryId,
+        storeItemImageUris: storeItem.storeItemImageUris,
+        storeItemName: storeItem.storeItemName,
+        storeItemPrice: storeItem.storeItemPrice,
+        storeItemDescription: storeItem.storeItemDescription,
+        storeItemIsActive: storeItem.storeItemIsActive,
+        storeItemTags: storeItem.storeItemTags,
+        storeItemDiscountPercent: storeItem.storeItemDiscountPercent,
+        storeItemCustomParamIds: storeItem.storeItemCustomParamIds,
+      },
+    });
+    await dynamoDbDocumentClient.send(command);
+    return itemId;
+  } catch (e) {
+    console.error("In createStoreItem", e);
+    throw e;
+  }
+}
+
 export async function createStoreCategory(
   storeId: string,
   storeCategory: StoreCategory
@@ -95,7 +126,10 @@ export async function createStoreCategory(
         storeCategoryName: storeCategory.storeCategoryName,
         storeCategoryDescription: storeCategory.storeCategoryDescription,
         storeCategoryBannerUri: storeCategory.storeCategoryBannerUri,
-        storeCategoryBannerUrl: storeCategory.storeCategoryBannerUri.length > 0 ? getStorageImageUrl(storeCategory.storeCategoryBannerUri) : '',
+        storeCategoryBannerUrl:
+          storeCategory.storeCategoryBannerUri.length > 0
+            ? getStorageImageUrl(storeCategory.storeCategoryBannerUri)
+            : "",
         storeCategoryIsActive: storeCategory.storeCategoryIsActive,
         storeCategoryDiscountPercent:
           storeCategory.storeCategoryDiscountPercent,
@@ -129,7 +163,10 @@ export async function updateStoreCategory(
         ":storeCategoryName": storeCategory.storeCategoryName,
         ":storeCategoryDescription": storeCategory.storeCategoryDescription,
         ":storeCategoryBannerUri": storeCategory.storeCategoryBannerUri,
-        ":storeCategoryBannerUrl": storeCategory.storeCategoryBannerUri.length > 0 ? getStorageImageUrl(storeCategory.storeCategoryBannerUri) : '',
+        ":storeCategoryBannerUrl":
+          storeCategory.storeCategoryBannerUri.length > 0
+            ? getStorageImageUrl(storeCategory.storeCategoryBannerUri)
+            : "",
         ":storeCategoryIsActive": storeCategory.storeCategoryIsActive,
         ":storeCategoryDiscountPercent":
           storeCategory.storeCategoryDiscountPercent,

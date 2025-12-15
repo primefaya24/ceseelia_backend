@@ -234,7 +234,11 @@ export function isStoreParameterValid(storeParameter: StoreParameter): boolean {
   if (storeParameter.storeParamLabel.length === 0) {
     return false;
   }
-  if (storeParameter.storeParamType !== 'SINGLE_SELECT' && storeParameter.storeParamType !== 'MULTI_SELECT' && storeParameter.storeParamType !== 'COUNTER') {
+  if (
+    storeParameter.storeParamType !== "SINGLE_SELECT" &&
+    storeParameter.storeParamType !== "MULTI_SELECT" &&
+    storeParameter.storeParamType !== "COUNTER"
+  ) {
     return false;
   }
   for (let option of storeParameter.storeParamOptions) {
@@ -252,7 +256,6 @@ export function isStoreParameterValid(storeParameter: StoreParameter): boolean {
 export interface StoreItem {
   storeItemId: string;
   storeItemCategoryId: string;
-  storeItemCategory: StoreCategory; // Assigned in frontend
   storeItemImageUris: string[];
   storeItemName: string;
   storeItemPrice: number;
@@ -261,27 +264,39 @@ export interface StoreItem {
   storeItemTags: string;
   storeItemDiscountPercent: number;
   storeItemCustomParamIds: string[];
-  storeItemCustomParams: StoreParameter[]; // Assigned in frontend
 }
 
-export function initStoreItem(
-  storeItemId: string,
-  storeItemCategoryId: string
-): StoreItem {
-  return {
-    storeItemId: storeItemId,
-    storeItemCategoryId: storeItemCategoryId,
-    storeItemCategory: initStoreCategory(storeItemCategoryId, ""),
-    storeItemImageUris: [],
-    storeItemName: "",
-    storeItemPrice: 0,
-    storeItemDescription: "",
-    storeItemIsActive: true,
-    storeItemTags: "",
-    storeItemDiscountPercent: 0,
-    storeItemCustomParamIds: [],
-    storeItemCustomParams: [],
-  };
+export function isStoreItemPure(storeItem: StoreItem): boolean {
+  let pure =
+    typeof storeItem.storeItemCategoryId === "string" &&
+    Array.isArray(storeItem.storeItemImageUris) &&
+    typeof storeItem.storeItemName === "string" &&
+    typeof storeItem.storeItemPrice === "number" &&
+    typeof storeItem.storeItemDescription === "string" &&
+    typeof storeItem.storeItemIsActive === "boolean" &&
+    typeof storeItem.storeItemTags === "string" &&
+    typeof storeItem.storeItemDiscountPercent === "number" &&
+    Array.isArray(storeItem.storeItemCustomParamIds);
+  for (let storeItemImageUri of storeItem.storeItemImageUris) {
+    pure = pure && typeof storeItemImageUri === "string";
+  }
+  for (let storeItemCustomParamId of storeItem.storeItemCustomParamIds) {
+    pure = pure && typeof storeItemCustomParamId === "string";
+  }
+  return pure;
+}
+
+export function isStoreItemValid(storeItem: StoreItem): boolean {
+  let valid =
+    storeItem.storeItemCategoryId.length > 0 &&
+    storeItem.storeItemName.length > 0;
+  for (let storeItemImageUri of storeItem.storeItemImageUris) {
+    valid = valid && storeItemImageUri.length > 0;
+  }
+  for (let storeItemCustomParamId of storeItem.storeItemCustomParamIds) {
+    valid = valid && storeItemCustomParamId.length > 0;
+  }
+  return valid;
 }
 
 export interface StoreInventoryData {

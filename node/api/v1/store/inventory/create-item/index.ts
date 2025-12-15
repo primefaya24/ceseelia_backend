@@ -4,6 +4,11 @@ import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
+import {
+  isStoreItemPure,
+  isStoreItemValid,
+} from "../../../../../layers/core/interfaces/store";
+import { createStoreItem } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
 
 /*
@@ -17,20 +22,22 @@ module.exports = function (router: Router): void {
       pureRequestParams,
       validRequestParams,
       executeRouteCore,
-      true,
+      true
     );
   });
 };
 
 function pureRequestParams(req: Request): boolean {
-  return true;
+  return (
+    typeof req.body.storeId === "string" && isStoreItemPure(req.body.storeItem)
+  );
 }
 
 /*
  * Ensure request params are valid
  */
 function validRequestParams(req: Request): boolean {
-  return true;
+  return req.body.storeId.length > 0 && isStoreItemValid(req.body.storeItem);
 }
 
 /*
@@ -39,9 +46,14 @@ function validRequestParams(req: Request): boolean {
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     // Fetch data
+    const storeId = req.body.storeId;
+    const storeItem = req.body.storeItem;
+
+    // Create item
+    const itemId: string = await createStoreItem(storeId, storeItem);
 
     // Respond to user
-    res.send({});
+    res.send(itemId);
   } catch (e) {
     if (IN_DEV) {
       console.error(e);
