@@ -121,7 +121,7 @@ export async function updateStoreItem(
       TableName: DEFAULT_TABLE_NAME,
       Key: {
         pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
-        sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + itemId,
+        sk: appConstants.DYNAMO_ENTITY_ITEM + "#" + itemId,
       },
       UpdateExpression:
         "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemTags = :storeItemTags, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParamIds = :storeItemCustomParamIds",
