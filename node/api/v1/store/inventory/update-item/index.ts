@@ -5,26 +5,17 @@ import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http"
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import {
-  isStoreCategoryPure,
-  isStoreCategoryValid,
+  isStoreItemPure,
+  isStoreItemValid,
 } from "../../../../../layers/core/interfaces/store";
-import {
-  updateStoreCategory,
-} from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { updateStoreItem } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
-
-/*
- * Request/Response interfaces
- */
-interface ReqBody {}
-
-interface ResBody {}
 
 /*
  * Module Route
  */
 module.exports = function (router: Router): void {
-  router.put("/update", (req: Request, res: Response): void => {
+  router.put("/update-item", (req: Request, res: Response): void => {
     validateAndExecuteHttpApiRoute(
       req,
       res,
@@ -38,9 +29,7 @@ module.exports = function (router: Router): void {
 
 function pureRequestParams(req: Request): boolean {
   return (
-    typeof req.body.storeId === "string" &&
-    typeof req.body.categoryId === "string" &&
-    isStoreCategoryPure(req.body.storeCategory)
+    typeof req.body.storeId === "string" && typeof req.body.storeItemId === "string" && isStoreItemPure(req.body.storeItem)
   );
 }
 
@@ -48,11 +37,7 @@ function pureRequestParams(req: Request): boolean {
  * Ensure request params are valid
  */
 function validRequestParams(req: Request): boolean {
-  return (
-    req.body.storeId.length > 0 &&
-    req.body.categoryId.length > 0 &&
-    isStoreCategoryValid(req.body.storeCategory)
-  );
+  return req.body.storeId.length > 0 && req.body.storeItemId.length > 0 && isStoreItemValid(req.body.storeItem);
 }
 
 /*
@@ -60,13 +45,13 @@ function validRequestParams(req: Request): boolean {
  */
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
-    // Extract params
+    // Fetch data
     const storeId = req.body.storeId;
-    const categoryId = req.body.categoryId;
-    const storeCategory = req.body.storeCategory;
+    const storeItemId = req.body.storeItemId;
+    const storeItem = req.body.storeItem;
 
-    // Create category
-    await updateStoreCategory(storeId, categoryId, storeCategory);
+    // Create item
+    await updateStoreItem(storeId, storeItemId, storeItem);
 
     // Respond to user
     res.send();

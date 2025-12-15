@@ -111,6 +111,40 @@ export async function createStoreItem(
   }
 }
 
+export async function updateStoreItem(
+  storeId: string,
+  itemId: string,
+  storeItem: StoreItem
+): Promise<void> {
+  try {
+    const command = new UpdateCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: {
+        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+        sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + itemId,
+      },
+      UpdateExpression:
+        "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemTags = :storeItemTags, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParamIds = :storeItemCustomParamIds",
+      ExpressionAttributeValues: {
+        ":storeItemId": itemId,
+        ":storeItemCategoryId": storeItem.storeItemCategoryId,
+        ":storeItemImageUris": storeItem.storeItemImageUris,
+        ":storeItemName": storeItem.storeItemName,
+        ":storeItemPrice": storeItem.storeItemPrice,
+        ":storeItemDescription": storeItem.storeItemDescription,
+        ":storeItemIsActive": storeItem.storeItemIsActive,
+        ":storeItemTags": storeItem.storeItemTags,
+        ":storeItemDiscountPercent": storeItem.storeItemDiscountPercent,
+        ":storeItemCustomParamIds": storeItem.storeItemCustomParamIds,
+      },
+    });
+    await dynamoDbDocumentClient.send(command);
+  } catch (e) {
+    console.error("In updateStoreItem", e);
+    throw e;
+  }
+}
+
 export async function createStoreCategory(
   storeId: string,
   storeCategory: StoreCategory
@@ -148,7 +182,7 @@ export async function updateStoreCategory(
   storeId: string,
   categoryId: string,
   storeCategory: StoreCategory
-): Promise<string> {
+): Promise<void> {
   try {
     const command = new UpdateCommand({
       TableName: DEFAULT_TABLE_NAME,
@@ -174,7 +208,6 @@ export async function updateStoreCategory(
       },
     });
     await dynamoDbDocumentClient.send(command);
-    return categoryId;
   } catch (e) {
     console.error("In updateStoreCategory", e);
     throw e;
