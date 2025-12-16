@@ -55,8 +55,6 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const itemId = req.params.itemId;
     const pngCount = Number(req.params.pngCount);
     const jpgCount = Number(req.params.jpgCount);
-    console.log('pngCount', pngCount);
-    console.log('jpgCount', jpgCount);
 
     const parseCount = (count: number): number => {
       if (!Number.isFinite(count) || count <= 0) {

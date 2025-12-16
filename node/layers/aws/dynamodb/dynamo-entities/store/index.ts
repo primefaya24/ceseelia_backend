@@ -80,43 +80,13 @@ export async function createStore(
   }
 }
 
-export async function createStoreItem(
-  storeId: string,
-  storeItem: StoreItem
-): Promise<string> {
-  try {
-    const itemId: string = ULID.ulid();
-    const command = new PutCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      Item: {
-        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
-        sk: appConstants.DYNAMO_ENTITY_ITEM + "#" + itemId,
-        storeItemId: itemId,
-        storeItemCategoryId: storeItem.storeItemCategoryId,
-        storeItemImageUris: storeItem.storeItemImageUris,
-        storeItemName: storeItem.storeItemName,
-        storeItemPrice: storeItem.storeItemPrice,
-        storeItemDescription: storeItem.storeItemDescription,
-        storeItemIsActive: storeItem.storeItemIsActive,
-        storeItemTags: storeItem.storeItemTags,
-        storeItemDiscountPercent: storeItem.storeItemDiscountPercent,
-        storeItemCustomParamIds: storeItem.storeItemCustomParamIds,
-      },
-    });
-    await dynamoDbDocumentClient.send(command);
-    return itemId;
-  } catch (e) {
-    console.error("In createStoreItem", e);
-    throw e;
-  }
-}
-
 export async function updateStoreItem(
   storeId: string,
-  itemId: string,
-  storeItem: StoreItem
-): Promise<void> {
+  storeItem: StoreItem,
+  storeItemId: string | undefined
+): Promise<string> {
   try {
+    const itemId: string = storeItemId && storeItemId.length > 0 ? storeItemId : ULID.ulid();
     const command = new UpdateCommand({
       TableName: DEFAULT_TABLE_NAME,
       Key: {
@@ -139,51 +109,20 @@ export async function updateStoreItem(
       },
     });
     await dynamoDbDocumentClient.send(command);
+    return itemId;
   } catch (e) {
     console.error("In updateStoreItem", e);
     throw e;
   }
 }
 
-export async function createStoreCategory(
-  storeId: string,
-  storeCategory: StoreCategory
-): Promise<string> {
-  try {
-    const categoryId: string = ULID.ulid();
-    const command = new PutCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      Item: {
-        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
-        sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + categoryId,
-        storeCategoriyId: categoryId,
-        storeCategoryName: storeCategory.storeCategoryName,
-        storeCategoryDescription: storeCategory.storeCategoryDescription,
-        storeCategoryBannerUri: storeCategory.storeCategoryBannerUri,
-        storeCategoryBannerUrl:
-          storeCategory.storeCategoryBannerUri.length > 0
-            ? getStorageImageUrl(storeCategory.storeCategoryBannerUri)
-            : "",
-        storeCategoryIsActive: storeCategory.storeCategoryIsActive,
-        storeCategoryDiscountPercent:
-          storeCategory.storeCategoryDiscountPercent,
-        storeCategoryItemCount: 0,
-      },
-    });
-    await dynamoDbDocumentClient.send(command);
-    return categoryId;
-  } catch (e) {
-    console.error("In createStoreCategory", e);
-    throw e;
-  }
-}
-
 export async function updateStoreCategory(
   storeId: string,
-  categoryId: string,
-  storeCategory: StoreCategory
-): Promise<void> {
+  storeCategory: StoreCategory,
+  storeCategoryId: string | undefined
+): Promise<string> {
   try {
+    const categoryId: string = storeCategoryId && storeCategoryId.length > 0 ? storeCategoryId : ULID.ulid();
     const command = new UpdateCommand({
       TableName: DEFAULT_TABLE_NAME,
       Key: {
@@ -208,34 +147,40 @@ export async function updateStoreCategory(
       },
     });
     await dynamoDbDocumentClient.send(command);
+    return categoryId;
   } catch (e) {
     console.error("In updateStoreCategory", e);
     throw e;
   }
 }
 
-export async function createStoreParameter(
+export async function updateStoreParameter(
   storeId: string,
-  storeParameter: StoreParameter
+  storeParameter: StoreParameter,
+  storeParameterId: string | undefined
 ): Promise<string> {
   try {
-    const parameterId: string = ULID.ulid();
-    const command = new PutCommand({
+    const parameterId: string = storeParameterId && storeParameterId.length > 0 ? storeParameterId : ULID.ulid();
+    const command = new UpdateCommand({
       TableName: DEFAULT_TABLE_NAME,
-      Item: {
+      Key: {
         pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
         sk: appConstants.DYNAMO_ENTITY_PARAMETER + "#" + parameterId,
-        storeParamId: parameterId,
-        storeParamLabel: storeParameter.storeParamLabel,
-        storeParamType: storeParameter.storeParamType,
-        storeParamIsMandatory: storeParameter.storeParamIsMandatory,
-        storeParamOptions: storeParameter.storeParamOptions,
+      },
+      UpdateExpression:
+        "SET storeParamId = :storeParamId, storeParamLabel = :storeParamLabel, storeParamType = :storeParamType, storeParamIsMandatory = :storeParamIsMandatory, storeParamOptions = :storeParamOptions",
+      ExpressionAttributeValues: {
+        ":storeParamId": parameterId,
+        ":storeParamLabel": storeParameter.storeParamLabel,
+        ":storeParamType": storeParameter.storeParamType,
+        ":storeParamIsMandatory": storeParameter.storeParamIsMandatory,
+        ":storeParamOptions": storeParameter.storeParamOptions,
       },
     });
     await dynamoDbDocumentClient.send(command);
     return parameterId;
   } catch (e) {
-    console.error("In createStoreParameter", e);
+    console.error("In updateStoreParameter", e);
     throw e;
   }
 }

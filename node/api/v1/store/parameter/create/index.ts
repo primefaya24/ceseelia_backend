@@ -8,7 +8,7 @@ import {
   isStoreParameterPure,
   isStoreParameterValid,
 } from "../../../../../layers/core/interfaces/store";
-import { createStoreParameter } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { updateStoreParameter } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
 
 /*
@@ -59,11 +59,13 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Extract params
     const storeId = req.body.storeId;
     const storeParameter = req.body.storeParameter;
+    const storeParameterId = req.body.storeParameterId;
 
     // Create category
-    const parameterId: string = await createStoreParameter(
+    const parameterId: string = await updateStoreParameter(
       storeId,
-      storeParameter
+      storeParameter,
+      storeParameterId
     );
 
     // Respond to user

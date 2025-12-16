@@ -8,7 +8,7 @@ import {
   isStoreItemPure,
   isStoreItemValid,
 } from "../../../../../layers/core/interfaces/store";
-import { createStoreItem } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { updateStoreItem } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
 
 /*
@@ -48,9 +48,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Fetch data
     const storeId = req.body.storeId;
     const storeItem = req.body.storeItem;
+    const storeItemId = req.body.storeItemId;
 
     // Create item
-    const itemId: string = await createStoreItem(storeId, storeItem);
+    const itemId: string = await updateStoreItem(storeId, storeItem, storeItemId);
 
     // Respond to user
     res.send(itemId);

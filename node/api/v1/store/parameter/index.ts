@@ -9,7 +9,6 @@ const storeParameterRouter: Router = Router();
 // Routes
 require("./create/index")(storeParameterRouter);
 require("./delete/index")(storeParameterRouter);
-require("./update/index")(storeParameterRouter);
 
 // Export Router
 export default storeParameterRouter;

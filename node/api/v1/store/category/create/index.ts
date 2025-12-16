@@ -5,7 +5,7 @@ import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http"
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { isStoreCategoryPure, isStoreCategoryValid } from "../../../../../layers/core/interfaces/store";
-import { createStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { updateStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
 
 /*
@@ -50,9 +50,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Extract params
     const storeId = req.body.storeId;
     const storeCategory = req.body.storeCategory;
+    const storeCategoryId = req.body.categoryId;
 
     // Create category
-    const categoryId: string = await createStoreCategory(storeId, storeCategory);
+    const categoryId: string = await updateStoreCategory(storeId, storeCategory, storeCategoryId);
 
     // Respond to user
     res.send(categoryId);
