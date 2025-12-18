@@ -195,28 +195,60 @@ export function isStoreCategoryValid(storeCategory: StoreCategory): boolean {
 }
 
 /*
- * Store Parameter
+ * Store Items
  */
-// STORE#STORE_ID, PARAM#PARAM_ID
+// STORE#STORE_ID, ITEM#ITEM_ID
+export interface StoreItem {
+  storeItemId: string;
+  storeItemCategoryId: string;
+  storeItemImageUris: string[];
+  storeItemName: string;
+  storeItemPrice: number;
+  storeItemDescription: string;
+  storeItemIsActive: boolean;
+  storeItemTags: string;
+  storeItemDiscountPercent: number;
+  storeItemCustomParams: StoreParameter[];
+}
+
+export function isStoreItemPure(storeItem: StoreItem): boolean {
+  let pure =
+    typeof storeItem.storeItemCategoryId === "string" &&
+    Array.isArray(storeItem.storeItemImageUris) &&
+    typeof storeItem.storeItemName === "string" &&
+    typeof storeItem.storeItemPrice === "number" &&
+    typeof storeItem.storeItemDescription === "string" &&
+    typeof storeItem.storeItemIsActive === "boolean" &&
+    typeof storeItem.storeItemTags === "string" &&
+    typeof storeItem.storeItemDiscountPercent === "number" &&
+    Array.isArray(storeItem.storeItemCustomParams);
+  for (let storeItemImageUri of storeItem.storeItemImageUris) {
+    pure = pure && typeof storeItemImageUri === "string";
+  }
+  for (let storeItemCustomParam of storeItem.storeItemCustomParams) {
+    pure = pure && isStoreParameterPure(storeItemCustomParam);
+  }
+  return pure;
+}
+
+export function isStoreItemValid(storeItem: StoreItem): boolean {
+  let valid =
+    storeItem.storeItemCategoryId.length > 0 &&
+    storeItem.storeItemName.length > 0;
+  for (let storeItemImageUri of storeItem.storeItemImageUris) {
+    valid = valid && storeItemImageUri.length > 0;
+  }
+  for (let storeItemCustomParam of storeItem.storeItemCustomParams) {
+    valid = valid && isStoreParameterValid(storeItemCustomParam);
+  }
+  return valid;
+}
+
 export interface StoreParameter {
-  storeParamId: string;
   storeParamLabel: string;
   storeParamType: STORE_PARAM_TYPE;
   storeParamIsMandatory: boolean;
   storeParamOptions: string[];
-}
-
-export function initStoreParameter(
-  storeParamId: string,
-  storeParamLabel: string
-): StoreParameter {
-  return {
-    storeParamId: storeParamId,
-    storeParamLabel: storeParamLabel,
-    storeParamType: "SINGLE_SELECT",
-    storeParamIsMandatory: false,
-    storeParamOptions: [],
-  };
 }
 
 export function isStoreParameterPure(storeParameter: StoreParameter): boolean {
@@ -239,62 +271,7 @@ export function isStoreParameterValid(storeParameter: StoreParameter): boolean {
   ) {
     return false;
   }
-  for (let option of storeParameter.storeParamOptions) {
-    if (option.length === 0) {
-      return false;
-    }
-  }
   return true;
-}
-
-/*
- * Store Items
- */
-// STORE#STORE_ID, ITEM#ITEM_ID
-export interface StoreItem {
-  storeItemId: string;
-  storeItemCategoryId: string;
-  storeItemImageUris: string[];
-  storeItemName: string;
-  storeItemPrice: number;
-  storeItemDescription: string;
-  storeItemIsActive: boolean;
-  storeItemTags: string;
-  storeItemDiscountPercent: number;
-  storeItemCustomParamIds: string[];
-}
-
-export function isStoreItemPure(storeItem: StoreItem): boolean {
-  let pure =
-    typeof storeItem.storeItemCategoryId === "string" &&
-    Array.isArray(storeItem.storeItemImageUris) &&
-    typeof storeItem.storeItemName === "string" &&
-    typeof storeItem.storeItemPrice === "number" &&
-    typeof storeItem.storeItemDescription === "string" &&
-    typeof storeItem.storeItemIsActive === "boolean" &&
-    typeof storeItem.storeItemTags === "string" &&
-    typeof storeItem.storeItemDiscountPercent === "number" &&
-    Array.isArray(storeItem.storeItemCustomParamIds);
-  for (let storeItemImageUri of storeItem.storeItemImageUris) {
-    pure = pure && typeof storeItemImageUri === "string";
-  }
-  for (let storeItemCustomParamId of storeItem.storeItemCustomParamIds) {
-    pure = pure && typeof storeItemCustomParamId === "string";
-  }
-  return pure;
-}
-
-export function isStoreItemValid(storeItem: StoreItem): boolean {
-  let valid =
-    storeItem.storeItemCategoryId.length > 0 &&
-    storeItem.storeItemName.length > 0;
-  for (let storeItemImageUri of storeItem.storeItemImageUris) {
-    valid = valid && storeItemImageUri.length > 0;
-  }
-  for (let storeItemCustomParamId of storeItem.storeItemCustomParamIds) {
-    valid = valid && storeItemCustomParamId.length > 0;
-  }
-  return valid;
 }
 
 export interface StoreInventoryData {

@@ -94,7 +94,7 @@ export async function updateStoreItem(
         sk: appConstants.DYNAMO_ENTITY_ITEM + "#" + itemId,
       },
       UpdateExpression:
-        "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemTags = :storeItemTags, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParamIds = :storeItemCustomParamIds",
+        "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemTags = :storeItemTags, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams",
       ExpressionAttributeValues: {
         ":storeItemId": itemId,
         ":storeItemCategoryId": storeItem.storeItemCategoryId,
@@ -105,7 +105,7 @@ export async function updateStoreItem(
         ":storeItemIsActive": storeItem.storeItemIsActive,
         ":storeItemTags": storeItem.storeItemTags,
         ":storeItemDiscountPercent": storeItem.storeItemDiscountPercent,
-        ":storeItemCustomParamIds": storeItem.storeItemCustomParamIds,
+        ":storeItemCustomParams": storeItem.storeItemCustomParams,
       },
     });
     await dynamoDbDocumentClient.send(command);
@@ -150,37 +150,6 @@ export async function updateStoreCategory(
     return categoryId;
   } catch (e) {
     console.error("In updateStoreCategory", e);
-    throw e;
-  }
-}
-
-export async function updateStoreParameter(
-  storeId: string,
-  storeParameter: StoreParameter,
-  storeParameterId: string | undefined
-): Promise<string> {
-  try {
-    const parameterId: string = storeParameterId && storeParameterId.length > 0 ? storeParameterId : ULID.ulid();
-    const command = new UpdateCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      Key: {
-        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
-        sk: appConstants.DYNAMO_ENTITY_PARAMETER + "#" + parameterId,
-      },
-      UpdateExpression:
-        "SET storeParamId = :storeParamId, storeParamLabel = :storeParamLabel, storeParamType = :storeParamType, storeParamIsMandatory = :storeParamIsMandatory, storeParamOptions = :storeParamOptions",
-      ExpressionAttributeValues: {
-        ":storeParamId": parameterId,
-        ":storeParamLabel": storeParameter.storeParamLabel,
-        ":storeParamType": storeParameter.storeParamType,
-        ":storeParamIsMandatory": storeParameter.storeParamIsMandatory,
-        ":storeParamOptions": storeParameter.storeParamOptions,
-      },
-    });
-    await dynamoDbDocumentClient.send(command);
-    return parameterId;
-  } catch (e) {
-    console.error("In updateStoreParameter", e);
     throw e;
   }
 }
