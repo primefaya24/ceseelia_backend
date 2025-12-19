@@ -203,6 +203,7 @@ export interface StoreItem {
   storeItemCategoryId: string;
   storeItemImageUris: string[];
   storeItemName: string;
+  storeItemStock: number;
   storeItemPrice: number;
   storeItemDescription: string;
   storeItemIsActive: boolean;
@@ -216,6 +217,7 @@ export function isStoreItemPure(storeItem: StoreItem): boolean {
     typeof storeItem.storeItemCategoryId === "string" &&
     Array.isArray(storeItem.storeItemImageUris) &&
     typeof storeItem.storeItemName === "string" &&
+    typeof storeItem.storeItemStock === "number" &&
     typeof storeItem.storeItemPrice === "number" &&
     typeof storeItem.storeItemDescription === "string" &&
     typeof storeItem.storeItemIsActive === "boolean" &&
@@ -266,8 +268,7 @@ export function isStoreParameterValid(storeParameter: StoreParameter): boolean {
   }
   if (
     storeParameter.storeParamType !== "SINGLE_SELECT" &&
-    storeParameter.storeParamType !== "MULTI_SELECT" &&
-    storeParameter.storeParamType !== "COUNTER"
+    storeParameter.storeParamType !== "MULTI_SELECT"
   ) {
     return false;
   }

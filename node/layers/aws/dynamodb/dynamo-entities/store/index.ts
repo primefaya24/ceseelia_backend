@@ -96,12 +96,13 @@ export async function updateStoreItem(
         sk: appConstants.DYNAMO_ENTITY_ITEM + "#" + itemId,
       },
       UpdateExpression:
-        "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemTags = :storeItemTags, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams",
+        "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemTags = :storeItemTags, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams",
       ExpressionAttributeValues: {
         ":storeItemId": itemId,
         ":storeItemCategoryId": storeItem.storeItemCategoryId,
         ":storeItemImageUris": storeItem.storeItemImageUris,
         ":storeItemName": storeItem.storeItemName,
+        ":storeItemStock": storeItem.storeItemStock,
         ":storeItemPrice": storeItem.storeItemPrice,
         ":storeItemDescription": storeItem.storeItemDescription,
         ":storeItemIsActive": storeItem.storeItemIsActive,
