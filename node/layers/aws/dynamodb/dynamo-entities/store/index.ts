@@ -118,6 +118,26 @@ export async function updateStoreItem(
   }
 }
 
+export async function deleteStoreItem(
+  storeId: string,
+  storeItemId: string
+): Promise<void> {
+  try {
+    const command = new DeleteCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: {
+        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+        sk: appConstants.DYNAMO_ENTITY_ITEM + "#" + storeItemId,
+      },
+    });
+    await dynamoDbDocumentClient.send(command);
+  } catch (e) {
+    console.error("In deleteStoreItem", e);
+    throw e;
+  }
+}
+
+
 export async function updateStoreCategory(
   storeId: string,
   storeCategory: StoreCategory,

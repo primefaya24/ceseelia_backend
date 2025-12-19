@@ -5,7 +5,10 @@ import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http"
 import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
-import { deleteStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import {
+  deleteStoreCategory,
+  deleteStoreItem,
+} from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
 
 /*
@@ -19,16 +22,19 @@ interface ResBody {}
  * Module Route
  */
 module.exports = function (router: Router): void {
-  router.delete("/delete/:storeId/:storeCategoryId", (req: Request, res: Response): void => {
-    validateAndExecuteHttpApiRoute(
-      req,
-      res,
-      pureRequestParams,
-      validRequestParams,
-      executeRouteCore,
-      true
-    );
-  });
+  router.delete(
+    "/delete-item/:storeId/:storeItemId",
+    (req: Request, res: Response): void => {
+      validateAndExecuteHttpApiRoute(
+        req,
+        res,
+        pureRequestParams,
+        validRequestParams,
+        executeRouteCore,
+        true
+      );
+    }
+  );
 };
 
 function pureRequestParams(req: Request): boolean {
@@ -49,13 +55,13 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     // Extract params
     const storeId = req.params.storeId;
-    const storeCategoryId = req.params.storeCategoryId;
+    const storeItemId = req.params.storeItemId;
 
     // Delete category photos if any
     const currentS3Uris: string[] = (
       await listPrefixFiles(
         S3_STORAGE_BUCKET_NAME,
-        `store/${storeId}/category/${storeCategoryId}/`
+        `store/${storeId}/item/${storeItemId}/`
       )
     )
       .map((o) => o.Key)
@@ -65,7 +71,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     }
 
     // Delete category
-    await deleteStoreCategory(storeId, storeCategoryId);
+    await deleteStoreItem(storeId, storeItemId);
 
     // Respond to user
     res.send({});
