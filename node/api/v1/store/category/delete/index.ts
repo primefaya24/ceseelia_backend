@@ -2,8 +2,10 @@
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
-import { IN_DEV } from "../../../../../config";
+import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
+import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
+import { deleteStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
 
 /*
@@ -17,30 +19,27 @@ interface ResBody {}
  * Module Route
  */
 module.exports = function (router: Router): void {
-  router.delete("/delete", (req: Request, res: Response): void => {
+  router.delete("/delete/:storeId/:storeCategoryId", (req: Request, res: Response): void => {
     validateAndExecuteHttpApiRoute(
       req,
       res,
       pureRequestParams,
       validRequestParams,
       executeRouteCore,
-      true,
+      true
     );
   });
 };
 
 function pureRequestParams(req: Request): boolean {
-  return (
-    typeof req.body.storeName === "string" &&
-    typeof req.body.storeSlug === "string"
-  );
+  return true;
 }
 
 /*
  * Ensure request params are valid
  */
 function validRequestParams(req: Request): boolean {
-  return req.body.storeName.length > 0 && req.body.storeSlug.length > 0;
+  return true;
 }
 
 /*
@@ -49,7 +48,24 @@ function validRequestParams(req: Request): boolean {
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     // Extract params
-    // TODO
+    const storeId = req.params.storeId;
+    const storeCategoryId = req.params.storeCategoryId;
+
+    // Delete category photos if any
+    const currentS3Uris: string[] = (
+      await listPrefixFiles(
+        S3_STORAGE_BUCKET_NAME,
+        `store/${storeId}/category/${storeCategoryId}/images/`
+      )
+    )
+      .map((o) => o.Key)
+      .filter((key): key is string => typeof key === "string");
+    if (currentS3Uris.length > 0) {
+      await deleteS3Keys(S3_STORAGE_BUCKET_NAME, currentS3Uris);
+    }
+
+    // Delete category
+    await deleteStoreCategory(storeId, storeCategoryId);
 
     // Respond to user
     res.send({});

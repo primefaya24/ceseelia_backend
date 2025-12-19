@@ -6,6 +6,7 @@ import {
   QueryCommand,
   PutCommand,
   UpdateCommand,
+  DeleteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import * as ULID from "ulid";
 import { appConstants } from "../../../../../constants";
@@ -86,7 +87,8 @@ export async function updateStoreItem(
   storeItemId: string | undefined
 ): Promise<string> {
   try {
-    const itemId: string = storeItemId && storeItemId.length > 0 ? storeItemId : ULID.ulid();
+    const itemId: string =
+      storeItemId && storeItemId.length > 0 ? storeItemId : ULID.ulid();
     const command = new UpdateCommand({
       TableName: DEFAULT_TABLE_NAME,
       Key: {
@@ -122,7 +124,10 @@ export async function updateStoreCategory(
   storeCategoryId: string | undefined
 ): Promise<string> {
   try {
-    const categoryId: string = storeCategoryId && storeCategoryId.length > 0 ? storeCategoryId : ULID.ulid();
+    const categoryId: string =
+      storeCategoryId && storeCategoryId.length > 0
+        ? storeCategoryId
+        : ULID.ulid();
     const command = new UpdateCommand({
       TableName: DEFAULT_TABLE_NAME,
       Key: {
@@ -146,6 +151,25 @@ export async function updateStoreCategory(
     return categoryId;
   } catch (e) {
     console.error("In updateStoreCategory", e);
+    throw e;
+  }
+}
+
+export async function deleteStoreCategory(
+  storeId: string,
+  storeCategoryId: string
+): Promise<void> {
+  try {
+    const command = new DeleteCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: {
+        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+        sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + storeCategoryId,
+      },
+    });
+    await dynamoDbDocumentClient.send(command);
+  } catch (e) {
+    console.error("In deleteStoreCategory", e);
     throw e;
   }
 }
