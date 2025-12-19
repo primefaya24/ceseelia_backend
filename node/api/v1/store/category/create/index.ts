@@ -38,6 +38,7 @@ module.exports = function (router: Router): void {
 function pureRequestParams(req: Request): boolean {
   return (
     typeof req.body.storeId === "string" &&
+    typeof req.body.isUpdate === "boolean" &&
     isStoreCategoryPure(req.body.storeCategory)
   );
 }
@@ -60,9 +61,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeId = req.body.storeId;
     const storeCategory = req.body.storeCategory;
     const storeCategoryId = req.body.categoryId;
+    const isUpdate = req.body.isUpdate;
 
     // Fetch current s3 image objects
-    if (storeCategoryId && storeCategoryId.length > 0) {
+    if (isUpdate) {
       const currentS3Uris: string[] = (await listPrefixFiles(
         S3_STORAGE_BUCKET_NAME,
         `store/${storeId}/category/${storeCategoryId}/images/`
