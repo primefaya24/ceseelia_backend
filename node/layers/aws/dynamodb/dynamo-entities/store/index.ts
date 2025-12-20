@@ -209,15 +209,6 @@ export async function getStoreInventoryData(
         ":sk_prefix": appConstants.DYNAMO_ENTITY_CATEGORY + "#",
       },
     });
-    const parametersCommand = new QueryCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      KeyConditionExpression: "#pk = :pk and begins_with(#sk, :sk_prefix)",
-      ExpressionAttributeNames: { "#pk": "pk", "#sk": "sk" },
-      ExpressionAttributeValues: {
-        ":pk": storePk,
-        ":sk_prefix": appConstants.DYNAMO_ENTITY_PARAMETER + "#",
-      },
-    });
     const itemsCommand = new QueryCommand({
       TableName: DEFAULT_TABLE_NAME,
       KeyConditionExpression: "#pk = :pk and begins_with(#sk, :sk_prefix)",
@@ -235,10 +226,9 @@ export async function getStoreInventoryData(
       },
     });
 
-    const [categoriesResult, parametersResult, itemsResult, settingsResult] =
+    const [categoriesResult, itemsResult, settingsResult] =
       await Promise.all([
         dynamoDbDocumentClient.send(categoriesCommand),
-        dynamoDbDocumentClient.send(parametersCommand),
         dynamoDbDocumentClient.send(itemsCommand),
         dynamoDbDocumentClient.send(settingsCommand),
       ]);
@@ -247,12 +237,6 @@ export async function getStoreInventoryData(
       (record) => {
         const { pk: _pk, sk: _sk, ...rest } = record;
         return rest as StoreCategory;
-      }
-    );
-    const parameters: StoreParameter[] = (parametersResult.Items ?? []).map(
-      (record) => {
-        const { pk: _pk, sk: _sk, ...rest } = record;
-        return rest as StoreParameter;
       }
     );
     const items: StoreItem[] = (itemsResult.Items ?? []).map((record) => {
@@ -267,7 +251,6 @@ export async function getStoreInventoryData(
 
     return {
       categories,
-      parameters,
       items,
       settings,
     };

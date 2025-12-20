@@ -60,9 +60,7 @@ export interface StoreSettings {
   // Merchant
   templateId: string;
   themeId: string;
-  logoUri: string;
-  bannerUri: string;
-  promoImageUri: string;
+  customize: any;
   contactInfo: {
     phoneNumber: {
       number: string;
@@ -103,11 +101,9 @@ export interface StoreSettings {
 export function initStoreSettings(): StoreSettings {
   return {
     // Merchant
-    templateId: appConstants.STORE_TEMPLATE_DIGITAL_STORE,
+    templateId: appConstants.STORE_TEMPLATE_DEFAULT,
     themeId: appConstants.STORE_THEME_DEFAULT,
-    logoUri: "",
-    bannerUri: "",
-    promoImageUri: "",
+    customize: {},
     contactInfo: {
       phoneNumber: {
         number: "",
@@ -277,7 +273,6 @@ export function isStoreParameterValid(storeParameter: StoreParameter): boolean {
 
 export interface StoreInventoryData {
   categories: StoreCategory[];
-  parameters: StoreParameter[];
   items: StoreItem[];
   settings: StoreSettings;
 }
@@ -285,7 +280,6 @@ export interface StoreInventoryData {
 export function initStoreInventoryData(): StoreInventoryData {
   return {
     categories: [],
-    parameters: [],
     items: [],
     settings: initStoreSettings(),
   };
