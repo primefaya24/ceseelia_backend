@@ -207,7 +207,7 @@ export const appConstants = {
    * Store
    */
   // Financial
-  STORE_DEFAULT_SALES_COMMISSION_CENTS: 125,
+  STORE_DEFAULT_SALES_COMMISSION: 1.25,
 
   // Store themes
   STORE_TEMPLATE_DEFAULT: "TEMPLATE_DEFAULT",

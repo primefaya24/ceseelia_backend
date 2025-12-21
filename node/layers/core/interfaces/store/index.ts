@@ -147,7 +147,7 @@ export function initStoreSettings(): StoreSettings {
 
     // Admin
     admin: {
-      salesCommission: appConstants.STORE_DEFAULT_SALES_COMMISSION_CENTS,
+      salesCommission: appConstants.STORE_DEFAULT_SALES_COMMISSION,
       isStoreLive: true,
     },
   };
