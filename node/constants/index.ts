@@ -235,3 +235,5 @@ export const appConstants = {
 };
 
 export type STORE_PARAM_TYPE = 'SINGLE_SELECT' | 'MULTI_SELECT';
+export type STORE_CURRENCY_CODE = 'USD' | 'CAD' | 'AUD';
+export type STORE_CURRENCY_FLOAT = 'LEFT' | 'RIGHT';

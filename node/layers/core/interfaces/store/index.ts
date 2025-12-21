@@ -2,7 +2,7 @@
  * Merchant Join Requests
  */
 
-import { appConstants, STORE_PARAM_TYPE } from "../../../../constants";
+import { appConstants, STORE_CURRENCY_FLOAT, STORE_PARAM_TYPE } from "../../../../constants";
 
 // JOIN_REQUEST, REQUEST_ID
 export interface Merchant {
@@ -60,28 +60,25 @@ export interface StoreSettings {
   // Merchant
   templateId: string;
   themeId: string;
-  customize: any;
+
   contactInfo: {
-    phoneNumber: {
-      number: string;
-      isAvailableOnWhatsapp: boolean;
-    };
+    phoneNumber: string;
     emailaddress: string;
   };
-  isOffline: boolean;
-  discountPercent: number;
+
   purchaseRewards: {
-    isAvailable: boolean;
-    rewardsLabel: string; // i.e - PH Points
-    pointsPerDollar: number; // i.e - 5
     redemptionMethod: string;
+    rewardsLabel: string; // i.e - PH Points
+
     redemptionPointAmount: number; // 350
     redemptionPointAmountValue: number; // $10, 10%
+
+    pointsPerDollarSpent: number; // i.e - 5
+    isAvailable: boolean;
   };
-  isAllowPickup: boolean;
-  pickupAddress: string;
-  websiteLink: string;
+
   socialMediaLinks: {
+    websiteLink: string;
     facebook: string;
     instagram: string;
     tiktok: string;
@@ -89,13 +86,24 @@ export interface StoreSettings {
     youtube: string;
     pinterest: string;
     etsy: string;
+    whatsapp: string;
   };
-  defaultCurrencyCode: string;
-  defaultCurrencyLocale: string;
+
+  currencies: StoreCurrency[];
+
+  general: {
+    pickupAddress: string;
+    discountPercent: number;
+    isOnline: boolean;
+  };
 
   // Admin
-  isSuspended: boolean; // False
-  salesCommission: number; // $1.25 default
+  admin: {
+    salesCommission: number; // $1.25 default
+    isStoreLive: boolean; // False
+  };
+
+  customize: any;
 }
 
 export function initStoreSettings(): StoreSettings {
@@ -105,27 +113,20 @@ export function initStoreSettings(): StoreSettings {
     themeId: appConstants.STORE_THEME_DEFAULT,
     customize: {},
     contactInfo: {
-      phoneNumber: {
-        number: "",
-        isAvailableOnWhatsapp: false,
-      },
+      phoneNumber: "",
       emailaddress: "",
     },
-    isOffline: true,
-    discountPercent: 0,
     purchaseRewards: {
       isAvailable: false,
       rewardsLabel: "",
-      pointsPerDollar: 0,
+      pointsPerDollarSpent: 0,
       redemptionMethod:
         appConstants.STORE_REWARDS_REDEMPTION_METHOD_POINTS_TO_MONEY,
       redemptionPointAmount: 0,
       redemptionPointAmountValue: 0,
     },
-    isAllowPickup: false,
-    pickupAddress: "",
-    websiteLink: "",
     socialMediaLinks: {
+      websiteLink: "",
       facebook: "",
       instagram: "",
       tiktok: "",
@@ -133,13 +134,36 @@ export function initStoreSettings(): StoreSettings {
       youtube: "",
       pinterest: "",
       etsy: "",
+      whatsapp: "",
     },
-    defaultCurrencyCode: "",
-    defaultCurrencyLocale: "",
+    currencies: [
+      initStoreCurrency(),
+    ],
+    general: {
+      pickupAddress: "",
+      discountPercent: 0,
+      isOnline: false,
+    },
 
     // Admin
-    isSuspended: false,
-    salesCommission: appConstants.STORE_DEFAULT_SALES_COMMISSION_CENTS,
+    admin: {
+      salesCommission: appConstants.STORE_DEFAULT_SALES_COMMISSION_CENTS,
+      isStoreLive: true,
+    },
+  };
+}
+
+export interface StoreCurrency {
+  currencyCode: string;
+  currencySign: string;
+  currencyFloat: STORE_CURRENCY_FLOAT;
+}
+
+export function initStoreCurrency(): StoreCurrency {
+  return {
+    currencyCode: "USD",
+    currencySign: "$",
+    currencyFloat: 'LEFT',
   };
 }
 
