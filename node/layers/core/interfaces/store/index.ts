@@ -2,7 +2,11 @@
  * Merchant Join Requests
  */
 
-import { appConstants, STORE_CURRENCY_FLOAT, STORE_PARAM_TYPE } from "../../../../constants";
+import {
+  appConstants,
+  STORE_CURRENCY_FLOAT,
+  STORE_PARAM_TYPE,
+} from "../../../../constants";
 
 // JOIN_REQUEST, REQUEST_ID
 export interface Merchant {
@@ -136,9 +140,7 @@ export function initStoreSettings(): StoreSettings {
       etsy: "",
       whatsapp: "",
     },
-    currencies: [
-      initStoreCurrency(),
-    ],
+    currencies: [initStoreCurrency()],
     general: {
       pickupAddress: "",
       discountPercent: 0,
@@ -153,6 +155,14 @@ export function initStoreSettings(): StoreSettings {
   };
 }
 
+export function isStoreSettingsPure(storeSettings: StoreSettings): boolean {
+  return true;
+}
+
+export function isStoreSettingsValid(storeSettings: StoreSettings): boolean {
+  return true;
+}
+
 export interface StoreCurrency {
   currencyCode: string;
   currencySign: string;
@@ -163,7 +173,7 @@ export function initStoreCurrency(): StoreCurrency {
   return {
     currencyCode: "USD",
     currencySign: "$",
-    currencyFloat: 'LEFT',
+    currencyFloat: "LEFT",
   };
 }
 

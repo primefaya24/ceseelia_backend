@@ -138,7 +138,6 @@ export async function deleteStoreItem(
   }
 }
 
-
 export async function updateStoreCategory(
   storeId: string,
   storeCategory: StoreCategory,
@@ -226,12 +225,11 @@ export async function getStoreInventoryData(
       },
     });
 
-    const [categoriesResult, itemsResult, settingsResult] =
-      await Promise.all([
-        dynamoDbDocumentClient.send(categoriesCommand),
-        dynamoDbDocumentClient.send(itemsCommand),
-        dynamoDbDocumentClient.send(settingsCommand),
-      ]);
+    const [categoriesResult, itemsResult, settingsResult] = await Promise.all([
+      dynamoDbDocumentClient.send(categoriesCommand),
+      dynamoDbDocumentClient.send(itemsCommand),
+      dynamoDbDocumentClient.send(settingsCommand),
+    ]);
 
     const categories: StoreCategory[] = (categoriesResult.Items ?? []).map(
       (record) => {
@@ -256,6 +254,56 @@ export async function getStoreInventoryData(
     };
   } catch (e) {
     console.error("In getStoreInventoryData", e);
+    throw e;
+  }
+}
+
+export async function updateStoreSettings(
+  storeId: string,
+  storeSettings: StoreSettings
+): Promise<void> {
+  try {
+    const command = new UpdateCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: {
+        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+        sk: appConstants.DYNAMO_ENTITY_SETTINGS,
+      },
+      UpdateExpression:
+        "SET \
+            #templateId = :templateId, \
+            #themeId = :themeId, \
+            #contactInfo = :contactInfo, \
+            #purchaseRewards = :purchaseRewards, \
+            #socialMediaLinks = :socialMediaLinks, \
+            #currencies = :currencies, \
+            #general = :general, \
+            #customize = :customize \
+        ",
+      ExpressionAttributeNames: {
+        "#templateId": "templateId",
+        "#themeId": "themeId",
+        "#contactInfo": "contactInfo",
+        "#purchaseRewards": "purchaseRewards",
+        "#socialMediaLinks": "socialMediaLinks",
+        "#currencies": "currencies",
+        "#general": "general",
+        "#customize": "customize",
+      },
+      ExpressionAttributeValues: {
+        ":templateId": storeSettings.templateId,
+        ":themeId": storeSettings.themeId,
+        ":contactInfo": storeSettings.contactInfo,
+        ":purchaseRewards": storeSettings.purchaseRewards,
+        ":socialMediaLinks": storeSettings.socialMediaLinks,
+        ":currencies": storeSettings.currencies,
+        ":general": storeSettings.general,
+        ":customize": storeSettings.customize,
+      },
+    });
+    await dynamoDbDocumentClient.send(command);
+  } catch (e) {
+    console.error("In updateStoreSettings", e);
     throw e;
   }
 }
