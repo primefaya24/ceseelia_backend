@@ -7,6 +7,7 @@ import {DQS} from "./layers/core/utils/dqs/dqs";
 import {dqsHandler} from "./layers/core/utils/dqs";
 
 const app: Express = express();
+app.use(express.json());
 
 // Cookies & Cors Middlewares
 app.use(cookieParser());
