@@ -267,12 +267,13 @@ export interface StoreItem {
   storeItemPrice: number;
   storeItemDescription: string;
   storeItemIsActive: boolean;
-  storeItemTags: string;
+  storeItemHashtagIds: string[];
   storeItemDiscountPercent: number;
   storeItemCustomParams: StoreParameter[];
 }
 
 export function isStoreItemPure(storeItem: StoreItem): boolean {
+  const hashtagIdss = storeItem.storeItemHashtagIds;
   let pure =
     typeof storeItem.storeItemCategoryId === "string" &&
     Array.isArray(storeItem.storeItemImageUris) &&
@@ -281,7 +282,8 @@ export function isStoreItemPure(storeItem: StoreItem): boolean {
     typeof storeItem.storeItemPrice === "number" &&
     typeof storeItem.storeItemDescription === "string" &&
     typeof storeItem.storeItemIsActive === "boolean" &&
-    typeof storeItem.storeItemTags === "string" &&
+    Array.isArray(hashtagIdss) &&
+    hashtagIdss.every((hashtagId) => typeof hashtagId === "string") &&
     typeof storeItem.storeItemDiscountPercent === "number" &&
     Array.isArray(storeItem.storeItemCustomParams);
   for (let storeItemImageUri of storeItem.storeItemImageUris) {
@@ -294,6 +296,7 @@ export function isStoreItemPure(storeItem: StoreItem): boolean {
 }
 
 export function isStoreItemValid(storeItem: StoreItem): boolean {
+  const hashtagIdss = storeItem.storeItemHashtagIds;
   let valid =
     storeItem.storeItemCategoryId.length > 0 &&
     storeItem.storeItemName.length > 0;
@@ -302,6 +305,9 @@ export function isStoreItemValid(storeItem: StoreItem): boolean {
   }
   for (let storeItemCustomParam of storeItem.storeItemCustomParams) {
     valid = valid && isStoreParameterValid(storeItemCustomParam);
+  }
+  for (let hashtagId of hashtagIdss) {
+    valid = valid && hashtagId.length > 0;
   }
   return valid;
 }

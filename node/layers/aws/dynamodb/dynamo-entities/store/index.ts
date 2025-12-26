@@ -96,7 +96,7 @@ export async function updateStoreItem(
         sk: appConstants.DYNAMO_ENTITY_ITEM + "#" + itemId,
       },
       UpdateExpression:
-        "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemTags = :storeItemTags, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams",
+        "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemHashtagIds = :storeItemHashtagIds, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams",
       ExpressionAttributeValues: {
         ":storeItemId": itemId,
         ":storeItemCategoryId": storeItem.storeItemCategoryId,
@@ -106,7 +106,7 @@ export async function updateStoreItem(
         ":storeItemPrice": storeItem.storeItemPrice,
         ":storeItemDescription": storeItem.storeItemDescription,
         ":storeItemIsActive": storeItem.storeItemIsActive,
-        ":storeItemTags": storeItem.storeItemTags,
+        ":storeItemHashtagIds": storeItem.storeItemHashtagIds,
         ":storeItemDiscountPercent": storeItem.storeItemDiscountPercent,
         ":storeItemCustomParams": storeItem.storeItemCustomParams,
       },
