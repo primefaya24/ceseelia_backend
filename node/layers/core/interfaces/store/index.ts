@@ -190,7 +190,7 @@ export interface StoreCategory {
   storeCategoryBannerUri: string;
   storeCategoryIsActive: boolean;
   storeCategoryDiscountPercent: number;
-  storeCategoriyItemGroups: string[];
+  storeCategoriyHashtags: string[];
   storeCategoryItemCount: number;
 }
 
@@ -205,13 +205,13 @@ export function initStoreCategory(
     storeCategoryBannerUri: "",
     storeCategoryIsActive: true,
     storeCategoryDiscountPercent: 0,
-    storeCategoriyItemGroups: [],
+    storeCategoriyHashtags: [],
     storeCategoryItemCount: 0,
   };
 }
 
 export function isStoreCategoryPure(storeCategory: StoreCategory): boolean {
-  const groups = storeCategory.storeCategoriyItemGroups;
+  const groups = storeCategory.storeCategoriyHashtags;
   return (
     typeof storeCategory.storeCategoryName === "string" &&
     typeof storeCategory.storeCategoryBannerUri === "string" &&
