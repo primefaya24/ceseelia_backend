@@ -4,6 +4,8 @@
 
 import {
   appConstants,
+  PRIORITY,
+  PRIORITY_DEFAULT,
   STORE_CURRENCY_FLOAT,
   STORE_PARAM_TYPE,
 } from "../../../../constants";
@@ -183,8 +185,8 @@ export function initStoreCurrency(): StoreCurrency {
 // STORE#STORE_ID, CATEGORY#CATEGORY_ID
 export interface StoreCategory {
   storeCategoriyId: string;
+  storeCategoriyPriority: PRIORITY;
   storeCategoryName: string;
-  storeCategoryDescription: string;
   storeCategoryBannerUri: string;
   storeCategoryIsActive: boolean;
   storeCategoryDiscountPercent: number;
@@ -197,8 +199,8 @@ export function initStoreCategory(
 ): StoreCategory {
   return {
     storeCategoriyId: storeCategoriyId,
+    storeCategoriyPriority: PRIORITY_DEFAULT,
     storeCategoryName: storeCategoryName,
-    storeCategoryDescription: "",
     storeCategoryBannerUri: "",
     storeCategoryIsActive: true,
     storeCategoryDiscountPercent: 0,
@@ -209,7 +211,6 @@ export function initStoreCategory(
 export function isStoreCategoryPure(storeCategory: StoreCategory): boolean {
   return (
     typeof storeCategory.storeCategoryName === "string" &&
-    typeof storeCategory.storeCategoryDescription === "string" &&
     typeof storeCategory.storeCategoryBannerUri === "string" &&
     typeof storeCategory.storeCategoryIsActive === "boolean" &&
     typeof storeCategory.storeCategoryDiscountPercent === "number" &&

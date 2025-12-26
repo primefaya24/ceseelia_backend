@@ -237,3 +237,9 @@ export const appConstants = {
 export type STORE_PARAM_TYPE = 'SINGLE_SELECT' | 'MULTI_SELECT';
 export type STORE_CURRENCY_CODE = 'USD' | 'CAD' | 'AUD';
 export type STORE_CURRENCY_FLOAT = 'LEFT' | 'RIGHT';
+
+// Priority
+export type PRIORITY = 'PRIORITY_HIGHT' | 'PRIORITY_MEDIUM' | 'PRIORITY_DEFAULT';
+export const PRIORITY_HIGHT = 'PRIORITY_HIGHT';
+export const PRIORITY_MEDIUM = 'PRIORITY_MEDIUM';
+export const PRIORITY_DEFAULT = 'PRIORITY_DEFAULT';
