@@ -190,7 +190,7 @@ export interface StoreCategory {
   storeCategoryBannerUri: string;
   storeCategoryIsActive: boolean;
   storeCategoryDiscountPercent: number;
-  storeCategoriyHashtags: string[];
+  storeCategoriyHashtags: StoreCategoryHashtag[];
   storeCategoryItemCount: number;
 }
 
@@ -211,22 +211,46 @@ export function initStoreCategory(
 }
 
 export function isStoreCategoryPure(storeCategory: StoreCategory): boolean {
-  const groups = storeCategory.storeCategoriyHashtags;
+  const hashtags = storeCategory.storeCategoriyHashtags;
   return (
     typeof storeCategory.storeCategoryName === "string" &&
     typeof storeCategory.storeCategoryBannerUri === "string" &&
     typeof storeCategory.storeCategoryIsActive === "boolean" &&
     typeof storeCategory.storeCategoryDiscountPercent === "number" &&
-    Array.isArray(groups) &&
-    groups.every((groupId) => typeof groupId === "string") &&
+    Array.isArray(hashtags) &&
+    hashtags.every((hashtag) => isStoreCategoryHashtagPure(hashtag)) &&
     typeof storeCategory.storeCategoryItemCount === "number"
   );
 }
 
 export function isStoreCategoryValid(storeCategory: StoreCategory): boolean {
+  const hashtags = storeCategory.storeCategoriyHashtags;
   return (
     storeCategory.storeCategoryName.length > 0 &&
-    storeCategory.storeCategoryDiscountPercent >= 0
+    storeCategory.storeCategoryDiscountPercent >= 0 &&
+    hashtags.every((hashtag) => isStoreCategoryHashtagValid(hashtag))
+  );
+}
+
+export interface StoreCategoryHashtag {
+  id: string;
+  value: string;
+}
+
+export function isStoreCategoryHashtagPure(
+  storeCategoryHashtag: StoreCategoryHashtag
+): boolean {
+  return (
+    typeof storeCategoryHashtag.id === "string" &&
+    typeof storeCategoryHashtag.value === "string"
+  );
+}
+
+export function isStoreCategoryHashtagValid(
+  storeCategoryHashtag: StoreCategoryHashtag
+): boolean {
+  return (
+    storeCategoryHashtag.id.length > 0 && storeCategoryHashtag.value.length > 0
   );
 }
 
