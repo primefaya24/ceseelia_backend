@@ -155,7 +155,7 @@ export async function updateStoreCategory(
         sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + categoryId,
       },
       UpdateExpression:
-        "SET storeCategoriyId = :storeCategoriyId, storeCategoriyPriority = :storeCategoriyPriority, storeCategoryName = :storeCategoryName, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoryItemCount = :storeCategoryItemCount",
+        "SET storeCategoriyId = :storeCategoriyId, storeCategoriyPriority = :storeCategoriyPriority, storeCategoryName = :storeCategoryName, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoriyItemGroups = :storeCategoriyItemGroups, storeCategoryItemCount = :storeCategoryItemCount",
       ExpressionAttributeValues: {
         ":storeCategoriyId": categoryId,
         ":storeCategoriyPriority": storeCategory.storeCategoriyPriority,
@@ -164,6 +164,7 @@ export async function updateStoreCategory(
         ":storeCategoryIsActive": storeCategory.storeCategoryIsActive,
         ":storeCategoryDiscountPercent":
           storeCategory.storeCategoryDiscountPercent,
+        ":storeCategoriyItemGroups": storeCategory.storeCategoriyItemGroups,
         ":storeCategoryItemCount": 0,
       },
     });

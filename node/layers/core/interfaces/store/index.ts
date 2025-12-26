@@ -190,6 +190,7 @@ export interface StoreCategory {
   storeCategoryBannerUri: string;
   storeCategoryIsActive: boolean;
   storeCategoryDiscountPercent: number;
+  storeCategoriyItemGroups: string[];
   storeCategoryItemCount: number;
 }
 
@@ -204,16 +205,20 @@ export function initStoreCategory(
     storeCategoryBannerUri: "",
     storeCategoryIsActive: true,
     storeCategoryDiscountPercent: 0,
+    storeCategoriyItemGroups: [],
     storeCategoryItemCount: 0,
   };
 }
 
 export function isStoreCategoryPure(storeCategory: StoreCategory): boolean {
+  const groups = storeCategory.storeCategoriyItemGroups;
   return (
     typeof storeCategory.storeCategoryName === "string" &&
     typeof storeCategory.storeCategoryBannerUri === "string" &&
     typeof storeCategory.storeCategoryIsActive === "boolean" &&
     typeof storeCategory.storeCategoryDiscountPercent === "number" &&
+    Array.isArray(groups) &&
+    groups.every((groupId) => typeof groupId === "string") &&
     typeof storeCategory.storeCategoryItemCount === "number"
   );
 }
