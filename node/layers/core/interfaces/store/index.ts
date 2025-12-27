@@ -67,7 +67,10 @@ export interface StoreSettings {
   templateId: string;
   themeId: string;
 
-  contactInfo: {
+  storeInfo: {
+    storeName: string;
+    slogan: string;
+    logoUri: string;
     phoneNumber: string;
     emailaddress: string;
   };
@@ -118,7 +121,10 @@ export function initStoreSettings(): StoreSettings {
     templateId: appConstants.STORE_TEMPLATE_DEFAULT,
     themeId: appConstants.STORE_THEME_DEFAULT,
     customize: {},
-    contactInfo: {
+    storeInfo: {
+      storeName: "",
+      slogan: "",
+      logoUri: "",
       phoneNumber: "",
       emailaddress: "",
     },
@@ -177,7 +183,7 @@ export function initStoreCurrency(): StoreCurrency {
     currencyCode: "USD",
     currencySign: "$",
     currencyFloat: "LEFT",
-    currencyIsDefault: true
+    currencyIsDefault: true,
   };
 }
 

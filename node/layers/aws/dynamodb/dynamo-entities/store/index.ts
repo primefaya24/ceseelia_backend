@@ -274,7 +274,7 @@ export async function updateStoreSettings(
         "SET \
             #templateId = :templateId, \
             #themeId = :themeId, \
-            #contactInfo = :contactInfo, \
+            #storeInfo = :storeInfo, \
             #purchaseRewards = :purchaseRewards, \
             #socialMediaLinks = :socialMediaLinks, \
             #currencies = :currencies, \
@@ -284,7 +284,7 @@ export async function updateStoreSettings(
       ExpressionAttributeNames: {
         "#templateId": "templateId",
         "#themeId": "themeId",
-        "#contactInfo": "contactInfo",
+        "#storeInfo": "storeInfo",
         "#purchaseRewards": "purchaseRewards",
         "#socialMediaLinks": "socialMediaLinks",
         "#currencies": "currencies",
@@ -294,7 +294,7 @@ export async function updateStoreSettings(
       ExpressionAttributeValues: {
         ":templateId": storeSettings.templateId,
         ":themeId": storeSettings.themeId,
-        ":contactInfo": storeSettings.contactInfo,
+        ":storeInfo": storeSettings.storeInfo,
         ":purchaseRewards": storeSettings.purchaseRewards,
         ":socialMediaLinks": storeSettings.socialMediaLinks,
         ":currencies": storeSettings.currencies,

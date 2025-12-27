@@ -4,10 +4,9 @@ import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../config";
 import { appConstants } from "../../../../constants";
-import { createStore } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
-import { StoreOverview } from "../../../../layers/core/interfaces/store";
-import { listPrefixFiles } from "../../../../layers/aws/s3";
+import { getUploadSignedUrl } from "../../../../layers/aws/s3";
 dotenv.config();
+const ULID = require("ulid");
 
 /*
  * Request/Response interfaces
@@ -20,31 +19,34 @@ interface ResBody {}
  * Module Route
  */
 module.exports = function (router: Router): void {
-  router.post("/create", (req: Request, res: Response): void => {
-    validateAndExecuteHttpApiRoute(
-      req,
-      res,
-      pureRequestParams,
-      validRequestParams,
-      executeRouteCore,
-      true,
-      true
-    );
-  });
+  router.get(
+    "/get-image-upload-url/:storeId/:imageType",
+    (req: Request, res: Response): void => {
+      validateAndExecuteHttpApiRoute(
+        req,
+        res,
+        pureRequestParams,
+        validRequestParams,
+        executeRouteCore,
+        true
+      );
+    }
+  );
 };
 
 function pureRequestParams(req: Request): boolean {
-  return (
-    typeof req.body.storeName === "string" &&
-    typeof req.body.storeSlug === "string"
-  );
+  return true;
 }
 
 /*
  * Ensure request params are valid
  */
 function validRequestParams(req: Request): boolean {
-  return req.body.storeName.length > 0 && req.body.storeSlug.length > 0;
+  return (
+    req.params.imageType === "png" ||
+    req.params.imageType === "jpg" ||
+    req.params.imageType === "jpeg"
+  );
 }
 
 /*
@@ -53,17 +55,22 @@ function validRequestParams(req: Request): boolean {
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     // Extract params
-    const storeName = req.body.storeName;
-    const storeSlug = req.body.storeSlug;
+    const storeId = req.params.storeId;
+    const imageType = req.params.imageType;
 
-    // Create store
-    const storeOverview: StoreOverview = await createStore(
-      storeName,
-      storeSlug
+    // Create upload signed url
+    const imageAsset = {
+      key: `store/${storeId}/images/logo/${ULID.ulid()}.${imageType}`,
+      url: "",
+    };
+    imageAsset.url = await getUploadSignedUrl(
+      S3_STORAGE_BUCKET_NAME,
+      imageAsset.key,
+      `image/${imageType}`
     );
 
     // Respond to user
-    res.send(storeOverview);
+    res.send(imageAsset);
   } catch (e) {
     if (IN_DEV) {
       console.error(e);

@@ -2,13 +2,14 @@
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
-import { IN_DEV } from "../../../../config";
+import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../config";
 import { appConstants } from "../../../../constants";
 import {
   isStoreSettingsPure,
   isStoreSettingsValid,
 } from "../../../../layers/core/interfaces/store";
 import { updateStoreSettings } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { deleteS3Keys, listPrefixFiles } from "../../../../layers/aws/s3";
 dotenv.config();
 
 /*
@@ -61,6 +62,26 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Extract params
     const storeId = req.body.storeId;
     const storeSettings = req.body.storeSettings;
+
+    // Fetch current s3 image objects
+    const currentS3Uris: string[] = (
+      await listPrefixFiles(
+        S3_STORAGE_BUCKET_NAME,
+        `store/${storeId}/images/logo/`
+      )
+    )
+      .map((o) => o.Key)
+      .filter((key): key is string => typeof key === "string");
+
+    const logoUri = storeSettings?.storeInfo?.logoUri || "";
+    const keysToDelete =
+      logoUri.length === 0
+        ? currentS3Uris
+        : currentS3Uris.filter((key) => key !== logoUri);
+
+    if (keysToDelete.length > 0) {
+      await deleteS3Keys(S3_STORAGE_BUCKET_NAME, keysToDelete);
+    }
 
     // Update settings
     updateStoreSettings(storeId, storeSettings);
