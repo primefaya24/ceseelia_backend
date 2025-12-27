@@ -169,6 +169,7 @@ export interface StoreCurrency {
   currencyCode: string;
   currencySign: string;
   currencyFloat: STORE_CURRENCY_FLOAT;
+  currencyIsDefault: boolean;
 }
 
 export function initStoreCurrency(): StoreCurrency {
@@ -176,6 +177,7 @@ export function initStoreCurrency(): StoreCurrency {
     currencyCode: "USD",
     currencySign: "$",
     currencyFloat: "LEFT",
+    currencyIsDefault: true
   };
 }
 
