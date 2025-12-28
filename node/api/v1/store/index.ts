@@ -12,6 +12,7 @@ const storeRouter: Router = Router();
 require("./create/index")(storeRouter);
 require("./delete/index")(storeRouter);
 require("./get-logo-upload-url/index")(storeRouter);
+require("./get-promo-image-upload-urls/index")(storeRouter);
 require("./update-settings/index")(storeRouter);
 
 // Paths
