@@ -11,7 +11,11 @@ import {
 } from "../../../../layers/core/interfaces/store";
 import { updateStoreSettings } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../layers/aws/s3";
-import { cleanUpS3Folder, extractStorePromoImageUris } from "../../../../layers/core/utils";
+import {
+  cleanUpS3Folder,
+  extractStoreHeaderStripImageUri,
+  extractStorePromoImageUris,
+} from "../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -70,8 +74,16 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       storeSettings?.storeInfo?.logoUri || "",
     ]);
 
+    // Clean up s3 leaks - store header strip
+    await cleanUpS3Folder(`store/${storeId}/images/header/`, [
+      extractStoreHeaderStripImageUri(storeSettings),
+    ]);
+
     // Clean up s3 leaks - store promos
-    await cleanUpS3Folder(`store/${storeId}/images/promo/`, extractStorePromoImageUris(storeSettings as StoreSettings));
+    await cleanUpS3Folder(
+      `store/${storeId}/images/promo/`,
+      extractStorePromoImageUris(storeSettings as StoreSettings)
+    );
 
     // Update settings
     updateStoreSettings(storeId, storeSettings);

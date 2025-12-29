@@ -11,6 +11,7 @@ const storeRouter: Router = Router();
 // Routes
 require("./create/index")(storeRouter);
 require("./delete/index")(storeRouter);
+require("./get-header-strip-image-upload-url/index")(storeRouter);
 require("./get-logo-upload-url/index")(storeRouter);
 require("./get-promo-image-upload-urls/index")(storeRouter);
 require("./update-settings/index")(storeRouter);

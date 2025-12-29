@@ -590,6 +590,17 @@ export async function cleanUpS3Folder(
   }
 }
 
+export function extractStoreHeaderStripImageUri(
+  storeSettings: StoreSettings
+): string {
+  switch (storeSettings.templateId) {
+    case appConstants.STORE_TEMPLATE_DEFAULT:
+      return storeSettings.customize.header.headerImageStripUri;
+    default:
+      return "";
+  }
+}
+
 export function extractStorePromoImageUris(
   storeSettings: StoreSettings
 ): string[] {
