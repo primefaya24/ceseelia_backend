@@ -3,8 +3,10 @@ import zlib from "zlib";
 import moment from "moment-timezone";
 import { AppBoolean, AppNumber } from "../interfaces/elements";
 import { appConstants } from "../../../constants";
-import { IN_DEV, STAGE } from "../../../config";
+import { IN_DEV, S3_STORAGE_BUCKET_NAME, STAGE } from "../../../config";
 import { jwtDecode } from "jwt-decode";
+import { deleteS3Keys, listPrefixFiles } from "../../aws/s3";
+import { StoreSettings } from "../interfaces/store";
 
 /*
  * Send Https request with given body and options
@@ -555,4 +557,53 @@ export function formatEpochToFullReadableDate(
   return `${datePart} (${timePart})`;
 }
 
-export const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+export const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+export async function cleanUpS3Folder(
+  folderUri: string,
+  keepImageUris: string[]
+) {
+  try {
+    const currentS3Uris: string[] = (
+      await listPrefixFiles(S3_STORAGE_BUCKET_NAME, folderUri)
+    )
+      .map((o) => o.Key)
+      .filter((key): key is string => typeof key === "string");
+
+    const imageInputUris = Array.isArray(keepImageUris)
+      ? new Set(
+          keepImageUris.filter(
+            (uri: unknown): uri is string =>
+              typeof uri === "string" && uri.trim().length > 0
+          )
+        )
+      : new Set<string>();
+    const keysToDelete: string[] = currentS3Uris.filter(
+      (key) => !imageInputUris.has(key)
+    );
+
+    if (keysToDelete.length > 0) {
+      await deleteS3Keys(S3_STORAGE_BUCKET_NAME, keysToDelete);
+    }
+  } catch (e) {
+    console.error("In cleanUpS3Folder", e);
+  }
+}
+
+export function extractStorePromoImageUris(
+  storeSettings: StoreSettings
+): string[] {
+  const promoUris: string[] = [];
+  switch (storeSettings.templateId) {
+    case appConstants.STORE_TEMPLATE_DEFAULT:
+      for (let promoImage of storeSettings.customize.promoContent.promoImages) {
+        if (promoImage.imageUri && promoImage.imageUri.length > 0) {
+          promoUris.push(promoImage.imageUri);
+        }
+      }
+      break;
+    default:
+      break;
+  }
+  return promoUris;
+}

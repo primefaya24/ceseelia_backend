@@ -10,6 +10,7 @@ import {
 } from "../../../../../layers/core/interfaces/store";
 import { updateStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
+import { cleanUpS3Folder } from "../../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -63,24 +64,12 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeCategoryId = req.body.categoryId;
     const isUpdate = req.body.isUpdate;
 
-    // Fetch current s3 image objects
+    // Clean up s3 leaks - category images
     if (isUpdate) {
-      const currentS3Uris: string[] = (await listPrefixFiles(
-        S3_STORAGE_BUCKET_NAME,
-        `store/${storeId}/category/${storeCategoryId}/images/`
-      ))
-        .map(o => o.Key)
-        .filter((key): key is string => typeof key === "string");
-
-      const bannerUri = storeCategory?.storeCategoryBannerUri || "";
-      const keysToDelete =
-        bannerUri.length === 0
-          ? currentS3Uris
-          : currentS3Uris.filter(key => key !== bannerUri);
-
-      if (keysToDelete.length > 0) {
-        await deleteS3Keys(S3_STORAGE_BUCKET_NAME, keysToDelete);
-      }
+      await cleanUpS3Folder(
+        `store/${storeId}/category/${storeCategoryId}/images/`,
+        [storeCategory?.storeCategoryBannerUri || ""]
+      );
     }
 
     // Create category

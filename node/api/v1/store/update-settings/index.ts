@@ -7,9 +7,11 @@ import { appConstants } from "../../../../constants";
 import {
   isStoreSettingsPure,
   isStoreSettingsValid,
+  StoreSettings,
 } from "../../../../layers/core/interfaces/store";
 import { updateStoreSettings } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../layers/aws/s3";
+import { cleanUpS3Folder, extractStorePromoImageUris } from "../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -63,25 +65,13 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeId = req.body.storeId;
     const storeSettings = req.body.storeSettings;
 
-    // Fetch current s3 image objects
-    const currentS3Uris: string[] = (
-      await listPrefixFiles(
-        S3_STORAGE_BUCKET_NAME,
-        `store/${storeId}/images/logo/`
-      )
-    )
-      .map((o) => o.Key)
-      .filter((key): key is string => typeof key === "string");
+    // Clean up s3 leaks - store logo
+    await cleanUpS3Folder(`store/${storeId}/images/logo/`, [
+      storeSettings?.storeInfo?.logoUri || "",
+    ]);
 
-    const logoUri = storeSettings?.storeInfo?.logoUri || "";
-    const keysToDelete =
-      logoUri.length === 0
-        ? currentS3Uris
-        : currentS3Uris.filter((key) => key !== logoUri);
-
-    if (keysToDelete.length > 0) {
-      await deleteS3Keys(S3_STORAGE_BUCKET_NAME, keysToDelete);
-    }
+    // Clean up s3 leaks - store promos
+    await cleanUpS3Folder(`store/${storeId}/images/promo/`, extractStorePromoImageUris(storeSettings as StoreSettings));
 
     // Update settings
     updateStoreSettings(storeId, storeSettings);

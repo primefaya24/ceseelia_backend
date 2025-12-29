@@ -10,6 +10,7 @@ import {
 } from "../../../../../layers/core/interfaces/store";
 import { updateStoreItem } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
+import { cleanUpS3Folder } from "../../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -54,31 +55,12 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeItemId = req.body.storeItemId;
     const isUpdate = req.body.isUpdate;
 
-    // Fetch current s3 image objects
+    // Clean up s3 leaks - item images
     if (isUpdate) {
-      const currentS3Uris: string[] = (
-        await listPrefixFiles(
-          S3_STORAGE_BUCKET_NAME,
-          `store/${storeId}/item/${storeItemId}/images/`
-        )
-      )
-        .map((o) => o.Key)
-        .filter((key): key is string => typeof key === "string");
-
-      const imageInputUris = Array.isArray(storeItem?.storeItemImageUris)
-        ? new Set(
-            storeItem.storeItemImageUris.filter(
-              (uri: unknown): uri is string => typeof uri === "string"
-            )
-          )
-        : new Set<string>();
-      const keysToDelete: string[] = currentS3Uris.filter(
-        (key) => !imageInputUris.has(key)
+      await cleanUpS3Folder(
+        `store/${storeId}/item/${storeItemId}/images/`,
+        storeItem?.storeItemImageUris
       );
-
-      if (keysToDelete.length > 0) {
-        await deleteS3Keys(S3_STORAGE_BUCKET_NAME, keysToDelete);
-      }
     }
 
     // Create item

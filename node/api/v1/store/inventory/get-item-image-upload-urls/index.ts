@@ -20,7 +20,7 @@ interface ResBody {}
  */
 module.exports = function (router: Router): void {
   router.get(
-    "/get-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount",
+    "/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount",
     (req: Request, res: Response): void => {
       validateAndExecuteHttpApiRoute(
         req,
