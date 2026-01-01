@@ -9,6 +9,8 @@ import {dqsHandler} from "./layers/core/utils/dqs";
 const app: Express = express();
 app.use(express.json());
 
+app.set('trust proxy', true);
+
 // Cookies & Cors Middlewares
 app.use(cookieParser());
 app.use(cors({

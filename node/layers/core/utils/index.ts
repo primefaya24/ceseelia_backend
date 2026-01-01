@@ -1,12 +1,13 @@
 import https from "https";
 import zlib from "zlib";
 import moment from "moment-timezone";
-import { AppBoolean, AppNumber } from "../interfaces/elements";
+import type { Request as ExpressRequest } from "express";
 import { appConstants } from "../../../constants";
 import { IN_DEV, S3_STORAGE_BUCKET_NAME, STAGE } from "../../../config";
 import { jwtDecode } from "jwt-decode";
 import { deleteS3Keys, listPrefixFiles } from "../../aws/s3";
 import { StoreSettings } from "../interfaces/store";
+import geoip from "geoip-lite";
 
 /*
  * Send Https request with given body and options
@@ -617,4 +618,78 @@ export function extractStorePromoImageUris(
       break;
   }
   return promoUris;
+}
+
+export function getClientIp(req: Request | ExpressRequest): string | undefined {
+  if (IN_DEV) {
+    return appConstants.TEST_IPS_AU[2];
+  }
+  const getHeaderValue = (headerName: string): string | undefined => {
+    const domHeaders = (req as Request).headers;
+    if (domHeaders && typeof (domHeaders as any).get === "function") {
+      const domValue = (domHeaders as Headers).get(headerName);
+      if (domValue) {
+        return domValue;
+      }
+    }
+
+    const expressReq = req as ExpressRequest;
+    if (typeof expressReq?.header === "function") {
+      const expressValue = expressReq.header(headerName);
+      if (expressValue) {
+        return expressValue;
+      }
+    }
+
+    const expressHeaders = expressReq?.headers;
+    if (expressHeaders) {
+      const loweredName = headerName.toLowerCase();
+      const rawHeader =
+        expressHeaders[loweredName] ?? expressHeaders[headerName];
+      if (Array.isArray(rawHeader)) {
+        return rawHeader[0];
+      }
+      if (typeof rawHeader === "string") {
+        return rawHeader;
+      }
+    }
+
+    return undefined;
+  };
+
+  const cfConnectingIp = getHeaderValue("cf-connecting-ip");
+  if (cfConnectingIp) {
+    return cfConnectingIp;
+  }
+
+  const forwardedFor = getHeaderValue("x-forwarded-for");
+  if (forwardedFor) {
+    const forwardedIp = forwardedFor.split(",")[0]?.trim();
+    if (forwardedIp) {
+      return forwardedIp;
+    }
+  }
+
+  const requestWithSocket = req as ExpressRequest & {
+    socket?: { remoteAddress?: string };
+  };
+
+  return requestWithSocket.socket?.remoteAddress;
+}
+
+export function resolveCurrencyFromGeo(geo: geoip.Lookup | null): string {
+  if (!geo?.country) {
+    return "USD";
+  }
+
+  switch (geo.country) {
+    case "CA":
+      return "CAD";
+    case "AU":
+      return "AUD";
+    case "US":
+      return "USD";
+    default:
+      return "USD";
+  }
 }

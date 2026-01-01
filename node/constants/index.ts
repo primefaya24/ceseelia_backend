@@ -211,7 +211,7 @@ export const appConstants = {
 
   // Store themes
   STORE_TEMPLATE_DEFAULT: "TEMPLATE_DEFAULT",
-  STORE_THEME_DEFAULT: 'THEME_DEFAULT',
+  STORE_THEME_DEFAULT: "THEME_DEFAULT",
 
   // Store order type
   STORE_ORDER_TYPE_DELIVERY: "DELIVERY",
@@ -232,14 +232,34 @@ export const appConstants = {
   // Store rewards redemption
   STORE_REWARDS_REDEMPTION_METHOD_POINTS_TO_MONEY: "POINTS_TO_MONEY",
   STORE_REWARDS_REDEMPTION_METHOD_POINTS_TO_DISCOUNT: "POINTS_TO_DISCOUNT",
+
+  // IPs
+  TEST_IPS_CA: [
+    "24.48.0.1", // Videotron (QC)
+    "99.224.0.1", // Bell Canada (ON)
+    "142.114.0.1", // TELUS
+  ],
+  TEST_IPS_AU: [
+    "1.128.0.1", // Telstra
+    "13.54.0.1", // AWS Sydney
+    "139.130.0.1", // Telstra
+  ],
+  TEST_IPS_US: [
+    "8.8.8.8", // Google Public DNS
+    "3.80.0.1", // AWS (us-east-1)
+    "52.0.0.1", // AWS US
+  ],
 };
 
-export type STORE_PARAM_TYPE = 'SINGLE_SELECT' | 'MULTI_SELECT';
-export type STORE_CURRENCY_CODE = 'USD' | 'CAD' | 'AUD';
-export type STORE_CURRENCY_FLOAT = 'LEFT' | 'RIGHT';
+export type STORE_PARAM_TYPE = "SINGLE_SELECT" | "MULTI_SELECT";
+export type STORE_CURRENCY_CODE = "USD" | "CAD" | "AUD";
+export type STORE_CURRENCY_FLOAT = "LEFT" | "RIGHT";
 
 // Priority
-export type PRIORITY = 'PRIORITY_HIGHT' | 'PRIORITY_MEDIUM' | 'PRIORITY_DEFAULT';
-export const PRIORITY_HIGHT = 'PRIORITY_HIGHT';
-export const PRIORITY_MEDIUM = 'PRIORITY_MEDIUM';
-export const PRIORITY_DEFAULT = 'PRIORITY_DEFAULT';
+export type PRIORITY =
+  | "PRIORITY_HIGHT"
+  | "PRIORITY_MEDIUM"
+  | "PRIORITY_DEFAULT";
+export const PRIORITY_HIGHT = "PRIORITY_HIGHT";
+export const PRIORITY_MEDIUM = "PRIORITY_MEDIUM";
+export const PRIORITY_DEFAULT = "PRIORITY_DEFAULT";

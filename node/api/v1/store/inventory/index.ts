@@ -10,6 +10,7 @@ const storeInventoryRouter: Router = Router();
 require("./create-item/index")(storeInventoryRouter);
 require("./delete-item/index")(storeInventoryRouter);
 require("./get-data/index")(storeInventoryRouter);
+require("./get-data-public/index")(storeInventoryRouter);
 require("./get-item-image-upload-urls/index")(storeInventoryRouter);
 
 // Export Router
