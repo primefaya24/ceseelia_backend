@@ -1,7 +1,7 @@
 // Imports
 import dotenv from 'dotenv';
 dotenv.config();
-import {appConstants} from '../constants';
+import { appConstants } from '../constants';
 
 /*
 * Environment
@@ -21,8 +21,8 @@ export const DB_TABLE_PRIME_DINE_NAME: string = `${appConstants.DYNAMO_TABLE_PRI
 /*
 * Cognito
 */
-export const COGNITO_USER_POOL_ID: string = IN_DEV ? "us-east-1_fxms3lOFG" : "us-east-1_Wbghzv4O6";
-export const COGNITO_USER_POOL_CLIENT_ID: string = IN_DEV ? "77leupl6s9fq62d4bdhnncd1sa" : "7spb46bjfte8ehci2d2nbnplue";
+export const COGNITO_USER_POOL_ID: string = IN_DEV ? "us-east-1_8P3eUW341" : "us-east-1_YLhkkYbV5";
+export const COGNITO_USER_POOL_CLIENT_ID: string = IN_DEV ? "5ilcur5227oa17kk48nifucnbp" : "1vj29aaq6grofl14ehfc43v580";
 export const COGNITO_USER_POOL_CLIENT_SECRET: string = IN_DEV ? "" : "";
 export const COGNITO_AUTH_DOMAIN: string = `https://${STAGE}.auth.awsfire.com/oauth2/token`;
 export const COGNITO_FEDERATION_REDIRECT_URL: string = IN_DEV ? "http://localhost:3100/" : "https://awsfire.com/";
