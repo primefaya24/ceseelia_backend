@@ -18,7 +18,7 @@ interface ResBody {}
 /*
  * Module Route
  */
-module.exports = function (router: Router): void {
+export default function registerRoute(router: Router): void {
   router.post("/update-store-info", (req: Request, res: Response): void => {
     validateAndExecuteHttpApiRoute(
       req,

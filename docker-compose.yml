@@ -3,6 +3,8 @@ services:
     container_name: node
     build:
       context: ./node
+    env_file:
+      - ./node/.env
     expose:
       - "3100"
     restart: always

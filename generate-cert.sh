@@ -13,7 +13,8 @@ fi
 EMAIL="support@primefaya.com"
 
 SUB_DOMAIN_NAME=$1
-SUB_DOMAIN="$SUB_DOMAIN_NAME.dinersxpress.com"
+BASE_DOMAIN="${BASE_DOMAIN:-ceseelia.northernhoop.com}"
+SUB_DOMAIN="$SUB_DOMAIN_NAME.$BASE_DOMAIN"   # e.g. ./generate-cert.sh api -> api.ceseelia.northernhoop.com
 
 # Run Certbot
 docker run --rm \

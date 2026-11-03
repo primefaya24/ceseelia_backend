@@ -28,7 +28,7 @@ interface ResBody {}
 /*
  * Module Route
  */
-module.exports = function (router: Router): void {
+export default function registerRoute(router: Router): void {
   router.put("/update-settings", (req: Request, res: Response): void => {
     validateAndExecuteHttpApiRoute(
       req,
@@ -67,11 +67,14 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     // Extract params
     const storeId = req.body.storeId;
-    const storeSettings = req.body.storeSettings;
+    const storeSettings: StoreSettings = req.body.storeSettings;
+
+    // Persist first, so a failed write never deletes images the stored settings still reference
+    await updateStoreSettings(storeId, storeSettings);
 
     // Clean up s3 leaks - store logo
     await cleanUpS3Folder(`store/${storeId}/images/logo/`, [
-      storeSettings?.storeInfo?.logoUri || "",
+      storeSettings.storeInfo.logoUri,
     ]);
 
     // Clean up s3 leaks - store header strip
@@ -82,11 +85,8 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Clean up s3 leaks - store promos
     await cleanUpS3Folder(
       `store/${storeId}/images/promo/`,
-      extractStorePromoImageUris(storeSettings as StoreSettings)
+      extractStorePromoImageUris(storeSettings)
     );
-
-    // Update settings
-    updateStoreSettings(storeId, storeSettings);
 
     // Respond to user
     res.send();

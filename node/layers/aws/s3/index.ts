@@ -90,7 +90,7 @@ export async function getObjectBase64(bucket: string, key: string): Promise<stri
 }
 
 export async function listPrefixFiles(bucket: string, prefix: string): Promise<any[]> {
-    let list: any[] = [];
+    const list: any[] = [];
     let continuationToken: string | undefined = undefined;
     do {
         const command = new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: continuationToken });

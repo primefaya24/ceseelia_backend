@@ -1,13 +1,10 @@
-// Imports
+// Template router: copy this folder when adding a new area.
+// Each endpoint lives in its own folder exporting `export default function registerRoute(router)`.
 import {Router} from 'express';
-import dotenv from 'dotenv';
-dotenv.config();
+import route_function from './function';
 
-// User Router
 const router: Router = Router();
 
-// Routes
-require('./route/index')(router);
+route_function(router);
 
-// Export Router
 export default router;

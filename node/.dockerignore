@@ -3,3 +3,6 @@ node_modules/
 *.ts
 *.tsx
 dist/**/*.map
+.env
+.env.*
+!.env.example

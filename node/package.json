@@ -1,12 +1,17 @@
 {
-  "name": "dinersxpress_web_server",
+  "name": "ceseelia_api",
   "version": "1.0.0",
-  "description": "DinersXpress Backend",
+  "description": "Ceseelia Backend API",
   "main": "index.js",
   "scripts": {
     "build": "npx tsc",
     "start": "node dist/index.js",
-    "dev": "concurrently \"npx tsc --watch\" \"nodemon -q dist/index.js\""
+    "dev": "concurrently \"npx tsc --watch\" \"nodemon -q dist/index.js\"",
+    "typecheck": "tsc --noEmit -p .",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "nodemonConfig": {
     "ext": "js,html,css"
@@ -41,12 +46,23 @@
     "ulid": "^3.0.1"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/geoip-lite": "^1.4.4",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.0.3",
+    "@types/supertest": "^7.2.1",
+    "aws-sdk-client-mock": "^4.1.0",
     "concurrently": "^9.1.2",
+    "eslint": "^10.14.0",
+    "globals": "^17.14.0",
     "nodemon": "^3.1.10",
-    "typescript": "^5.8.3"
+    "prettier": "^3.9.10",
+    "supertest": "^7.3.1",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.1.0"
   }
 }

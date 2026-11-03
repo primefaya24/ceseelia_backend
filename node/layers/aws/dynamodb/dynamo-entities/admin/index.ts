@@ -32,7 +32,7 @@ const DEFAULT_TABLE_NAME: string | undefined = DB_TABLE_NAME;
 
 export async function getAllStores() {
   try {
-    let allStores: StoreOverview[] = [];
+    const allStores: StoreOverview[] = [];
     let ExclusiveStartKey: any = undefined;
 
     do {

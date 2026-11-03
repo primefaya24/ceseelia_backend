@@ -20,9 +20,11 @@ ceseelia_backend/
 ├── docker-compose.yml, nginx/nginx.conf      # prod runtime (node + nginx + certbot)
 ├── *.sh / *.ps1                              # EC2 ops scripts (certs, swap, scp image, reboot)
 └── node/
-    ├── index.ts           # Express bootstrap, Stripe webhook route, DQS queue
-    ├── middleware.ts      # host-based router + request logger (only allowed hosts reach the API)
-    ├── config/index.ts    # STAGE, Cognito pool ids, table/bucket names  (STAGE is hard-coded!)
+    ├── index.ts           # starts the server (listen only)
+    ├── app.ts             # createApp(): CORS, Stripe webhook stub, JSON body, host routing
+    ├── middleware.ts      # host-based router + request logger (only ALLOWED_API_HOSTS reach the API)
+    ├── tests/             # vitest specs
+    ├── config/index.ts    # env-driven config (STAGE, hosts, CORS, Cognito, table/bucket)
     ├── constants/index.ts # appConstants (entity names, HTTP codes, limits, etc.)
     ├── api/v1/<area>/<route>/index.ts   # one file per endpoint
     └── layers/
@@ -42,32 +44,48 @@ a toolbox — reuse, but verify before relying on it.
 
 ```bash
 cd node
+cp .env.example .env   # first time only; never commit .env
 npm install
-npm run dev     # tsc --watch + nodemon dist/index.js  (http://0.0.0.0:3100)
-npm run build   # tsc -> dist/
-npm start       # node dist/index.js
+npm run dev        # tsc --watch + nodemon dist/index.js  (http://0.0.0.0:3100)
+npm run build      # tsc -> dist/
+npm start          # node dist/index.js
+npm test           # vitest (tests/*.test.ts, AWS mocked with aws-sdk-client-mock)
+npm run lint       # eslint (0 errors required; legacy warnings tolerated)
+npm run typecheck  # tsc --noEmit
 ```
 
+Config comes from env vars (see `node/.env.example`): `STAGE` (dev|prod), `ALLOWED_API_HOSTS`,
+`CORS_ORIGINS` (required in prod), plus optional overrides for table/bucket/Cognito ids. The
+server refuses to start in prod if required vars are missing.
+
 Deploy: build locally, build the Docker image from `node/` (it copies the prebuilt `dist/`), ship
-with `scp-docker-image.sh`, then `docker compose up -d` on the server. There are no tests and no CI.
+with `scp-docker-image.sh`, then `docker compose up -d` on the server. Compose loads
+`node/.env` into the container (`STAGE=prod` there). No CI yet (Stage 9.4).
 
 ## 3. Conventions (follow these when adding endpoints)
 
-Every endpoint is its own folder exporting `module.exports = function (router) {...}` and is
-registered with `require('./x/index')(router)` in the parent router's `index.ts`.
+Every endpoint is its own folder exporting `export default function registerRoute(router)`; the
+parent router's `index.ts` imports it and calls it (`route_create(storeRouter)`). Copy
+`api/z_fresh_route/` as a template.
 
 ```ts
-router.post('/create', (req, res) => {
-  validateAndExecuteHttpApiRoute(req, res, pureRequestParams, validRequestParams, executeRouteCore,
-    /* withAuth */ true, /* adminOnly */ false);
-});
-// pureRequestParams  -> type checks only   (400 "Bad request parameters")
-// validRequestParams -> value checks       (400 "Invalid request parameters")
-// executeRouteCore   -> try/catch, 500 on error, log only IN_DEV
+export default function registerRoute(router: Router): void {
+  router.post('/create', (req, res) => {
+    validateAndExecuteHttpApiRoute(req, res, pureRequestParams, validRequestParams, executeRouteCore,
+      /* withAuth */ true, /* adminOnly */ false);
+  });
+}
+// order: auth (401) -> adminOnly (403) -> pureRequestParams (400) -> validRequestParams (400) -> core
+// pureRequestParams  -> type checks only   ("Bad request parameters"); a throwing check = failed check
+// validRequestParams -> value checks       ("Invalid request parameters")
+// executeRouteCore   -> try/catch, 500 on error; the wrapper also catches anything that escapes
 ```
 
-- Auth: `Authorization: <Cognito access token>` header. The wrapper attaches `req.body.cognito_id`,
-  `cognito_groups`, `is_user_admin` (Cognito group `Admins`).
+- Auth: `Authorization: Bearer <Cognito access token>` (bare token also accepted). The token's
+  signature, issuer, expiry and `client_id` are always verified (dev included). The wrapper then
+  attaches verified `req.body.cognito_id`, `cognito_groups`, `is_user_admin` (group `Admins`).
+- The Express app is built in `app.ts` (`createApp()`, used by tests); `index.ts` only listens.
+- Add a test in `node/tests/` for any new validator or wrapper behaviour.
 - DynamoDB single table `ceseelia_<stage>` with `pk`/`sk`:
   | Entity | pk | sk |
   |---|---|---|
@@ -93,7 +111,7 @@ router.post('/create', (req, res) => {
 |---|---|---|
 | Store | `POST /store/create` (admin) | ✅ creates overview + default settings |
 | Store | `DELETE /store/delete/:storeId` | ❌ stub — does nothing |
-| Store | `PUT /store/update-settings` | ✅ saves settings, cleans logo/header/promo S3 leaks (`admin` block **not** persisted) |
+| Store | `PUT /store/update-settings` | ✅ validates, saves (awaited), then cleans logo/header/promo S3 leaks (`admin` block **not** persisted) |
 | Store | `GET /store/get-logo-upload-url/:storeId/:imageType` | ✅ |
 | Store | `GET /store/get-header-strip-image-upload-url/:storeId/:imageType` | ✅ |
 | Store | `GET /store/get-promo-image-upload-urls/:storeId/:pngCount/:jpgCount` | ✅ |
@@ -110,40 +128,40 @@ router.post('/create', (req, res) => {
 | User | `GET /user/get-my-profile[/:locale]`, `PUT /user/update-profile`, `PUT /user/update-fcm-token`, `DELETE /user/delete-user` | ⚠️ depend on a user record that nothing in this repo creates |
 | Merchant | `GET /merchant/path` | ❌ template stub |
 | Customer | — | ❌ empty router |
-| Payments | `POST /api/v1/website/listen-to-stripe-event/:websiteId` | ❌ handler body commented out; request never gets a response |
+| Payments | `POST /api/v1/website/listen-to-stripe-event/:websiteId` | ❌ returns 501 until Stage 5 (registered before `express.json()` so the raw body is available) |
 
 Infra helpers ready to reuse: SES `sendEmail` + templates, PDF invoice generator (`pdfkit`),
 Secrets Manager CRUD, Route53 subdomain records, S3 helpers, Stripe checkout link helper, the
 in-process DQS queue.
 
-## 5. Known issues & risks (fix early — mostly Stage 0)
+## 5. Known issues & risks
 
+Open:
 1. **No store-level authorization.** Any signed-in user can read/modify/delete any store's
    settings, categories, items and images by passing its `storeId`. There is no user↔store link.
+   → Stage 1.3
 2. **User records are never created.** `registerUser` exists but no route or Cognito trigger calls
    it, so `get-my-profile` fails for new sign-ups. `userStoreIds` (used by the frontend) is never
-   written.
-3. **Secrets in the repo.** `node/README.md` contains a real email + password in a shell snippet —
-   remove it and rotate that password. Cognito ids and the admin email are hard-coded in
-   `config`/`constants`.
-4. **Stage is hard-coded** (`STAGE = STAGE_DEV` in `config/index.ts`); prod builds point at dev
-   resources unless edited by hand. `ORIGIN`, `COGNITO_AUTH_DOMAIN`, `S3_*_ORIGIN` still reference
-   `awsfire.com`; `nginx.conf` still serves `api.dinersxpress.com`, while `middleware.ts` only
-   accepts `api.ceseelia.northernhoop.com` and the webapp prod config calls
-   `https://api.ceseelia.com/v1` (no `/api` prefix). These three must agree.
-5. `update-settings` does not `await updateStoreSettings(...)` (errors are swallowed, response sent
-   before write) and `isStoreSettingsPure/Valid` always return `true`. `extractStoreHeaderStripImageUri`
-   throws if `customize.header` is missing (default settings have `customize: {}`).
-6. `updateStoreSettings` ignores `storeSettings.admin`, so the admin's commission/“store live”
-   toggles in the UI never save.
-7. `updateStoreCategory` resets `storeCategoryItemCount` to 0 on every save; item counts are never
-   maintained.
-8. Deleting a category leaves its items orphaned; deleting a store is unimplemented.
-9. `validRequestParams` returns `true` on several routes (no checks on ids, counts, image types for
-   promo/item uploads — counts are unbounded).
-10. `cors({ origin: true, credentials: true })` reflects any origin.
-11. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
-12. No tests, no lint, no structured logging, `dist/` is committed in the history.
+   written. → Stage 1.1/1.2
+3. The password that used to be in `node/README.md` is still in **git history** — make sure it has
+   been rotated.
+4. `updateStoreSettings` ignores `storeSettings.admin`, so the admin's commission/“store live”
+   toggles in the UI never save. → Stage 1.6
+5. `updateStoreCategory` resets `storeCategoryItemCount` to 0 on every save. → Stage 2.1
+6. Deleting a category leaves its items orphaned; deleting a store is unimplemented. → 2.2 / 1.7
+7. `validRequestParams` returns `true` on several routes (no checks on ids, counts, image types for
+   promo/item uploads — counts are unbounded). → Stage 2.3
+8. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
+   saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3
+9. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
+10. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
+11. No structured logging, rate limiting or CI yet. → Stage 9
+
+Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
+`api.ceseelia.northernhoop.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);
+**token signatures were not verified in dev (and the stage was hard-coded to dev)**; the identity
+was read from an unverified decode; CORS reflected any origin; update-settings didn't await the
+write or validate; the Stripe webhook hung; secrets were in the README; there were no tests or lint.
 
 ---
 
@@ -151,19 +169,22 @@ in-process DQS queue.
 
 Each step should be small enough for one PR. "WA" = matching work in `ceseelia_webapp`.
 
-### Stage 0 — Foundations, config & security
-0.1 Remove credentials from `node/README.md`; rotate the password; add `.env.example`.
-0.2 Move `STAGE`, Cognito ids, table/bucket names, allowed hosts, CORS origins into env vars
-    (`process.env`), with a dev default. Fail fast on missing prod vars.
-0.3 Align domains: choose the API host (e.g. `api.ceseelia.com`) and path prefix (`/api/v1`);
-    update `middleware.ts`, `nginx/nginx.conf`, cert scripts, and WA `config.prod.json`.
-    Replace leftover `awsfire.com` / `dinersxpress` references.
-0.4 Restrict CORS to the webapp origins from env.
-0.5 Fix `update-settings`: `await` the write, implement `isStoreSettingsPure/Valid`, guard
-    `customize` access in the extract helpers.
-0.6 Add ESLint + Prettier, a `npm run typecheck`, and Vitest/Jest with supertest; first tests for
-    `validateAndExecuteHttpApiRoute` and the store entity (DynamoDB mocked).
-0.7 Stop tracking `node/dist` (already in `.gitignore`; `git rm -r --cached node/dist`).
+### Stage 0 — Foundations, config & security ✅ (done 2026-11-02)
+- [x] 0.1 Remove credentials from `node/README.md`; add `.env.example`. (Rotating the password
+      is a manual step.)
+- [x] 0.2 `STAGE`, Cognito ids, table/bucket names, allowed hosts, CORS origins come from env vars
+      with dev defaults; startup fails in prod if required vars are missing.
+- [x] 0.3 Domains aligned on `api.ceseelia.northernhoop.com` + `/api/v1` (middleware, nginx,
+      `generate-cert.sh`, WA `config.prod.json`); `awsfire`/`dinersxpress` references removed
+      from runtime config.
+- [x] 0.4 CORS restricted to `CORS_ORIGINS` (dev with no list = any origin).
+- [x] 0.5 `update-settings`: validators implemented, write awaited *before* S3 cleanup,
+      `customize` access guarded. Also: the auth wrapper verifies tokens in every stage, catches
+      errors, and returns 401/403 properly.
+- [x] 0.6 ESLint + Prettier + `typecheck`, Vitest + supertest + aws-sdk-client-mock; tests for the
+      wrapper, app/CORS/host routing, settings validators and the store entity. Routes moved
+      from `require()` to ES imports so they're testable.
+- [x] 0.7 `node/dist` was already untracked.
 
 ### Stage 1 — Users, merchants & store ownership
 1.1 User registration: add a Cognito **Post Confirmation** trigger (Lambda) *or* a

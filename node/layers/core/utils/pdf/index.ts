@@ -191,7 +191,7 @@ function generateInvoiceTable(doc: any, invoiceData: any): void {
 
 function generateInvoiceTableBottom(doc: any, subtotalPosition: any, totalAmount: any): void {
     try {
-        let tableGap = 0;
+        const tableGap = 0;
         doc.font("Helvetica-Bold");
         generateTableRow(
             doc,

@@ -21,7 +21,7 @@ interface ResBody {}
 /*
  * Module Route
  */
-module.exports = function (router: Router): void {
+export default function registerRoute(router: Router): void {
   router.delete(
     "/delete-item/:storeId/:storeItemId",
     (req: Request, res: Response): void => {

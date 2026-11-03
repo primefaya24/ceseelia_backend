@@ -3,7 +3,7 @@ import zlib from "zlib";
 import moment from "moment-timezone";
 import type { Request as ExpressRequest } from "express";
 import { appConstants } from "../../../constants";
-import { IN_DEV, S3_STORAGE_BUCKET_NAME, STAGE } from "../../../config";
+import { IN_DEV, S3_STORAGE_BUCKET_NAME, S3_STORAGE_BUCKET_ORIGIN, STAGE } from "../../../config";
 import { jwtDecode } from "jwt-decode";
 import { deleteS3Keys, listPrefixFiles } from "../../aws/s3";
 import { StoreSettings } from "../interfaces/store";
@@ -45,7 +45,7 @@ export function isUserAdmin(cognitoGroups: any): boolean {
   if (!cognitoGroups) {
     return false;
   }
-  for (let cognitoGroupName of cognitoGroups) {
+  for (const cognitoGroupName of cognitoGroups) {
     if (cognitoGroupName === appConstants.COGNITO_GROUP_ADMINS) {
       return true;
     }
@@ -226,7 +226,7 @@ export async function getLatLngTimezoneData(
  * Add days to a give date
  */
 export function addDays(date: any, days: any): any {
-  var result = new Date(date);
+  const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
 }
@@ -254,13 +254,13 @@ export function convertTime12to24(time12h: any): any {
  * Extract AM/PM time from date
  */
 export function formatAMPM(date: any): string {
-  var hours = date.getHours();
-  var minutes = date.getMinutes();
-  var ampm = hours >= 12 ? "PM" : "AM";
+  let hours = date.getHours();
+  let minutes = date.getMinutes();
+  const ampm = hours >= 12 ? "PM" : "AM";
   hours = hours % 12;
   hours = hours ? hours : 12; // the hour '0' should be '12'
   minutes = minutes < 10 ? "0" + minutes : minutes;
-  var strTime = hours + ":" + minutes + " " + ampm;
+  const strTime = hours + ":" + minutes + " " + ampm;
   return strTime;
 }
 
@@ -421,7 +421,7 @@ export function isUserAdminByDecodedToken(decodedToken: any) {
   if (decodedToken) {
     if (decodedToken["cognito:groups"]) {
       const cognitoGroups = decodedToken["cognito:groups"];
-      for (let cognitoGroupName of cognitoGroups) {
+      for (const cognitoGroupName of cognitoGroups) {
         if (cognitoGroupName.valueOf() === appConstants.COGNITO_GROUP_ADMINS) {
           return true;
         }
@@ -479,7 +479,7 @@ export function validateImageType(imageType: string): string | null {
  * Covvert Uri to Url
  */
 export function getStorageImageUrl(imageUri: string) {
-  return `https://dev.storage.ceseelia.com/${imageUri}`;
+  return `${S3_STORAGE_BUCKET_ORIGIN}${imageUri}`;
 }
 
 /*
@@ -595,8 +595,10 @@ export function extractStoreHeaderStripImageUri(
   storeSettings: StoreSettings
 ): string {
   switch (storeSettings.templateId) {
-    case appConstants.STORE_TEMPLATE_DEFAULT:
-      return storeSettings.customize.header.headerImageStripUri;
+    case appConstants.STORE_TEMPLATE_DEFAULT: {
+      const uri = storeSettings.customize?.header?.headerImageStripUri;
+      return typeof uri === "string" ? uri : "";
+    }
     default:
       return "";
   }
@@ -607,13 +609,18 @@ export function extractStorePromoImageUris(
 ): string[] {
   const promoUris: string[] = [];
   switch (storeSettings.templateId) {
-    case appConstants.STORE_TEMPLATE_DEFAULT:
-      for (let promoImage of storeSettings.customize.promoContent.promoImages) {
-        if (promoImage.imageUri && promoImage.imageUri.length > 0) {
+    case appConstants.STORE_TEMPLATE_DEFAULT: {
+      const promoImages = storeSettings.customize?.promoContent?.promoImages;
+      if (!Array.isArray(promoImages)) {
+        break;
+      }
+      for (const promoImage of promoImages) {
+        if (typeof promoImage?.imageUri === "string" && promoImage.imageUri.length > 0) {
           promoUris.push(promoImage.imageUri);
         }
       }
       break;
+    }
     default:
       break;
   }

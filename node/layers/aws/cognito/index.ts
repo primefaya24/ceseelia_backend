@@ -38,12 +38,21 @@ const cognitoClient: CognitoIdentityProviderClient = new CognitoIdentityProvider
     region: appConstants.DEFAULT_REGION,
 });
 
-const jwksClientInstance: jwksClient.JwksClient = jwksClient({
-    jwksUri: `https://cognito-idp.${appConstants.DEFAULT_REGION}.amazonaws.com/${COGNITO_USER_POOL_ID}/.well-known/jwks.json`,
-    cache: true,
-    cacheMaxEntries: 5,
-    cacheMaxAge: 10 * 60 * 1000 // 10 minutes
-});
+const jwksClients: Map<string, jwksClient.JwksClient> = new Map();
+
+function jwksClientForPool(userPoolId: string): jwksClient.JwksClient {
+    let client = jwksClients.get(userPoolId);
+    if (!client) {
+        client = jwksClient({
+            jwksUri: `https://cognito-idp.${appConstants.DEFAULT_REGION}.amazonaws.com/${userPoolId}/.well-known/jwks.json`,
+            cache: true,
+            cacheMaxEntries: 5,
+            cacheMaxAge: 10 * 60 * 1000 // 10 minutes
+        });
+        jwksClients.set(userPoolId, client);
+    }
+    return client;
+}
 
 /*
 * Helpers
@@ -292,19 +301,23 @@ export async function verifyCognitoAccessToken(
         throw new Error("Invalid token issuer");
     }
 
-    if (IN_DEV) {
-        return decoded;
+    // Access tokens carry the app client id in "client_id" (not "aud")
+    if (decoded.payload.client_id !== COGNITO_USER_POOL_CLIENT_ID) {
+        throw new Error("Token was issued for a different app client");
     }
 
-    const publicKey: string = await getSigningKey(decoded.header.kid!, jwksClientInstance);
+    if (!decoded.header.kid) {
+        throw new Error("Token has no key id");
+    }
 
+    // Always verify the signature (dev included) — the jwks endpoint is public and cached
+    const publicKey: string = await getSigningKey(decoded.header.kid, jwksClientForPool(userPoolId));
+
+    // jwt.verify also rejects expired tokens
     const verifiedToken = jwt.verify(token, publicKey, {
-        algorithms: ["RS256"]
+        algorithms: ["RS256"],
+        issuer: expectedIssuer,
     }) as jwt.JwtPayload;
-
-    if (verifiedToken.exp && verifiedToken.exp < Math.floor(Date.now() / 1000)) {
-        throw new Error("Token has expired");
-    }
 
     // const active = await isTokenActive(accessToken);
     // if (!active) {

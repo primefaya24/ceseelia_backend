@@ -19,7 +19,7 @@ interface ResBody {
 /*
 * Module Route
 */
-module.exports = function (router: Router): void {
+export default function registerRoute(router: Router): void {
     router.put('/update-profile', (req: Request, res: Response): void => {
         validateAndExecuteHttpApiRoute(req, res, pureRequestParams, validRequestParams, executeRouteCore);
     });

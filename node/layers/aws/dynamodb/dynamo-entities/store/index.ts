@@ -299,7 +299,7 @@ export async function updateStoreSettings(
         ":socialMediaLinks": storeSettings.socialMediaLinks,
         ":currencies": storeSettings.currencies,
         ":general": storeSettings.general,
-        ":customize": storeSettings.customize,
+        ":customize": storeSettings.customize ?? {},
       },
     });
     await dynamoDbDocumentClient.send(command);

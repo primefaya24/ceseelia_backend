@@ -37,10 +37,10 @@ export async function registerUser(
     ) {
     try {
         // Peek user via email
-        let userCognitoData = await peekUserByEmail(email, tableName);
+        const userCognitoData = await peekUserByEmail(email, tableName);
         if (userCognitoData && userCognitoData.length > 0) {
             let duplicateRegistration = false;
-            for (let userCognito of userCognitoData) {
+            for (const userCognito of userCognitoData) {
                 if (userCognito["sk"].split("#")[2].valueOf() == cognitoId.valueOf()) {
                     duplicateRegistration = true;
                     break;
@@ -153,8 +153,8 @@ export async function getMyProfile(
         userProfileRecords = userProfileRecords["Items"];
 
         // Construct user profile with desired data
-        let myProfile: any = {};
-        for (let profileRecord of userProfileRecords) {
+        const myProfile: any = {};
+        for (const profileRecord of userProfileRecords) {
             // Info & plan
             if (profileRecord["sk"].includes(appConstants.DYNAMO_ENTITY_INFO)) {
                 myProfile["info"] = profileRecord;
@@ -217,7 +217,7 @@ export async function getUserNotificationSettings(
                 "sk": appConstants.DYNAMO_ENTITY_PROFILE + "#" + appConstants.DYNAMO_ENTITY_NOTIFICATION_SETTINGS,
             },
         });
-        let userNotificationSettings: any = await dynamoDbDocumentClient.send(command);
+        const userNotificationSettings: any = await dynamoDbDocumentClient.send(command);
         if (clean) {
             delete userNotificationSettings["Item"]["pk"];
             delete userNotificationSettings["Item"]["sk"];
@@ -307,7 +307,7 @@ export async function fetchUserUUID(
                 ":userCognitoId": cognitoId,
             },
         });
-        let userDocArr: any = await dynamoDbDocumentClient.send(command);
+        const userDocArr: any = await dynamoDbDocumentClient.send(command);
         const userDoc = userDocArr["Items"][0];
         if (userDoc["userDeactivated"]) {
             throw appConstants.USER_DEACTIVATED_ERROR;
@@ -339,7 +339,7 @@ export async function fetchUserCognitoItems(
                 ":sk_prefix": appConstants.DYNAMO_ENTITY_PROFILE + "#" + appConstants.DYNAMO_ENTITY_COGNITO_DATA + "#",
             },
         });
-        let userDocArr = await dynamoDbDocumentClient.send(command);
+        const userDocArr = await dynamoDbDocumentClient.send(command);
         return userDocArr["Items"];
     } catch (e) {
         console.error("In fetchUserCognitoItems", e);
@@ -488,7 +488,7 @@ export async function getMyRewards(
                 "sk": appConstants.DYNAMO_ENTITY_REWARDS + "#" + websiteId,
             },
         });
-        let userRewardsItem = (await dynamoDbDocumentClient.send(command)).Item;
+        const userRewardsItem = (await dynamoDbDocumentClient.send(command)).Item;
         if (userRewardsItem) {
             return userRewardsItem["userRewardDollarsEarned"];
         }

@@ -11,7 +11,7 @@ dotenv.config();
 /*
  * Module Route
  */
-module.exports = function (router: Router): void {
+export default function registerRoute(router: Router): void {
   router.get("/get-all-stores", (req: Request, res: Response): void => {
     validateAndExecuteHttpApiRoute(
       req,

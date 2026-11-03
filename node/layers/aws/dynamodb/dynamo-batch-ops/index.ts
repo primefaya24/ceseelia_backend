@@ -20,11 +20,11 @@ const expBase: number = 2; // Exponential backoff: 50, 100, 200, 400, 800, 1600,
 export async function dynamoWriteBatch(tableName: any, requestItems: any): Promise<any> {
     try {
         // Prepare batch
-        let batchParams: any = {
+        const batchParams: any = {
             RequestItems: {}
         };
         batchParams["RequestItems"][tableName] = requestItems;
-        let unprocessedItems = batchParams;
+        const unprocessedItems = batchParams;
         let batchWriteRes;
         let unprocessedItemsCount = unprocessedItems["RequestItems"][tableName].length;
         let tryBalance = 1;
@@ -68,7 +68,7 @@ export async function dynamoWriteBatch(tableName: any, requestItems: any): Promi
 export async function dynamoWriteManyItems(tableName: any, requestItems: any): Promise<any> {
     try {
         // Build a matrix with dimension m x 25 (an array of 25-item batches)
-        let batchesMatrix: any[] = [];
+        const batchesMatrix: any[] = [];
         for (let i = 0; i < requestItems.length; i++) {
             if (i % 25 === 0) {
                 batchesMatrix.push([]);
@@ -77,8 +77,8 @@ export async function dynamoWriteManyItems(tableName: any, requestItems: any): P
         }
 
         // Build promises array (an array of batchWrite promises)
-        let promises = [];
-        for (let batch of batchesMatrix) {
+        const promises = [];
+        for (const batch of batchesMatrix) {
             promises.push(
                 new Promise((resolve, reject) => {
                     dynamoWriteBatch(tableName, batch)
@@ -124,7 +124,7 @@ export async function dynamoGetBatch(tableName: any, requestItems: any): Promise
 export async function dynamGetManyItems(tableName: any, requestItems: any): Promise<any> {
     try {
         // Build a matrix with dimension m x 25 (an array of 25-item batches)
-        let batchesMatrix: any = [];
+        const batchesMatrix: any = [];
         for (let i = 0; i < requestItems.length; i++) {
             if (i % 25 === 0) {
                 batchesMatrix.push([]);
@@ -133,8 +133,8 @@ export async function dynamGetManyItems(tableName: any, requestItems: any): Prom
         }
 
         // Build promises array (an array of batchWrite promises)
-        let promises = [];
-        for (let batch of batchesMatrix) {
+        const promises = [];
+        for (const batch of batchesMatrix) {
             promises.push(
                 new Promise((resolve, reject) => {
                     dynamoGetBatch(tableName, batch)

@@ -18,7 +18,7 @@ interface ResBody {}
 /*
  * Module Route
  */
-module.exports = function (router: Router): void {
+export default function registerRoute(router: Router): void {
   router.get(
     "/get-promo-image-upload-urls/:storeId/:pngCount/:jpgCount",
     (req: Request, res: Response): void => {

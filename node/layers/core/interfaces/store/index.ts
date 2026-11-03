@@ -163,12 +163,102 @@ export function initStoreSettings(): StoreSettings {
   };
 }
 
+const isObject = (v: unknown): v is Record<string, any> =>
+  typeof v === "object" && v !== null && !Array.isArray(v);
+const isFiniteNumber = (v: unknown): v is number =>
+  typeof v === "number" && Number.isFinite(v);
+const allStrings = (obj: Record<string, any>, keys: string[]): boolean =>
+  keys.every((k) => typeof obj[k] === "string");
+
+const STORE_INFO_STRING_KEYS = ["storeName", "slogan", "logoUri", "phoneNumber", "emailaddress"];
+const SOCIAL_MEDIA_KEYS = [
+  "websiteLink", "facebook", "instagram", "tiktok", "twitter",
+  "youtube", "pinterest", "etsy", "whatsapp",
+];
+
+/*
+ * Type checks for the merchant-editable settings. Extra (UI-only) fields are tolerated.
+ * `admin` is intentionally not checked: it is not persisted by update-settings.
+ */
 export function isStoreSettingsPure(storeSettings: StoreSettings): boolean {
+  const s: any = storeSettings;
+  if (!isObject(s)) return false;
+  if (typeof s.templateId !== "string" || typeof s.themeId !== "string") return false;
+
+  if (!isObject(s.storeInfo) || !allStrings(s.storeInfo, STORE_INFO_STRING_KEYS)) return false;
+
+  const r = s.purchaseRewards;
+  if (
+    !isObject(r) ||
+    typeof r.redemptionMethod !== "string" ||
+    typeof r.rewardsLabel !== "string" ||
+    !isFiniteNumber(r.redemptionPointAmount) ||
+    !isFiniteNumber(r.redemptionPointAmountValue) ||
+    !isFiniteNumber(r.pointsPerDollarSpent) ||
+    typeof r.isAvailable !== "boolean"
+  ) return false;
+
+  if (!isObject(s.socialMediaLinks) || !allStrings(s.socialMediaLinks, SOCIAL_MEDIA_KEYS)) return false;
+
+  if (!Array.isArray(s.currencies) || !s.currencies.every(isStoreCurrencyPure)) return false;
+
+  const g = s.general;
+  if (
+    !isObject(g) ||
+    typeof g.pickupAddress !== "string" ||
+    !isFiniteNumber(g.discountPercent) ||
+    typeof g.isOnline !== "boolean"
+  ) return false;
+
+  if (s.customize !== undefined && !isObject(s.customize)) return false;
+
   return true;
 }
 
+/*
+ * Value checks (call only after isStoreSettingsPure)
+ */
 export function isStoreSettingsValid(storeSettings: StoreSettings): boolean {
+  const s = storeSettings;
+  if (s.templateId.length === 0 || s.themeId.length === 0) return false;
+
+  const r = s.purchaseRewards;
+  // TODO(Stage 7): unify — the webapp saves REWARDS_REDEMPTION_*, the backend default is POINTS_TO_*
+  const redemptionMethods = [
+    appConstants.STORE_REWARDS_REDEMPTION_METHOD_POINTS_TO_MONEY,
+    appConstants.STORE_REWARDS_REDEMPTION_METHOD_POINTS_TO_DISCOUNT,
+    "REWARDS_REDEMPTION_DOLLAR",
+    "REWARDS_REDEMPTION_DISCOUNT",
+  ];
+  if (!redemptionMethods.includes(r.redemptionMethod)) return false;
+  if (r.redemptionPointAmount < 0 || r.redemptionPointAmountValue < 0 || r.pointsPerDollarSpent < 0) return false;
+
+  if (s.currencies.length === 0 || !s.currencies.every(isStoreCurrencyValid)) return false;
+  const codes = s.currencies.map((c) => c.currencyCode);
+  if (new Set(codes).size !== codes.length) return false;
+
+  if (s.general.discountPercent < 0 || s.general.discountPercent > 100) return false;
+
   return true;
+}
+
+export function isStoreCurrencyPure(currency: StoreCurrency): boolean {
+  return (
+    isObject(currency) &&
+    typeof currency.currencyCode === "string" &&
+    typeof currency.currencySign === "string" &&
+    typeof currency.currencyFloat === "string" &&
+    typeof currency.currencyIsDefault === "boolean"
+  );
+}
+
+export function isStoreCurrencyValid(currency: StoreCurrency): boolean {
+  return (
+    currency.currencyCode.length > 0 &&
+    currency.currencySign.length > 0 &&
+    (currency.currencyFloat === appConstants.STORE_CURRENCY_POSITION_LEFT ||
+      currency.currencyFloat === appConstants.STORE_CURRENCY_POSITION_RIGHT)
+  );
 }
 
 export interface StoreCurrency {
@@ -294,10 +384,10 @@ export function isStoreItemPure(storeItem: StoreItem): boolean {
     hashtagIdss.every((hashtagId) => typeof hashtagId === "string") &&
     typeof storeItem.storeItemDiscountPercent === "number" &&
     Array.isArray(storeItem.storeItemCustomParams);
-  for (let storeItemImageUri of storeItem.storeItemImageUris) {
+  for (const storeItemImageUri of storeItem.storeItemImageUris) {
     pure = pure && typeof storeItemImageUri === "string";
   }
-  for (let storeItemCustomParam of storeItem.storeItemCustomParams) {
+  for (const storeItemCustomParam of storeItem.storeItemCustomParams) {
     pure = pure && isStoreParameterPure(storeItemCustomParam);
   }
   return pure;
@@ -308,13 +398,13 @@ export function isStoreItemValid(storeItem: StoreItem): boolean {
   let valid =
     storeItem.storeItemCategoryId.length > 0 &&
     storeItem.storeItemName.length > 0;
-  for (let storeItemImageUri of storeItem.storeItemImageUris) {
+  for (const storeItemImageUri of storeItem.storeItemImageUris) {
     valid = valid && storeItemImageUri.length > 0;
   }
-  for (let storeItemCustomParam of storeItem.storeItemCustomParams) {
+  for (const storeItemCustomParam of storeItem.storeItemCustomParams) {
     valid = valid && isStoreParameterValid(storeItemCustomParam);
   }
-  for (let hashtagId of hashtagIdss) {
+  for (const hashtagId of hashtagIdss) {
     valid = valid && hashtagId.length > 0;
   }
   return valid;
