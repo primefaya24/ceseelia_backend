@@ -117,7 +117,7 @@ export const appConstants = {
   S3_ASSET_TYPE_JPEG: "jpeg",
 
   // Route53
-  ROUTE_53_APP_HOSTED_ZONE: "Z08813271XPXHBGXB108O",
+  ROUTE_53_APP_HOSTED_ZONE: "Z09076833MOZ6XA7WWHFO",
   ROUTE_53_COMPANY_ROOT_DOMAIN: "ceseelia.com",
   ROUTE_53_APP_ROOT_DOMAIN: "merchant.ceseelia.com",
   ROUTE_53_STORAGE_BASE_DOMAIN: "storage.ceseelia.com",

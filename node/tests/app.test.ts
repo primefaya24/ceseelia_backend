@@ -25,7 +25,7 @@ describe("buildCorsOptions", () => {
 
 describe("host routing", () => {
   it("accepts configured API hosts and localhost in dev", () => {
-    expect(isAllowedApiHost("api.ceseelia.northernhoop.com")).toBe(true);
+    expect(isAllowedApiHost("api.ceseelia.com")).toBe(true);
     expect(isAllowedApiHost("localhost")).toBe(true);
     expect(isAllowedApiHost("evil.example")).toBe(false);
   });

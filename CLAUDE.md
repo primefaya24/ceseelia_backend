@@ -158,7 +158,7 @@ Open:
 11. No structured logging, rate limiting or CI yet. → Stage 9
 
 Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
-`api.ceseelia.northernhoop.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);
+`api.ceseelia.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);
 **token signatures were not verified in dev (and the stage was hard-coded to dev)**; the identity
 was read from an unverified decode; CORS reflected any origin; update-settings didn't await the
 write or validate; the Stripe webhook hung; secrets were in the README; there were no tests or lint.
@@ -174,7 +174,7 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
       is a manual step.)
 - [x] 0.2 `STAGE`, Cognito ids, table/bucket names, allowed hosts, CORS origins come from env vars
       with dev defaults; startup fails in prod if required vars are missing.
-- [x] 0.3 Domains aligned on `api.ceseelia.northernhoop.com` + `/api/v1` (middleware, nginx,
+- [x] 0.3 Domains aligned on `api.ceseelia.com` + `/api/v1` (middleware, nginx,
       `generate-cert.sh`, WA `config.prod.json`); `awsfire`/`dinersxpress` references removed
       from runtime config.
 - [x] 0.4 CORS restricted to `CORS_ORIGINS` (dev with no list = any origin).

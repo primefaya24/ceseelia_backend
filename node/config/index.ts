@@ -40,7 +40,7 @@ export const PORT: number = envNumber("PORT", 3100);
 * Http
 */
 // Hostnames whose requests are routed to the API (in dev, localhost and this machine's IPs are also accepted)
-export const ALLOWED_API_HOSTS: string[] = envList("ALLOWED_API_HOSTS", ["api.ceseelia.northernhoop.com"])
+export const ALLOWED_API_HOSTS: string[] = envList("ALLOWED_API_HOSTS", ["api.ceseelia.com"])
     .map((h) => h.toLowerCase());
 // Browser origins allowed by CORS. Empty in dev = reflect any origin. Required in prod.
 export const CORS_ORIGINS: string[] = envList("CORS_ORIGINS");
@@ -69,7 +69,7 @@ export const COGNITO_FEDERATION_REDIRECT_URL: string = env("COGNITO_FEDERATION_R
 export const S3_STORAGE_BUCKET_NAME: string = env("S3_STORAGE_BUCKET_NAME", `${appConstants.S3_STORAGE_BUCKET_PREFIX}${STAGE}`);
 // Public origin (CDN) of the storage bucket, with trailing slash
 export const S3_STORAGE_BUCKET_ORIGIN: string = withTrailingSlash(
-    env("S3_STORAGE_BUCKET_ORIGIN", `https://${STAGE}.storage.ceseelia.northernhoop.com/`)
+    env("S3_STORAGE_BUCKET_ORIGIN", `https://${STAGE}.storage.ceseelia.com/`)
 );
 
 /*
