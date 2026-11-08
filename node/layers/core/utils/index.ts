@@ -1,4 +1,3 @@
-import https from "https";
 import zlib from "zlib";
 import moment from "moment-timezone";
 import type { Request as ExpressRequest } from "express";
@@ -8,35 +7,6 @@ import { jwtDecode } from "jwt-decode";
 import { deleteS3Keys, listPrefixFiles } from "../../aws/s3";
 import { StoreSettings } from "../interfaces/store";
 import geoip from "geoip-lite";
-
-/*
- * Send Https request with given body and options
- */
-export function sendHttpsRequest(options: any, body: any): Promise<any> {
-  return new Promise((resolve, reject) => {
-    const req = https.request(options, (res) => {
-      res.setEncoding("utf8");
-      let responseBody = "";
-
-      res.on("data", (chunk) => {
-        responseBody += chunk;
-      });
-
-      res.on("end", () => {
-        resolve(JSON.parse(responseBody));
-      });
-    });
-
-    req.on("error", (err) => {
-      reject(err);
-    });
-
-    if (body) {
-      req.write(body);
-    }
-    req.end();
-  });
-}
 
 /*
  * Checks whether user is admin
@@ -197,29 +167,6 @@ export function legalServiceHandle(serviceHandle: string): boolean {
   return (
     serviceHandle.length > 0 && isAlphaNumericWithDotOrUnderscore(serviceHandle)
   );
-}
-
-/*
- * Get Lat/Lng timezone data
- */
-export async function getLatLngTimezoneData(
-  lat: any,
-  lng: any,
-  epochSeconds: any
-): Promise<any> {
-  try {
-    return await sendHttpsRequest(
-      {
-        host: "maps.googleapis.com",
-        path: `/maps/api/timezone/json?location=${lat},${lng}&timestamp=${epochSeconds}&key=AIzaSyClD9NQPlpNtXro0MvR69NseYEHlqaYAIo`,
-        method: "GET",
-      },
-      null // body
-    );
-  } catch (e) {
-    console.error("In getLatLngTimezoneData", e);
-    throw "Could not get lat/lng timezone data";
-  }
 }
 
 /*

@@ -53,9 +53,13 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
       category create/delete, item create/delete and `inventory/get-data`. Merchants can't reach
       their stores yet anyway (no membership), so nothing legitimate breaks. Add a test that a
       non-admin gets 403.
-- [ ] 🔴 **S.1 Revoke the hard-coded Google Maps API key** in `layers/core/utils/index.ts`
+- [~] 🔴 **S.1 Revoke the hard-coded Google Maps API key** in `layers/core/utils/index.ts`
       (`getLatLngTimezoneData`). It is in git history, so treat it as public: revoke or restrict it
       in Google Cloud, then delete the function (nothing calls it).
+  - [x] a. Code removed 2026-11-08 (`getLatLngTimezoneData` and its only helper
+        `sendHttpsRequest`). No other copy of the key exists in either repo.
+  - [ ] b. **Manual:** revoke (or restrict) the key in Google Cloud Console → APIs & Services →
+        Credentials. It stays readable in git history, so it must be revoked, not just deleted.
 - [ ] 🔴 **S.2 Rotate the old password** that used to be in `node/README.md`. It's still in git
       history (manual step, carried over from Stage 0).
 - [ ] 🟠 **S.3 Patch dependencies:** `npm audit fix`, re-run tests. Remove unused deps
@@ -338,6 +342,7 @@ Closes the cross-tenant access hole for good, and replaces S.0.
 
 | Date | Change |
 |---|---|
+| 2026-11-08 | S.1a done: hard-coded Google Maps key and its unused helpers removed (revoking the key is still manual). |
 | 2026-11-08 | S.0 done: all authenticated `/store/**` routes are admin-only; 27 route-access tests added. |
 | 2026-11-08 | File created from a full code review. Added Stage S (security and bug fixes) and broke stages 1–9 into sub-tasks. |
 | 2026-11-02 | Stage 0 completed (see `CLAUDE.md`). |
