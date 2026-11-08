@@ -167,6 +167,10 @@ write or validate; the Stripe webhook hung; secrets were in the README; there we
 
 ## 6. Roadmap — stages & steps
 
+> **Task tracking lives in [`progress.md`](progress.md).** It is the source of truth for what's
+> done and what's next (including the security/bug-fix Stage S that comes before Stage 1). This
+> section keeps the design intent for each stage; tick boxes in `progress.md`, not here.
+
 Each step should be small enough for one PR. "WA" = matching work in `ceseelia_webapp`.
 
 ### Stage 0 — Foundations, config & security ✅ (done 2026-11-02)
@@ -294,4 +298,5 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 - Never commit credentials; read config from env.
 - When changing a response shape, update the WA interface and the calling component in the same
   change set and mention it in the summary.
-- Update the tables in §4/§5 and tick roadmap steps here when you finish them.
+- When you finish a task, tick it in `progress.md` (and add a changelog row), and update the
+  tables in §4/§5 here if what's implemented or the known issues changed.
