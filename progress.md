@@ -22,7 +22,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Area | Status | Notes |
 |---|---|---|
 | Foundations (config, token verification, CORS, tests, lint) | ✅ Done | Stage 0, 2026-11-02 |
-| Store create / settings / images | ✅ Works | **Any signed-in user can edit any store** (see S.0 / 1.3) |
+| Store create / settings / images | ✅ Works | Admin-only for now (S.0) until store membership (1.3) |
 | Categories & items CRUD | ✅ Works | Item counts are wrong; deleting a category orphans its items |
 | Public storefront data | ⚠️ Partial | Leaks admin settings and inactive items |
 | Store delete | ❌ Stub | Returns 200 and does nothing |
@@ -45,7 +45,8 @@ These came out of the code review. They don't need the membership model, so they
 S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces it.
 
 ### S.A — Stop the bleeding
-- [ ] 🔴 **S.0 Interim lockdown of `/store/**`.** Today any signed-in Cognito user (anyone can
+- [x] 🔴 **S.0 Interim lockdown of `/store/**`.** _Done 2026-11-08: flag
+      `STORE_ROUTES_ADMIN_ONLY` in `layers/core/http`, tests in `tests/store-access.test.ts`._ Today any signed-in Cognito user (anyone can
       sign up) can read, overwrite and delete any store's settings, categories, items and S3
       images by passing its `storeId`. Until 1.3 lands, set `adminOnly = true` on every
       authenticated `/store/**` route: create, delete, update-settings, all upload-URL routes,
@@ -160,7 +161,8 @@ Closes the cross-tenant access hole for good, and replaces S.0.
 - [ ] a. `assertStoreAccess(req, storeId, role?)`. Admin bypasses it; otherwise it reads
       `getMembership` and returns 403 if there's none.
 - [ ] b. Apply it to **every** `/store/**` route (settings, uploads, categories, items, get-data),
-      then remove the S.0 `adminOnly` flags (`create` and `delete` stay admin-only).
+      then remove `STORE_ROUTES_ADMIN_ONLY` (S.0) from `layers/core/http` and the routes
+      (`create` and `delete` stay admin-only). Update `tests/store-access.test.ts`.
 - [ ] c. Route-matrix test: no token → 401 · non-member → 403 · member → 200 · admin → 200.
 
 ### 1.4 Admin member management
@@ -336,5 +338,6 @@ Closes the cross-tenant access hole for good, and replaces S.0.
 
 | Date | Change |
 |---|---|
+| 2026-11-08 | S.0 done: all authenticated `/store/**` routes are admin-only; 27 route-access tests added. |
 | 2026-11-08 | File created from a full code review. Added Stage S (security and bug fixes) and broke stages 1–9 into sub-tasks. |
 | 2026-11-02 | Stage 0 completed (see `CLAUDE.md`). |

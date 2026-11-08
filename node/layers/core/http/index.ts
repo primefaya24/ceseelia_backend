@@ -5,6 +5,13 @@ import {isUserAdmin} from "../utils";
 import {verifyCognitoAccessToken} from "../../aws/cognito";
 import { COGNITO_USER_POOL_ID, IN_DEV } from "../../../config";
 
+/*
+* Interim lockdown (progress.md S.0): there is no user↔store membership yet, so any signed-in
+* user could act on any store. Until the store-access check lands (Stage 1.3), every
+* authenticated /store/** route passes this as `adminOnly`. Remove it once 1.3 is in place.
+*/
+export const STORE_ROUTES_ADMIN_ONLY = true;
+
 type RouteCheck = (req: Request) => boolean;
 type RouteCore = (req: Request, res: Response) => Promise<void> | void;
 

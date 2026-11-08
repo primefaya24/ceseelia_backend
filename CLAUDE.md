@@ -137,9 +137,10 @@ in-process DQS queue.
 ## 5. Known issues & risks
 
 Open:
-1. **No store-level authorization.** Any signed-in user can read/modify/delete any store's
-   settings, categories, items and images by passing its `storeId`. There is no user↔store link.
-   → Stage 1.3
+1. **No store-level authorization yet.** There is no user↔store link. As an interim fix (S.0),
+   every authenticated `/store/**` route is admin-only via `STORE_ROUTES_ADMIN_ONLY` in
+   `layers/core/http`, so merchants can't use the store area until Stage 1.3 adds the
+   membership check (then remove the flag).
 2. **User records are never created.** `registerUser` exists but no route or Cognito trigger calls
    it, so `get-my-profile` fails for new sign-ups. `userStoreIds` (used by the frontend) is never
    written. → Stage 1.1/1.2
@@ -294,7 +295,9 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 
 - Keep the one-folder-per-endpoint pattern and `validateAndExecuteHttpApiRoute`; don't introduce
   a second framework.
-- Every new `/store/**` route must call the store-access check once Stage 1.3 lands.
+- Every new `/store/**` route must pass `STORE_ROUTES_ADMIN_ONLY` as `adminOnly` (and be added to
+  `tests/store-access.test.ts`) until Stage 1.3 lands; after that it must call the store-access
+  check instead.
 - Never commit credentials; read config from env.
 - When changing a response shape, update the WA interface and the calling component in the same
   change set and mention it in the summary.

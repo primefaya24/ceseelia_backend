@@ -1,7 +1,7 @@
 // Imports
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
-import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
+import { validateAndExecuteHttpApiRoute, STORE_ROUTES_ADMIN_ONLY } from "../../../../../layers/core/http";
 import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import {
@@ -24,7 +24,8 @@ export default function registerRoute(router: Router): void {
       pureRequestParams,
       validRequestParams,
       executeRouteCore,
-      true
+      true,
+      STORE_ROUTES_ADMIN_ONLY
     );
   });
 };
