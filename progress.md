@@ -23,8 +23,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > are done, as are WA 1.1–1.5.
 > WA 1.6a–c (profile pages) done too; 1.6d waits on a real `delete-user` (501 since S.11).
 > Stage 2.1–2.3 are done (item counts, category delete rule, upload limits; WA uses all three).
-> **Next: BE 2.4 public data endpoint** (only active items, 404 for unknown or suspended stores).
-> WA 2.4 (size/type checks before upload) is done too.
+> 2.4 (public data endpoint) is done too. **Next: 2.5 price model** (a decision first: integer
+> minor units, and fixed per-currency prices vs. conversion), then 2.6 stock rules.
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -41,13 +41,13 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Store delete | ✅ Works | Whole store incl. members, invites, slug, S3; retry-safe (1.7, 1.8) |
 | Slugs | ✅ Works | Format rule, unique via `SLUG#<slug>` reservations (409 on clash), public `resolve-slug` (1.8) |
 | Categories & items CRUD | ✅ Works | Item counts kept by item writes (2.1); a category with items can't be deleted (409, 2.2) |
-| Public storefront data | ⚠️ Partial | Admin block no longer leaked (1.6); still returns inactive items and ignores `isStoreLive` (2.4) |
+| Public storefront data | ✅ Works | Only active items in active categories; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (2.4); no admin block (1.6) |
 | Merchant / customer APIs | ❌ Missing | `/merchant/path` stub (1.5 deferred) |
 | Cart, checkout, orders, payments | ❌ Not started | Stripe webhook returns 501 |
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging` |
 
-**Health check (2026-11-09):** `npm test` 417/417 passing · `npm run typecheck` clean ·
+**Health check (2026-11-09):** `npm test` 425/425 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 80 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -384,12 +384,21 @@ match the backend and webapp._
     (`uploadImage`). Tests in `tests/image-upload.test.ts`; checked live on the dev bucket
     (1 KB upload → tagged; 6 MB → `EntityTooLarge`; tag cleared on keep; CORS preflight POST
     allowed). **Prod: the EC2 role needs `s3:DeleteObjectTagging` on the bucket.**_
-- [ ] 🟠 **2.4 Public data endpoint:**
-  - [ ] a. Strip `settings.admin` and any other private fields. Commission is currently public.
-  - [ ] b. Return only active items in active categories.
-  - [ ] c. 404 when the store doesn't exist. 404/410 (`STORE_UNAVAILABLE`) when
+- [x] 🟠 **2.4 Public data endpoint:**
+  - [x] a. Strip `settings.admin` and any other private fields. Commission is currently public.
+  - [x] b. Return only active items in active categories.
+  - [x] c. 404 when the store doesn't exist. 404/410 (`STORE_UNAVAILABLE`) when
         `isStoreLive === false`.
-  - [ ] d. Tests. (WA 3.1)
+  - [x] d. Tests. (WA 3.1)
+  - _Done 2026-11-09, tested by hand. `getPublicStoreInventoryData` reads SETTINGS first: none → 404
+    `{code: "STORE_NOT_FOUND"}`; `admin.isStoreLive === false` → 404 `{code: "STORE_UNAVAILABLE"}`
+    (404, not 410: a suspension can be lifted); settings without an admin block count as live.
+    Neither case queries the store's rows. `toPublicInventory` keeps only categories and items
+    with `…IsActive === true` (items of a missing or inactive category are dropped), sets each
+    category's count to the items returned (so hidden items don't show in counts) and strips
+    `admin` (a, already done in 1.6). Tests in `tests/public-storefront.test.ts`; checked live
+    on dev (Northern Hoop 200, unknown id 404). The webapp already shows "Store unavailable" on
+    any error; WA 3.1b can use the codes for better wording._
 - [ ] 🟡 **2.5 Price model.** Decide on integer minor units per currency (fixed per-currency price
       vs. conversion), add `storeItemPrices` if per-currency, migrate existing items. (WA 2.4)
 - [ ] 🟡 **2.6 Stock rules:** `-1` = unlimited, `≥ 0` = tracked. Document it and validate it
@@ -510,6 +519,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 2.4 done: public storefront data shows only active items in active categories (counts match), 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` for unknown or suspended stores. |
 | 2026-11-09 | 2.3 done: image uploads are presigned POSTs (png/jpg, ≤ 5 MB, 1–10 per request, item/category must exist), tagged pending until saved; bucket allows POST and expires unsaved uploads after a day. |
 | 2026-11-09 | 2.2 done: category delete refused with 409 `CATEGORY_NOT_EMPTY` while it has items (conditional delete on the count); banner deleted after the row. |
 | 2026-11-09 | 2.1 done: category item counts kept by item create/move/delete transactions (no more reset on save); delete-item removes the row before its images; recount script (dev fixed). |

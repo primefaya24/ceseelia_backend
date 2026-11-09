@@ -148,7 +148,7 @@ export default function registerRoute(router: Router): void {
 | Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing |
 | Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ −1 on its category, then deletes its images |
 | Inventory | `GET /store/inventory/get-data/:storeId` (auth) | ✅ categories + items + settings |
-| Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ + geo-IP default currency |
+| Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ active items in active categories only (counts match), no admin block, geo-IP default currency; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (suspended) |
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount` | ✅ 1–10 in total; 404 unless the item exists |
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug; 409 if the slug is taken) | ✅ |
@@ -176,13 +176,11 @@ Open:
    Fine for now; cache or put the user id in a token claim if it shows up in latency.
 3. The password that used to be in `node/README.md` is still in **git history** — make sure it has
    been rotated (S.2).
-4. `isStoreLive` is saved but nothing acts on it yet: a suspended store's public page still
-   loads. → Stage 2.4
-5. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
+4. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
    saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3
-6. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
-7. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
-8. No structured logging, rate limiting or CI yet. → Stage 9
+5. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
+6. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
+7. No structured logging, rate limiting or CI yet. → Stage 9
 
 Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
 `api.ceseelia.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);
@@ -243,7 +241,7 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 2.2 ✅ Category delete: blocked (409) while it has items — no "uncategorized" bucket.
 2.3 ✅ Validate upload endpoints: allowed image types, max counts (≤ 10), file-size limits via
     presigned POST conditions; unsaved uploads expire (pending tag + lifecycle rule).
-2.4 Public data endpoint: return only `storeItemIsActive` items in active categories, strip admin
+2.4 ✅ Public data endpoint: return only `storeItemIsActive` items in active categories, strip admin
     settings and any private fields, and 404 when `isStoreLive === false` or store not found.
 2.5 Price model: store prices as integer minor units (cents) per base currency; decide how
     multi-currency works (fixed per-currency prices vs. conversion). Add `storeItemPrices` map if

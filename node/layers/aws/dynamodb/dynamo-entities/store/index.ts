@@ -605,6 +605,51 @@ export function withoutAdminSettings(data: StoreInventoryData): StoreInventoryDa
 }
 
 ////////////////////////////////////////
+// Public storefront data (progress.md 2.4)
+////////////////////////////////////////
+/* The store exists but an admin has suspended it (`admin.isStoreLive === false`). */
+export class StoreUnavailableError extends Error {
+  constructor() {
+    super("Store unavailable");
+    this.name = "StoreUnavailableError";
+  }
+}
+
+/*
+ * What a shopper may see: no admin block, only active categories, only active items in them
+ * (items of a missing or inactive category are left out), and each category's count is the
+ * number of items returned, so hidden items aren't given away by the counts.
+ */
+export function toPublicInventory(data: StoreInventoryData): StoreInventoryData {
+  const categories = data.categories.filter((c) => c.storeCategoryIsActive === true);
+  const activeCategoryIds = new Set(categories.map((c) => c.storeCategoriyId));
+  const items = data.items.filter(
+    (i) => i.storeItemIsActive === true && activeCategoryIds.has(i.storeItemCategoryId)
+  );
+  const counts = new Map<string, number>();
+  for (const i of items) counts.set(i.storeItemCategoryId, (counts.get(i.storeItemCategoryId) ?? 0) + 1);
+  return withoutAdminSettings({
+    settings: data.settings,
+    categories: categories.map((c) => ({ ...c, storeCategoryItemCount: counts.get(c.storeCategoriyId) ?? 0 })),
+    items,
+  });
+}
+
+/*
+ * The public storefront's data. Throws StoreRecordNotFoundError when the store doesn't exist and
+ * StoreUnavailableError when it's suspended; settings saved before the admin block existed count
+ * as live.
+ */
+export async function getPublicStoreInventoryData(storeId: string): Promise<StoreInventoryData> {
+  const settings = await dynamoDbDocumentClient.send(
+    new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS) })
+  );
+  if (!settings.Item) throw new StoreRecordNotFoundError("Store");
+  if (settings.Item.admin?.isStoreLive === false) throw new StoreUnavailableError();
+  return toPublicInventory(await getStoreInventoryData(storeId));
+}
+
+////////////////////////////////////////
 // Delete a store (progress.md 1.7)
 ////////////////////////////////////////
 /*

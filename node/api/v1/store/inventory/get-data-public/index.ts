@@ -4,7 +4,11 @@ import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
-import { getStoreInventoryData, withoutAdminSettings } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import {
+  getPublicStoreInventoryData,
+  StoreRecordNotFoundError,
+  StoreUnavailableError,
+} from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import geoip from "geoip-lite";
 import {
   getClientIp,
@@ -58,8 +62,8 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       clientCurrency = resolveCurrencyFromGeo(geo);
     }
 
-    // Fetch store inventory data
-    const storeInventoryData = await getStoreInventoryData(storeId);
+    // Only what a shopper may see (2.4); 404 for an unknown or suspended store
+    const storeInventoryData = await getPublicStoreInventoryData(storeId);
     if (clientCurrency && storeInventoryData.settings.currencies.length) {
       storeInventoryData.settings.currencies =
         storeInventoryData.settings.currencies.map(currency => ({
@@ -68,9 +72,17 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         }));
     }
 
-    // Respond to user, without the admin block (platform commission is not public; 1.6)
-    res.send(withoutAdminSettings(storeInventoryData));
+    res.send(storeInventoryData);
   } catch (e) {
+    // Both are 404s: a suspension can be lifted, so it isn't "gone" (410). The code tells them apart.
+    if (e instanceof StoreRecordNotFoundError) {
+      res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ code: "STORE_NOT_FOUND", message: "Store not found" });
+      return;
+    }
+    if (e instanceof StoreUnavailableError) {
+      res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ code: "STORE_UNAVAILABLE", message: "Store unavailable" });
+      return;
+    }
     if (IN_DEV) {
       console.error(e);
     }
