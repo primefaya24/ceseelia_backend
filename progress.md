@@ -19,6 +19,12 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 ## 1. Where things stand
 
+> **⏸ QA pause (2026-11-09): start the next session here.** The owner is doing a full UI QA
+> pass before Stage 5, tracked in `../ceseelia_webapp/progress.md` §1a (checklist and findings).
+> Next session: go through the findings first (backend fixes included), and only then start
+> **Stage 5** with the 5.1 decision (Stripe Connect Express recommended). Last commits before the
+> pause: backend `b98f224` (4.2), webapp `578c502` (4.4); both clean, nothing pushed.
+
 > **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
 > are done, as are WA 1.1–1.5.
 > WA 1.6a–c (profile pages) done too; 1.6d waits on a real `delete-user` (501 since S.11).
