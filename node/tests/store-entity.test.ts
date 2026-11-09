@@ -5,7 +5,7 @@ import { createStore, updateStoreSettings } from "../layers/aws/dynamodb/dynamo-
 import { initStoreSettings } from "../layers/core/interfaces/store";
 
 const ddb = mockClient(DynamoDBDocumentClient);
-// The batch helper reuses (and mutates) its input object, so snapshot it at call time
+// Snapshot each batch call's input
 let batchInputs: any[] = [];
 
 beforeEach(() => {

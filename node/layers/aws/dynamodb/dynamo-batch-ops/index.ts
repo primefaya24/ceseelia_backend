@@ -1,7 +1,7 @@
 // AWS
-import {DynamoDBClient} from "@aws-sdk/client-dynamodb";
-import {BatchGetCommand, BatchWriteCommand, DynamoDBDocumentClient,} from "@aws-sdk/lib-dynamodb";
-import {appConstants} from "../../../../constants";
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { BatchGetCommand, BatchWriteCommand, DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { appConstants } from "../../../../constants";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient = DynamoDBDocumentClient.from(
@@ -10,148 +10,137 @@ const dynamoDbDocumentClient: DynamoDBDocumentClient = DynamoDBDocumentClient.fr
     })
 );
 
-// Constants
-const maxTry: number = 7;
-const expBase: number = 2; // Exponential backoff: 50, 100, 200, 400, 800, 1600, 3200, 6400
+type WriteRequest = NonNullable<
+    NonNullable<ConstructorParameters<typeof BatchWriteCommand>[0]["RequestItems"]>[string]
+>[number];
+type Key = Record<string, unknown>;
+type Item = Record<string, unknown>;
 
-/*
-* Helper function: Write a batch to dynamodb
-*/
-export async function dynamoWriteBatch(tableName: any, requestItems: any): Promise<any> {
-    try {
-        // Prepare batch
-        const batchParams: any = {
-            RequestItems: {}
-        };
-        batchParams["RequestItems"][tableName] = requestItems;
-        const unprocessedItems = batchParams;
-        let batchWriteRes;
-        let unprocessedItemsCount = unprocessedItems["RequestItems"][tableName].length;
-        let tryBalance = 1;
-        let backoffTime = 50; // ms
+// DynamoDB limits per request
+const WRITE_BATCH_SIZE = 25;
+const GET_BATCH_SIZE = 100;
 
-        // Submit batch
-        let command;
-        while (unprocessedItemsCount > 0 && tryBalance <= maxTry) {
-            command = new BatchWriteCommand(unprocessedItems);
-            batchWriteRes = await dynamoDbDocumentClient.send(command);
-            unprocessedItems["RequestItems"] = batchWriteRes["UnprocessedItems"];
+/* Retry policy for items DynamoDB leaves unprocessed (throttling). Exported so tests can skip the waits. */
+export const batchRetry = {
+    maxAttempts: 8,
+    baseDelayMs: 50, // 50, 100, 200, … 3200 ms between attempts
+};
 
-            // All requests processed
-            if (typeof unprocessedItems["RequestItems"][tableName] === 'undefined') {
-                unprocessedItemsCount = 0;
-                console.warn("unprocessedItemsCount: " + unprocessedItemsCount + ", backoff: " + backoffTime);
-            }
+/* Thrown when a batch can't be fully written or read. Callers must treat the operation as failed. */
+export class DynamoBatchError extends Error {
+    readonly cause?: unknown;
 
-            // Some requests failed
-            else {
-                backoffTime = backoffTime * expBase;
-                unprocessedItemsCount = unprocessedItems["RequestItems"][tableName].length;
-                console.warn("unprocessedItemsCount: " + unprocessedItemsCount + ", backoff: " + backoffTime);
-                await new Promise((resolve) => setTimeout(resolve, backoffTime));
-            }
-
-            tryBalance++;
-        }
-
-        // Return unprocessed items count
-        return unprocessedItemsCount;
-    } catch (e) {
-        console.warn("In dynamoWriteBatch", e);
-        throw "Could not write batch";
+    constructor(message: string, options?: { cause?: unknown }) {
+        super(message);
+        this.name = "DynamoBatchError";
+        this.cause = options?.cause;
     }
 }
 
-/*
-* Write a batch to dynamodb
-*/
-export async function dynamoWriteManyItems(tableName: any, requestItems: any): Promise<any> {
-    try {
-        // Build a matrix with dimension m x 25 (an array of 25-item batches)
-        const batchesMatrix: any[] = [];
-        for (let i = 0; i < requestItems.length; i++) {
-            if (i % 25 === 0) {
-                batchesMatrix.push([]);
-            }
-            batchesMatrix[batchesMatrix.length - 1].push(requestItems[i]);
-        }
+function chunk<T>(items: T[], size: number): T[][] {
+    const out: T[][] = [];
+    for (let i = 0; i < items.length; i += size) {
+        out.push(items.slice(i, i + size));
+    }
+    return out;
+}
 
-        // Build promises array (an array of batchWrite promises)
-        const promises = [];
-        for (const batch of batchesMatrix) {
-            promises.push(
-                new Promise((resolve, reject) => {
-                    dynamoWriteBatch(tableName, batch)
-                        .then((unprocessedItems) => resolve(unprocessedItems))
-                        .catch((e) => {
-                            console.error(e);
-                            reject(e);
-                        });
-                })
+function requireTable(tableName: string | undefined): string {
+    if (!tableName) {
+        throw new DynamoBatchError("No table name given");
+    }
+    return tableName;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/*
+* Write up to 25 requests, retrying unprocessed ones with exponential backoff.
+* Throws DynamoBatchError if any are still unprocessed after the last attempt.
+*/
+export async function dynamoWriteBatch(table: string | undefined, requestItems: WriteRequest[]): Promise<void> {
+    const tableName = requireTable(table);
+    let pending = requestItems;
+    for (let attempt = 1; pending.length > 0; attempt++) {
+        let res;
+        try {
+            res = await dynamoDbDocumentClient.send(
+                new BatchWriteCommand({ RequestItems: { [tableName]: pending } })
+            );
+        } catch (e) {
+            throw new DynamoBatchError("Batch write failed", { cause: e });
+        }
+        pending = res.UnprocessedItems?.[tableName] ?? [];
+        if (pending.length === 0) {
+            return;
+        }
+        if (attempt >= batchRetry.maxAttempts) {
+            throw new DynamoBatchError(
+                `Batch write left ${pending.length} item(s) unprocessed after ${attempt} attempts`
             );
         }
-
-        // Send all promises, wait for the last one to resolve/reject
-        return await Promise.allSettled(promises);
-    } catch (e) {
-        console.warn("In dynamoWriteManyItems", e);
-        throw "Could not write batch";
+        console.warn(`dynamoWriteBatch: ${pending.length} unprocessed, retry ${attempt}`);
+        await sleep(batchRetry.baseDelayMs * 2 ** (attempt - 1));
     }
 }
 
 /*
-* Helper Function: Fetch a batch of items
+* Write any number of requests in batches of 25. Throws if any batch fails.
+* Not atomic: batches that succeeded before a failure stay written.
 */
-export async function dynamoGetBatch(tableName: any, requestItems: any): Promise<any> {
-    try {
-        const input: any = {
-            RequestItems: {}
-        };
-        input["RequestItems"][tableName] = {
-            "Keys": requestItems
-        };
-        const command = new BatchGetCommand(input);
-        return await dynamoDbDocumentClient.send(command);
-    } catch (e) {
-        console.warn("In dynamoGetBatch", e);
-        throw "Could not get batch";
+export async function dynamoWriteManyItems(table: string | undefined, requestItems: WriteRequest[]): Promise<void> {
+    requireTable(table);
+    const results = await Promise.allSettled(
+        chunk(requestItems, WRITE_BATCH_SIZE).map((batch) => dynamoWriteBatch(table, batch))
+    );
+    const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
+    if (failed.length > 0) {
+        failed.forEach((r) => console.error("In dynamoWriteManyItems", r.reason));
+        throw new DynamoBatchError(`${failed.length} of ${results.length} write batch(es) failed`, {
+            cause: failed[0].reason,
+        });
     }
 }
 
 /*
-* Get many items
+* Read up to 100 keys, retrying unprocessed keys. Returns the items found (missing keys are
+* simply absent). Throws DynamoBatchError if keys are still unprocessed after the last attempt.
 */
-export async function dynamGetManyItems(tableName: any, requestItems: any): Promise<any> {
-    try {
-        // Build a matrix with dimension m x 25 (an array of 25-item batches)
-        const batchesMatrix: any = [];
-        for (let i = 0; i < requestItems.length; i++) {
-            if (i % 25 === 0) {
-                batchesMatrix.push([]);
-            }
-            batchesMatrix[batchesMatrix.length - 1].push(requestItems[i]);
+export async function dynamoGetBatch(table: string | undefined, keys: Key[]): Promise<Item[]> {
+    const tableName = requireTable(table);
+    const items: Item[] = [];
+    let pending = keys;
+    for (let attempt = 1; pending.length > 0; attempt++) {
+        let res;
+        try {
+            res = await dynamoDbDocumentClient.send(
+                new BatchGetCommand({ RequestItems: { [tableName]: { Keys: pending } } })
+            );
+        } catch (e) {
+            throw new DynamoBatchError("Batch get failed", { cause: e });
         }
-
-        // Build promises array (an array of batchWrite promises)
-        const promises = [];
-        for (const batch of batchesMatrix) {
-            promises.push(
-                new Promise((resolve, reject) => {
-                    dynamoGetBatch(tableName, batch)
-                        .then((items) => resolve(items))
-                        .catch((e) => {
-                            console.error(e);
-                            reject(e);
-                        });
-                })
+        items.push(...(res.Responses?.[tableName] ?? []));
+        pending = res.UnprocessedKeys?.[tableName]?.Keys ?? [];
+        if (pending.length === 0) {
+            break;
+        }
+        if (attempt >= batchRetry.maxAttempts) {
+            throw new DynamoBatchError(
+                `Batch get left ${pending.length} key(s) unprocessed after ${attempt} attempts`
             );
         }
-
-        // Send all promises, wait for the last one to resolve/reject
-        const result: any = await Promise.allSettled(promises);
-        return result.length > 0 ? result[0].value.Responses[tableName] : [];
-    } catch (e) {
-        console.warn("In dynamGetManyItems", e);
-        throw "Could not get many items";
+        await sleep(batchRetry.baseDelayMs * 2 ** (attempt - 1));
     }
+    return items;
+}
+
+/*
+* Read any number of keys in batches of 100 and return every item found, from all batches.
+*/
+export async function dynamGetManyItems(table: string | undefined, keys: Key[]): Promise<Item[]> {
+    requireTable(table);
+    const batches = await Promise.all(
+        chunk(keys, GET_BATCH_SIZE).map((batch) => dynamoGetBatch(table, batch))
+    );
+    return batches.flat();
 }

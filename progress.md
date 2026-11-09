@@ -105,10 +105,16 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
   - _Done 2026-11-08, tested by hand. Both routes now write first and clean up after.
     Tests in `tests/store-writes.test.ts` check that a failed update deletes nothing and a
     successful one lists and deletes only after the write._
-- [ ] 🟠 **S.7 Fix the batch helper so it reports failures.** `dynamoWriteManyItems` uses
+- [x] 🟠 **S.7 Fix the batch helper so it reports failures.** `dynamoWriteManyItems` uses
       `Promise.allSettled` and never throws, so `createStore` (and `registerUser`) return success even
       when the write failed or items were left unprocessed. Throw when a batch is rejected or
       `unprocessed > 0`. Also, `dynamGetManyItems` only returns the first batch's results.
+  - _Done 2026-11-08, tested by hand. Rewrote `dynamo-batch-ops`: unprocessed writes and
+    keys are retried with backoff, then a `DynamoBatchError` is thrown; a rejected batch throws
+    too. Reads use batches of 100 and return items from every batch. Inputs are no longer
+    mutated. `createStore` / `registerUser` already pass errors on, so a failed write is now a
+    500 instead of a false success. Batches aren't atomic: ones written before a failure stay.
+    Tests in `tests/dynamo-batch.test.ts`._
 - [ ] 🟠 **S.8 Paginate `getStoreInventoryData`.** Queries stop at 1 MB, so a large store silently
       loses categories and items. Loop on `LastEvaluatedKey`, as `getAllStores` already does.
 - [ ] 🟡 **S.9 Tighten the validators** (`layers/core/interfaces/store`):
