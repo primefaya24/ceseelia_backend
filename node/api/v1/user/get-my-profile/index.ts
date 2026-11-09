@@ -2,7 +2,7 @@
 import {Request, Response, Router} from 'express';
 import dotenv from 'dotenv';
 import {appConstants} from "../../../../constants";
-import {validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
+import {getAuth, validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
 import {IN_DEV} from "../../../../config";
 import {fetchUserUUID, getMyProfile, updateUserLocale} from '../../../../layers/aws/dynamodb/dynamo-entities/user';
 dotenv.config();
@@ -52,11 +52,11 @@ function validRequestParams(req: Request): boolean {
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
     try {
         // Extract data
-        const isAdmin: boolean = req.body["is_user_admin"];
+        const { cognitoId, isAdmin } = getAuth(res);
         const userPreferredLocale = req.params.userPreferredLocale;
 
         // Get user UUID
-        const userId = await fetchUserUUID(req.body["cognito_id"]);
+        const userId = await fetchUserUUID(cognitoId);
 
         // Fetch user profile
         const profile = await getMyProfile(userId);

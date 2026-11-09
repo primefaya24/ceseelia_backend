@@ -1,7 +1,7 @@
 // Imports
 import {Request, Response, Router} from 'express';
 import dotenv from 'dotenv';
-import {validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
+import {getAuth, validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
 import {IN_DEV} from "../../../../config";
 import {appConstants} from "../../../../constants";
 import {fetchUserUUID, updateUserProfile} from "../../../../layers/aws/dynamodb/dynamo-entities/user";
@@ -55,7 +55,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         const userLastName = req.body.userLastName;
 
         // Get user UUID
-        const userId = await fetchUserUUID(req.body["cognito_id"]);
+        const userId = await fetchUserUUID(getAuth(res).cognitoId);
 
         // Update user profile
         await updateUserProfile(userId, userFirstName, userLastName);

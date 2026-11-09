@@ -38,6 +38,12 @@ describe("get-my-profile locale (S.10)", () => {
     expect(updateUserLocale).not.toHaveBeenCalled();
   });
 
+  it("looks the user up by the token's identity, not the body", async () => {
+    const { fetchUserUUID } = await import("../layers/aws/dynamodb/dynamo-entities/user");
+    await asUser("get", "/user/get-my-profile").query({}).send();
+    expect(fetchUserUUID).toHaveBeenCalledWith("cognito-1");
+  });
+
   it("works without a locale", async () => {
     const res = await asUser("get", "/user/get-my-profile");
     expect(res.status).toBe(200);

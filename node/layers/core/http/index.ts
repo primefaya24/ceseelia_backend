@@ -28,14 +28,38 @@ export function extractAccessToken(req: Request): string | null {
 }
 
 /*
-* Attach verified identity to the request body (kept on req.body for compatibility with existing routes)
+* Verified identity of the signed-in user. It lives in `res.locals.auth`, which only the server
+* writes, never in the client-controlled body. The raw token isn't kept (it could end up in logs).
 */
-function attachIdentity(req: Request, token: string, claims: jwt.JwtPayload): void {
+export interface AuthContext {
+    cognitoId: string;
+    groups: string[];
+    isAdmin: boolean;
+}
+
+/* Keys the old wrapper put on req.body. Removed from every request so no code can trust them. */
+const LEGACY_IDENTITY_KEYS = ["cognito_token", "cognito_id", "cognito_groups", "is_user_admin"];
+
+function attachIdentity(res: Response, claims: jwt.JwtPayload): void {
     const groups: string[] = Array.isArray(claims["cognito:groups"]) ? claims["cognito:groups"] : [];
-    req.body["cognito_token"] = token;
-    req.body["cognito_id"] = claims.sub;
-    req.body["cognito_groups"] = groups;
-    req.body["is_user_admin"] = isUserAdmin(groups);
+    const auth: AuthContext = {
+        cognitoId: String(claims.sub ?? ""),
+        groups,
+        isAdmin: isUserAdmin(groups),
+    };
+    res.locals.auth = auth;
+}
+
+/*
+* The signed-in user's identity. Only call from routes registered with withAuth=true; throws
+* otherwise, so a public route can never act as some user by accident.
+*/
+export function getAuth(res: Response): AuthContext {
+    const auth = res.locals.auth as AuthContext | undefined;
+    if (!auth || !auth.cognitoId) {
+        throw new Error("getAuth called on a request without a verified user");
+    }
+    return auth;
 }
 
 /*
@@ -58,6 +82,9 @@ export async function validateAndExecuteHttpApiRoute(
         if (req.body === undefined || req.body === null || typeof req.body !== "object") {
             req.body = {};
         }
+        for (const key of LEGACY_IDENTITY_KEYS) {
+            delete req.body[key];
+        }
 
         if (withAuth) {
             const token = extractAccessToken(req);
@@ -74,9 +101,9 @@ export async function validateAndExecuteHttpApiRoute(
                 res.status(appConstants.HTTP_STATUS_CODE_UNAUTHORIZED).send({message: appConstants.HTTP_ERROR_MSG_FORBIDDEN_ACCESS});
                 return;
             }
-            attachIdentity(req, token, claims);
+            attachIdentity(res, claims);
 
-            if (adminOnly && !req.body["is_user_admin"]) {
+            if (adminOnly && !getAuth(res).isAdmin) {
                 res.status(appConstants.HTTP_STATUS_CODE_FORBIDDEN).send({message: appConstants.HTTP_ERROR_MSG_ACCESS_RESTRICTED});
                 return;
             }

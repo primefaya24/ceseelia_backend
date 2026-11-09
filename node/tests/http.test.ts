@@ -7,7 +7,7 @@ vi.mock("../layers/aws/cognito", () => ({
 }));
 
 import { verifyCognitoAccessToken } from "../layers/aws/cognito";
-import { extractAccessToken, validateAndExecuteHttpApiRoute } from "../layers/core/http";
+import { extractAccessToken, getAuth, validateAndExecuteHttpApiRoute } from "../layers/core/http";
 
 const verifyMock = vi.mocked(verifyCognitoAccessToken);
 
@@ -28,7 +28,7 @@ function appWith(opts: Opts = {}) {
       res,
       opts.pure ?? (() => true),
       opts.valid ?? (() => true),
-      opts.core ?? ((r, s) => void s.send({ sub: r.body.cognito_id, admin: r.body.is_user_admin })),
+      opts.core ?? ((_r, s) => void s.send(getAuth(s))),
       opts.withAuth ?? true,
       opts.adminOnly ?? false
     );
@@ -66,7 +66,7 @@ describe("validateAndExecuteHttpApiRoute", () => {
     verifyMock.mockResolvedValue({ sub: "user-1", "cognito:groups": ["Admins"] });
     const res = await request(appWith()).get("/t").set("Authorization", "Bearer good");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ sub: "user-1", admin: true });
+    expect(res.body).toEqual({ cognitoId: "user-1", groups: ["Admins"], isAdmin: true });
   });
 
   it("returns 403 for non-admins on admin-only routes", async () => {
@@ -111,5 +111,36 @@ describe("validateAndExecuteHttpApiRoute", () => {
     const res = await request(appWith({ withAuth: false, core: (_r, s) => void s.send("ok") })).get("/t");
     expect(res.status).toBe(200);
     expect(verifyMock).not.toHaveBeenCalled();
+  });
+
+  describe("identity can't be spoofed through the body (S.12)", () => {
+    const spoof = { cognito_id: "victim", is_user_admin: true, cognito_groups: ["Admins"], cognito_token: "x" };
+    const echoBody = (r: Request, s: Response) => void s.send({ body: r.body, locals: s.locals });
+
+    it("strips identity keys from the body on public routes", async () => {
+      const res = await request(appWith({ withAuth: false, core: echoBody })).post("/t").send({ ...spoof, keep: 1 });
+      expect(res.status).toBe(200);
+      expect(res.body.body).toEqual({ keep: 1 });
+      expect(res.body.locals).toEqual({});
+    });
+
+    it("getAuth refuses on a public route", async () => {
+      const res = await request(appWith({ withAuth: false })).post("/t").send(spoof);
+      expect(res.status).toBe(500);
+    });
+
+    it("a body claiming admin doesn't pass the admin gate", async () => {
+      verifyMock.mockResolvedValue({ sub: "user-1", "cognito:groups": [] });
+      const res = await request(appWith({ adminOnly: true })).post("/t").set("Authorization", "good").send(spoof);
+      expect(res.status).toBe(403);
+    });
+
+    it("signed-in identity comes from the token, not the body, and the token isn't kept", async () => {
+      verifyMock.mockResolvedValue({ sub: "user-1", "cognito:groups": [] });
+      const res = await request(appWith({ core: echoBody })).post("/t").set("Authorization", "Bearer good").send(spoof);
+      expect(res.body.locals.auth).toEqual({ cognitoId: "user-1", groups: [], isAdmin: false });
+      expect(res.body.body).toEqual({});
+      expect(JSON.stringify(res.body)).not.toContain("good");
+    });
   });
 });

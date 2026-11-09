@@ -2,7 +2,7 @@
 import {Request, Response, Router} from 'express';
 import dotenv from 'dotenv';
 import {appConstants} from "../../../../constants";
-import {validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
+import {getAuth, validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
 import {IN_DEV} from "../../../../config";
 import {fetchUserUUID, updateFcmToken} from '../../../../layers/aws/dynamodb/dynamo-entities/user';
 dotenv.config();
@@ -45,7 +45,7 @@ function validRequestParams(req: Request): boolean {
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
     try {
         // Get user UUID
-        const userId = await fetchUserUUID(req.body["cognito_id"]);
+        const userId = await fetchUserUUID(getAuth(res).cognitoId);
 
         // Update FCM token for this user
         await updateFcmToken(userId, req.body.fcmToken);

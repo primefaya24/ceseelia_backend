@@ -161,10 +161,15 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
     above._
 
 ### S.C — Hardening
-- [ ] 🟡 **S.12 Move identity off `req.body`.** The wrapper writes `cognito_id`, `is_user_admin`
+- [x] 🟡 **S.12 Move identity off `req.body`.** The wrapper writes `cognito_id`, `is_user_admin`
       and `cognito_token` into the client-controlled body. On a public (`withAuth=false`) route a
       client could send `is_user_admin: true` itself. Put identity in `res.locals.auth`, remove
       `cognito_token` (nothing reads it, and it could end up in logs), and update the routes.
+  - _Done 2026-11-08, tested by hand. Identity is in `res.locals.auth`
+    (`{cognitoId, groups, isAdmin}`), read with `getAuth(res)`, which throws on a public route. The
+    token isn't stored. The old keys are stripped from every request body. Updated
+    `get-my-profile`, `update-profile`, `update-fcm-token` and the admin gate. Tests in
+    `tests/http.test.ts`._
 - [ ] 🟡 **S.13 Make the client IP trustworthy.** Change `app.set('trust proxy', true)` to `1`
       (one nginx hop), and have `getClientIp` use `req.ip` instead of the raw `cf-connecting-ip` /
       `x-forwarded-for` headers, which clients can spoof. Rate limiting (9.2) depends on this.
