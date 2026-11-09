@@ -6,9 +6,30 @@ import {
   appConstants,
   PRIORITY,
   PRIORITY_DEFAULT,
+  PRIORITY_HIGHT,
+  PRIORITY_MEDIUM,
   STORE_CURRENCY_FLOAT,
   STORE_PARAM_TYPE,
 } from "../../../../constants";
+import {
+  CURRENCY_CODES,
+  MAX_COUNT,
+  MAX_CUSTOMIZE_JSON,
+  MAX_LENGTH,
+  NUMBER_RANGE,
+} from "../../../../constants/input-limits";
+import {
+  hasAtMost2Decimals,
+  isEmailOrEmpty,
+  isHexColor,
+  isImageKeyOrEmpty,
+  isInRange,
+  isMaxLength,
+  isPhoneOrEmpty,
+  isUrlOrEmpty,
+  storeImageFolder,
+} from "../../utils/validation";
+import { isUlid } from "../../utils";
 
 // JOIN_REQUEST, REQUEST_ID
 export interface Merchant {
@@ -215,13 +236,34 @@ export function isStoreSettingsPure(storeSettings: StoreSettings): boolean {
   return true;
 }
 
+const SOCIAL_URL_KEYS = [
+  "websiteLink", "facebook", "instagram", "tiktok", "twitter", "youtube", "pinterest", "etsy",
+] as const;
+
 /*
- * Value checks (call only after isStoreSettingsPure)
+ * Value checks (call only after isStoreSettingsPure). `storeId` must already be a checked ULID:
+ * image keys must sit in this store's own folders.
  */
-export function isStoreSettingsValid(storeSettings: StoreSettings): boolean {
+export function isStoreSettingsValid(storeSettings: StoreSettings, storeId: string): boolean {
   const s = storeSettings;
   if (s.templateId.length === 0 || s.themeId.length === 0) return false;
+  if (!isMaxLength(s.templateId, MAX_LENGTH.templateId) || !isMaxLength(s.themeId, MAX_LENGTH.templateId)) {
+    return false;
+  }
 
+  // Store info
+  const info = s.storeInfo;
+  if (
+    !isMaxLength(info.storeName, MAX_LENGTH.storeName) ||
+    !isMaxLength(info.slogan, MAX_LENGTH.storeSlogan) ||
+    !isMaxLength(info.emailaddress, MAX_LENGTH.email) ||
+    !isEmailOrEmpty(info.emailaddress) ||
+    !isMaxLength(info.phoneNumber, MAX_LENGTH.phone) ||
+    !isPhoneOrEmpty(info.phoneNumber) ||
+    !isImageKeyOrEmpty(info.logoUri, storeImageFolder.logo(storeId))
+  ) return false;
+
+  // Rewards
   const r = s.purchaseRewards;
   // TODO(Stage 7): unify — the webapp saves REWARDS_REDEMPTION_*, the backend default is POINTS_TO_*
   const redemptionMethods = [
@@ -231,14 +273,80 @@ export function isStoreSettingsValid(storeSettings: StoreSettings): boolean {
     "REWARDS_REDEMPTION_DISCOUNT",
   ];
   if (!redemptionMethods.includes(r.redemptionMethod)) return false;
-  if (r.redemptionPointAmount < 0 || r.redemptionPointAmountValue < 0 || r.pointsPerDollarSpent < 0) return false;
+  const isPercentReward =
+    r.redemptionMethod === appConstants.STORE_REWARDS_REDEMPTION_METHOD_POINTS_TO_DISCOUNT ||
+    r.redemptionMethod === "REWARDS_REDEMPTION_DISCOUNT";
+  if (
+    !isMaxLength(r.rewardsLabel, MAX_LENGTH.rewardsLabel) ||
+    !isInRange(r.redemptionPointAmount, NUMBER_RANGE.points) ||
+    !Number.isInteger(r.redemptionPointAmount) ||
+    !isInRange(r.redemptionPointAmountValue, isPercentReward ? NUMBER_RANGE.percent : NUMBER_RANGE.price) ||
+    !isInRange(r.pointsPerDollarSpent, NUMBER_RANGE.points)
+  ) return false;
 
-  if (s.currencies.length === 0 || !s.currencies.every(isStoreCurrencyValid)) return false;
+  // Social links
+  const links = s.socialMediaLinks;
+  if (!SOCIAL_URL_KEYS.every((k) => isMaxLength(links[k], MAX_LENGTH.url) && isUrlOrEmpty(links[k]))) {
+    return false;
+  }
+  if (!isMaxLength(links.whatsapp, MAX_LENGTH.phone) || !isPhoneOrEmpty(links.whatsapp)) return false;
+
+  // Currencies: 1-3 from the allow-list, no duplicates, exactly one default
+  if (
+    s.currencies.length === 0 ||
+    s.currencies.length > MAX_COUNT.currencies ||
+    !s.currencies.every(isStoreCurrencyValid)
+  ) return false;
   const codes = s.currencies.map((c) => c.currencyCode);
   if (new Set(codes).size !== codes.length) return false;
+  if (s.currencies.filter((c) => c.currencyIsDefault).length !== 1) return false;
 
-  if (s.general.discountPercent < 0 || s.general.discountPercent > 100) return false;
+  // General
+  if (!isMaxLength(s.general.pickupAddress, MAX_LENGTH.pickupAddress)) return false;
+  if (!isInRange(s.general.discountPercent, NUMBER_RANGE.percent)) return false;
 
+  return isStoreCustomizeValid(s, storeId);
+}
+
+/*
+ * `customize` is template-specific. Cap its size for every template, and check the default
+ * (t0) template's fields when they're present. UI-only extras (e.g. `imageFile: null`) are allowed.
+ */
+function isStoreCustomizeValid(s: StoreSettings, storeId: string): boolean {
+  const c = s.customize;
+  if (c === undefined) return true;
+  if (JSON.stringify(c).length > MAX_CUSTOMIZE_JSON) return false;
+  if (s.templateId !== appConstants.STORE_TEMPLATE_DEFAULT) return true;
+
+  const color = c.colorTheme?.primaryColor;
+  if (c.colorTheme !== undefined && (!isObject(c.colorTheme) || (color !== undefined && (typeof color !== "string" || !isHexColor(color))))) {
+    return false;
+  }
+
+  if (c.header !== undefined) {
+    const uri = c.header?.headerImageStripUri;
+    if (!isObject(c.header) || (uri !== undefined && (typeof uri !== "string" || !isImageKeyOrEmpty(uri, storeImageFolder.header(storeId))))) {
+      return false;
+    }
+  }
+
+  const promo = c.promoContent;
+  if (promo !== undefined) {
+    if (!isObject(promo)) return false;
+    if (promo.runnerText !== undefined && (typeof promo.runnerText !== "string" || !isMaxLength(promo.runnerText, MAX_LENGTH.promoRunnerText))) {
+      return false;
+    }
+    if (promo.promoImages !== undefined) {
+      if (!Array.isArray(promo.promoImages) || promo.promoImages.length > MAX_COUNT.promoImages) return false;
+      const folder = storeImageFolder.promo(storeId);
+      const ok = promo.promoImages.every(
+        (img: unknown) =>
+          isObject(img) &&
+          (img.imageUri === undefined || (typeof img.imageUri === "string" && isImageKeyOrEmpty(img.imageUri, folder)))
+      );
+      if (!ok) return false;
+    }
+  }
   return true;
 }
 
@@ -254,8 +362,9 @@ export function isStoreCurrencyPure(currency: StoreCurrency): boolean {
 
 export function isStoreCurrencyValid(currency: StoreCurrency): boolean {
   return (
-    currency.currencyCode.length > 0 &&
+    (CURRENCY_CODES as readonly string[]).includes(currency.currencyCode) &&
     currency.currencySign.length > 0 &&
+    isMaxLength(currency.currencySign, MAX_LENGTH.currencySign) &&
     (currency.currencyFloat === appConstants.STORE_CURRENCY_POSITION_LEFT ||
       currency.currencyFloat === appConstants.STORE_CURRENCY_POSITION_RIGHT)
   );
@@ -309,23 +418,43 @@ export function initStoreCategory(
 }
 
 export function isStoreCategoryPure(storeCategory: StoreCategory): boolean {
+  if (!isObject(storeCategory)) return false;
   const hashtags = storeCategory.storeCategoriyHashtags;
   return (
+    typeof storeCategory.storeCategoriyPriority === "string" &&
     typeof storeCategory.storeCategoryName === "string" &&
     typeof storeCategory.storeCategoryBannerUri === "string" &&
     typeof storeCategory.storeCategoryIsActive === "boolean" &&
     typeof storeCategory.storeCategoryDiscountPercent === "number" &&
     Array.isArray(hashtags) &&
-    hashtags.every((hashtag) => isStoreCategoryHashtagPure(hashtag)) &&
+    hashtags.every((hashtag) => isObject(hashtag) && isStoreCategoryHashtagPure(hashtag)) &&
     typeof storeCategory.storeCategoryItemCount === "number"
   );
 }
 
-export function isStoreCategoryValid(storeCategory: StoreCategory): boolean {
+const PRIORITIES: string[] = [PRIORITY_HIGHT, PRIORITY_MEDIUM, PRIORITY_DEFAULT];
+
+/*
+ * Value checks (call only after isStoreCategoryPure). `categoryId` is the existing category's ID
+ * on update, or undefined on create; a new category can't have a banner yet (it's uploaded under
+ * the ID the create returns).
+ */
+export function isStoreCategoryValid(
+  storeCategory: StoreCategory,
+  storeId: string,
+  categoryId: string | undefined
+): boolean {
   const hashtags = storeCategory.storeCategoriyHashtags;
+  const banner = storeCategory.storeCategoryBannerUri;
   return (
     storeCategory.storeCategoryName.length > 0 &&
-    storeCategory.storeCategoryDiscountPercent >= 0 &&
+    isMaxLength(storeCategory.storeCategoryName, MAX_LENGTH.categoryName) &&
+    PRIORITIES.includes(storeCategory.storeCategoriyPriority) &&
+    isInRange(storeCategory.storeCategoryDiscountPercent, NUMBER_RANGE.percent) &&
+    (categoryId
+      ? isImageKeyOrEmpty(banner, storeImageFolder.categoryBanner(storeId, categoryId))
+      : banner === "") &&
+    hashtags.length <= MAX_COUNT.categoryHashtags &&
     hashtags.every((hashtag) => isStoreCategoryHashtagValid(hashtag))
   );
 }
@@ -348,7 +477,10 @@ export function isStoreCategoryHashtagValid(
   storeCategoryHashtag: StoreCategoryHashtag
 ): boolean {
   return (
-    storeCategoryHashtag.id.length > 0 && storeCategoryHashtag.value.length > 0
+    storeCategoryHashtag.id.length > 0 &&
+    isMaxLength(storeCategoryHashtag.id, MAX_LENGTH.hashtagId) &&
+    storeCategoryHashtag.value.length > 0 &&
+    isMaxLength(storeCategoryHashtag.value, MAX_LENGTH.hashtag)
   );
 }
 
@@ -371,43 +503,56 @@ export interface StoreItem {
 }
 
 export function isStoreItemPure(storeItem: StoreItem): boolean {
-  const hashtagIdss = storeItem.storeItemHashtagIds;
-  let pure =
-    typeof storeItem.storeItemCategoryId === "string" &&
-    Array.isArray(storeItem.storeItemImageUris) &&
-    typeof storeItem.storeItemName === "string" &&
-    typeof storeItem.storeItemStock === "number" &&
-    typeof storeItem.storeItemPrice === "number" &&
-    typeof storeItem.storeItemDescription === "string" &&
-    typeof storeItem.storeItemIsActive === "boolean" &&
-    Array.isArray(hashtagIdss) &&
-    hashtagIdss.every((hashtagId) => typeof hashtagId === "string") &&
-    typeof storeItem.storeItemDiscountPercent === "number" &&
-    Array.isArray(storeItem.storeItemCustomParams);
-  for (const storeItemImageUri of storeItem.storeItemImageUris) {
-    pure = pure && typeof storeItemImageUri === "string";
-  }
-  for (const storeItemCustomParam of storeItem.storeItemCustomParams) {
-    pure = pure && isStoreParameterPure(storeItemCustomParam);
-  }
-  return pure;
+  if (!isObject(storeItem)) return false;
+  const i = storeItem;
+  return (
+    typeof i.storeItemCategoryId === "string" &&
+    Array.isArray(i.storeItemImageUris) &&
+    i.storeItemImageUris.every((uri) => typeof uri === "string") &&
+    typeof i.storeItemName === "string" &&
+    typeof i.storeItemStock === "number" &&
+    typeof i.storeItemPrice === "number" &&
+    typeof i.storeItemDescription === "string" &&
+    typeof i.storeItemIsActive === "boolean" &&
+    Array.isArray(i.storeItemHashtagIds) &&
+    i.storeItemHashtagIds.every((id) => typeof id === "string") &&
+    typeof i.storeItemDiscountPercent === "number" &&
+    Array.isArray(i.storeItemCustomParams) &&
+    i.storeItemCustomParams.every((p) => isObject(p) && isStoreParameterPure(p))
+  );
 }
 
-export function isStoreItemValid(storeItem: StoreItem): boolean {
-  const hashtagIdss = storeItem.storeItemHashtagIds;
-  let valid =
-    storeItem.storeItemCategoryId.length > 0 &&
-    storeItem.storeItemName.length > 0;
-  for (const storeItemImageUri of storeItem.storeItemImageUris) {
-    valid = valid && storeItemImageUri.length > 0;
-  }
-  for (const storeItemCustomParam of storeItem.storeItemCustomParams) {
-    valid = valid && isStoreParameterValid(storeItemCustomParam);
-  }
-  for (const hashtagId of hashtagIdss) {
-    valid = valid && hashtagId.length > 0;
-  }
-  return valid;
+/*
+ * Value checks (call only after isStoreItemPure). `itemId` is the existing item's ID on update,
+ * or undefined on create; a new item can't have images yet (they're uploaded under the ID the
+ * create returns).
+ */
+export function isStoreItemValid(
+  storeItem: StoreItem,
+  storeId: string,
+  itemId: string | undefined
+): boolean {
+  const i = storeItem;
+  const imageFolder = itemId ? storeImageFolder.item(storeId, itemId) : undefined;
+  return (
+    isUlid(i.storeItemCategoryId) &&
+    i.storeItemName.length > 0 &&
+    isMaxLength(i.storeItemName, MAX_LENGTH.itemName) &&
+    isMaxLength(i.storeItemDescription, MAX_LENGTH.itemDescription) &&
+    isInRange(i.storeItemPrice, NUMBER_RANGE.price) &&
+    hasAtMost2Decimals(i.storeItemPrice) &&
+    isInRange(i.storeItemStock, NUMBER_RANGE.stock) &&
+    Number.isInteger(i.storeItemStock) &&
+    isInRange(i.storeItemDiscountPercent, NUMBER_RANGE.percent) &&
+    i.storeItemImageUris.length <= MAX_COUNT.itemImages &&
+    i.storeItemImageUris.every(
+      (uri) => uri.length > 0 && imageFolder !== undefined && isImageKeyOrEmpty(uri, imageFolder)
+    ) &&
+    i.storeItemHashtagIds.length <= MAX_COUNT.itemHashtags &&
+    i.storeItemHashtagIds.every((id) => id.length > 0 && isMaxLength(id, MAX_LENGTH.hashtagId)) &&
+    i.storeItemCustomParams.length <= MAX_COUNT.itemParams &&
+    i.storeItemCustomParams.every(isStoreParameterValid)
+  );
 }
 
 export interface StoreParameter {
@@ -422,12 +567,21 @@ export function isStoreParameterPure(storeParameter: StoreParameter): boolean {
     typeof storeParameter.storeParamLabel === "string" &&
     typeof storeParameter.storeParamType === "string" &&
     typeof storeParameter.storeParamIsMandatory === "boolean" &&
-    Array.isArray(storeParameter.storeParamOptions)
+    Array.isArray(storeParameter.storeParamOptions) &&
+    storeParameter.storeParamOptions.every((o) => typeof o === "string")
   );
 }
 
 export function isStoreParameterValid(storeParameter: StoreParameter): boolean {
-  if (storeParameter.storeParamLabel.length === 0) {
+  const label = storeParameter.storeParamLabel;
+  if (label.length === 0 || !isMaxLength(label, MAX_LENGTH.paramLabel)) {
+    return false;
+  }
+  const options = storeParameter.storeParamOptions;
+  if (
+    options.length > MAX_COUNT.paramOptions ||
+    !options.every((o) => o.length > 0 && isMaxLength(o, MAX_LENGTH.paramOption))
+  ) {
     return false;
   }
   if (

@@ -120,25 +120,34 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
   - _Done 2026-11-08, tested by hand. New `queryAllWithPrefix` in the store entity
     follows `LastEvaluatedKey`; categories and items both use it. Tests in
     `tests/store-inventory.test.ts`._
-- [ ] 🟡 **S.9 Tighten the validators** (`layers/core/interfaces/store`):
+- [x] 🟡 **S.9 Tighten the validators** (`layers/core/interfaces/store`):
+  - _Done 2026-11-08, tested by hand. Limits in `node/constants/input-limits.ts` (same
+    lengths/ranges as WA S.15, plus list caps: 10 images/item, 30 hashtags, 10 params, 30
+    options, 10 promo images, 3 currencies; `customize` ≤ 20,000 chars). Format helpers in
+    `layers/core/utils/validation.ts`. Stock allows `-1` (unlimited, for 2.6). Image keys must be
+    `<this store's folder><ULID>.png|jpg|jpeg`; a new category/item can't reference images yet.
+    Store name/slug lengths also checked in `store/create` and `admin/update-store-info` (slug
+    format waits for 1.8). Real dev data passes. Tests in `tests/store-validators.test.ts`.
+    **Webapp changes (same task):** blank parameter options are dropped before saving, and the
+    default currency can only move (never be switched off; deleting it passes it on)._
   - _Use the same limits as the webapp (WA S.15, 2026-11-08):
     `ceseelia_webapp/src/app/core/constants/input-limits.constants.ts` for lengths and ranges,
     `…/core/functions/input-validation.functions.ts` for URL / email / phone formats. Note the
     webapp accepts phone and WhatsApp as digits with optional `+`, spaces, `-`, `()` (7–15
     digits), and stock as an integer ≥ 0 (no `-1`)._
-  - [ ] a. Max lengths on every string (names, descriptions, slogan, hashtags, labels, options).
-  - [ ] b. Numbers: price ≥ 0, stock is an integer ≥ -1, item/category discount 0–100, priority
+  - [x] a. Max lengths on every string (names, descriptions, slogan, hashtags, labels, options).
+  - [x] b. Numbers: price ≥ 0, stock is an integer ≥ -1, item/category discount 0–100, priority
         is one of `PRIORITY_*`.
-  - [ ] c. Array caps: images per item (e.g. ≤ 10), hashtags, custom params, options, promo images,
+  - [x] c. Array caps: images per item (e.g. ≤ 10), hashtags, custom params, options, promo images,
         currencies.
-  - [ ] d. Image URIs must start with the right store prefix (`store/<storeId>/images/logo/`,
+  - [x] d. Image URIs must start with the right store prefix (`store/<storeId>/images/logo/`,
         `…/item/<itemId>/images/`, and so on). Today a merchant can point at another store's files.
-  - [ ] e. Social links must be empty or `https?://` URLs. Email must look like an email.
+  - [x] e. Social links must be empty or `https?://` URLs. Email must look like an email.
         WhatsApp must be digits.
-  - [ ] f. Exactly one `currencyIsDefault`, and currency codes are ISO-4217 from an allow-list.
-  - [ ] g. `customize`: validate the t0 shape (colors are hex, URIs as in d) and cap its
+  - [x] f. Exactly one `currencyIsDefault`, and currency codes are ISO-4217 from an allow-list.
+  - [x] g. `customize`: validate the t0 shape (colors are hex, URIs as in d) and cap its
         serialized size. Today it's an unchecked `any`.
-  - [ ] h. `storeParamOptions` must be non-empty strings.
+  - [x] h. `storeParamOptions` must be non-empty strings.
 - [ ] 🟡 **S.10 Validate `userPreferredLocale`** in `get-my-profile/:locale` against an allow-list
       before writing it.
 - [ ] 🟡 **S.11 Make `delete-user` consistent.** It deletes the Cognito user but leaves the DB

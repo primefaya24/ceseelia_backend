@@ -58,7 +58,7 @@ function pureRequestParams(req: Request): boolean {
  */
 function validRequestParams(req: Request): boolean {
   return (
-    req.body.storeId.length > 0 && isStoreSettingsValid(req.body.storeSettings)
+    isStoreSettingsValid(req.body.storeSettings, req.body.storeId)
   );
 }
 

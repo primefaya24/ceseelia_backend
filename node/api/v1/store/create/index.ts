@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../config";
 import { appConstants } from "../../../../constants";
+import { MAX_LENGTH } from "../../../../constants/input-limits";
 import { createStore } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { StoreOverview } from "../../../../layers/core/interfaces/store";
 import { listPrefixFiles } from "../../../../layers/aws/s3";
@@ -44,7 +45,14 @@ function pureRequestParams(req: Request): boolean {
  * Ensure request params are valid
  */
 function validRequestParams(req: Request): boolean {
-  return req.body.storeName.length > 0 && req.body.storeSlug.length > 0;
+  // Slug format rules come with progress.md 1.8; only the length is checked here.
+  const { storeName, storeSlug } = req.body;
+  return (
+    storeName.length > 0 &&
+    storeName.length <= MAX_LENGTH.storeName &&
+    storeSlug.length > 0 &&
+    storeSlug.length <= MAX_LENGTH.storeSlug
+  );
 }
 
 /*

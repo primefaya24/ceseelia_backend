@@ -43,7 +43,11 @@ function pureRequestParams(req: Request): boolean {
  * Ensure request params are valid
  */
 function validRequestParams(req: Request): boolean {
-  return req.body.storeId.length > 0 && isStoreItemValid(req.body.storeItem);
+  return isStoreItemValid(
+    req.body.storeItem,
+    req.body.storeId,
+    req.body.isUpdate ? req.body.storeItemId : undefined
+  );
 }
 
 /*

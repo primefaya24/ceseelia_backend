@@ -33,7 +33,7 @@ const txCancelled = (codes: string[]) =>
 
 const item = (): StoreItem => ({
   storeItemId: "",
-  storeItemCategoryId: "CAT1",
+  storeItemCategoryId: ulid(),
   storeItemImageUris: [],
   storeItemName: "Tea",
   storeItemStock: 1,
@@ -175,18 +175,26 @@ describe("image cleanup runs only after a successful write", () => {
     vi.mocked(verifyCognitoAccessToken).mockResolvedValue({ sub: "admin-1", "cognito:groups": ["Admins"] });
   });
 
+  const categoryFolder = `store/${STORE}/category/${ID}/images/`;
+  const itemFolder = `store/${STORE}/item/${ID}/images/`;
+  const KEEP = `${ulid()}.png`;
   const cases = [
     [
       "category",
       "/store/category/create",
-      { storeId: STORE, categoryId: ID, isUpdate: true, storeCategory: { ...initStoreCategory("", "Drinks"), storeCategoryBannerUri: "keep.png" } },
-      `store/${STORE}/category/${ID}/images/`,
+      {
+        storeId: STORE,
+        categoryId: ID,
+        isUpdate: true,
+        storeCategory: { ...initStoreCategory("", "Drinks"), storeCategoryBannerUri: categoryFolder + KEEP },
+      },
+      categoryFolder,
     ],
     [
       "item",
       "/store/inventory/create-item",
-      { storeId: STORE, storeItemId: ID, isUpdate: true, storeItem: { ...item(), storeItemImageUris: ["keep.png"] } },
-      `store/${STORE}/item/${ID}/images/`,
+      { storeId: STORE, storeItemId: ID, isUpdate: true, storeItem: { ...item(), storeItemImageUris: [itemFolder + KEEP] } },
+      itemFolder,
     ],
   ] as const;
 
@@ -205,7 +213,7 @@ describe("image cleanup runs only after a successful write", () => {
     });
     s3.on(ListObjectsV2Command).callsFake(() => {
       order.push("list");
-      return { Contents: [{ Key: `${folder}old.png` }, { Key: "keep.png" }] };
+      return { Contents: [{ Key: `${folder}old.png` }, { Key: folder + KEEP }] };
     });
     s3.on(DeleteObjectsCommand).resolves({});
 
