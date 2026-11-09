@@ -26,7 +26,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > 2.4 (public data endpoint) and 2.5 (prices: whole cents per currency, `storeItemPrices`) are
 > done too (WA 2.6 has a price box per currency), and 2.6 (stock rule: `-1` unlimited, `0`
 > sold out). **Stage 2 is done** in both repos (WA 2.7–2.8 too). **Next: Stage 3**
-> (3.1 `GET /store/public/storefront/:slug`).
+> (3.1 `GET /store/public/storefront/:slug` is done). **Next: WA 3.1** (slug URLs using it), or
+> BE 3.2 (cache headers) / 3.3 (item deep links).
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -49,8 +50,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging` |
 
-**Health check (2026-11-09):** `npm test` 439/439 passing · `npm run typecheck` clean ·
-`npm run lint` 0 errors, 80 warnings · `npm audit --omit=dev` 0 vulnerabilities.
+**Health check (2026-11-09):** `npm test` 453/453 passing · `npm run typecheck` clean ·
+`npm run lint` 0 errors, 79 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
 
@@ -429,8 +430,17 @@ match the backend and webapp._
 
 ## 5. Stage 3 — Public storefront API
 
-- [ ] 3.1 `GET /store/public/storefront/:slug` → settings, categories and active items (wraps 1.8
+- [x] 3.1 `GET /store/public/storefront/:slug` → settings, categories and active items (wraps 1.8
       and 2.4). (WA 3.1)
+  - _Done 2026-11-09, tested by hand. Returns `{ storeId, settings, categories, items }`:
+    the slug is lowercased and looked up (1.8), then the same response as `get-data-public`,
+    which now shares `sendPublicStorefront` in `layers/core/http/public-storefront.ts` (both
+    include `storeId`). 400 for an invalid slug (no lookup); 404 `STORE_NOT_FOUND` for an unknown
+    slug or a slug whose store is gone; 404 `STORE_UNAVAILABLE` when suspended. Fixed on the way:
+    the shopper's geo currency was made the default even when the store didn't offer it, leaving
+    no default (no prices shown); `withShopperCurrency` now keeps the store's default then.
+    Tests in `tests/public-storefront-slug.test.ts`; checked live on dev (`northern-hoop` and
+    `Northern-Hoop` 200, unknown 404, `a` 400)._
 - [ ] 3.2 Cache headers (`Cache-Control`, `ETag`) on public endpoints, and CloudFront in front of
       the API's public paths and the storage bucket.
 - [ ] 3.3 `GET /store/public/item/:storeId/:itemId` for deep links. (WA 3.5)
@@ -540,6 +550,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 3.1 done: `GET /store/public/storefront/:slug` (slug lookup + public data, with `storeId`); the shopper's currency is the default only if the store offers it. |
 | 2026-11-09 | 2.6 done: stock rule named (`STOCK_UNLIMITED = -1`, 0 = sold out) with `hasStockFor` for 4.1/5.5; webapp storefront no longer hides unlimited items. |
 | 2026-11-09 | 2.5 done: item prices are `storeItemPrices` (whole cents per currency, set by the merchant, no conversion); public data shows only offered currencies; migration script run on dev. |
 | 2026-11-09 | 2.4 done: public storefront data shows only active items in active categories (counts match), 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` for unknown or suspended stores. |

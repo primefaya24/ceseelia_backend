@@ -148,11 +148,12 @@ export default function registerRoute(router: Router): void {
 | Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing; prices are `storeItemPrices` in whole cents per currency (2.5) |
 | Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ −1 on its category, then deletes its images |
 | Inventory | `GET /store/inventory/get-data/:storeId` (auth) | ✅ categories + items + settings |
-| Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ active items in active categories only (counts match), no admin block, geo-IP default currency; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (suspended) |
+| Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ active items in active categories only (counts match), no admin block, `storeId`, geo-IP default currency if the store offers it; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (suspended) |
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount` | ✅ 1–10 in total; 404 unless the item exists |
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug; 409 if the slug is taken) | ✅ |
 | Public | `GET /store/public/resolve-slug/:slug` → `{storeId}` (404 if unknown) | ✅ |
+| Public | `GET /store/public/storefront/:slug` → `{storeId, settings, categories, items}` (no auth) | ✅ same body as `get-data-public` (`sendPublicStorefront`); 400 bad slug, 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (3.1) |
 | Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
 | Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, salesCommission, isStoreLive}` | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
 | Admin | `POST /admin/assign-store-member` `{storeId, email, role?}` | ✅ existing account → member now (`ADDED`); no account → pending invite + SES email (`INVITED`, `emailSent`); 409 `ALREADY_MEMBER` |
@@ -249,7 +250,7 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     is the check for quotes and the paid-order decrement (Stage 5).
 
 ### Stage 3 — Public storefront API
-3.1 `GET /store/public/storefront/:slug` → settings + categories + active items (wraps 2.4/1.8).
+3.1 ✅ `GET /store/public/storefront/:slug` → storeId + settings + categories + active items (wraps 2.4/1.8).
 3.2 Cache headers / CloudFront in front of public endpoints and the storage bucket.
 3.3 `GET /store/public/item/:storeId/:itemId` for deep-linked item pages (WA item sheet / share).
 3.4 Public "contact store" → `POST /customer/contact-store` (SES to store email, rate-limited).
