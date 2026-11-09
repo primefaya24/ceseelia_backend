@@ -41,7 +41,9 @@ function pureRequestParams(req: Request): boolean {
 * Ensure request params are valid
 */
 function validRequestParams(req: Request): boolean {
-    return true;
+    // The optional locale is saved on the profile, so only accept supported ones.
+    const locale = req.params.userPreferredLocale;
+    return locale === undefined || appConstants.SUPPORTED_LOCALES.includes(locale);
 }
 
 /*

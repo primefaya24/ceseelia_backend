@@ -131,6 +131,7 @@ export const appConstants = {
   // Locales
   LOCALE_EN: "en", // English
   LOCALE_ID: "id", // Bahasa Indonesia
+  SUPPORTED_LOCALES: ["en", "id"] as readonly string[],
 
   // User
   USER_PERMISSION_ADMIN: "ADMIN",

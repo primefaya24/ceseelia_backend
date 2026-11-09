@@ -148,12 +148,17 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
   - [x] g. `customize`: validate the t0 shape (colors are hex, URIs as in d) and cap its
         serialized size. Today it's an unchecked `any`.
   - [x] h. `storeParamOptions` must be non-empty strings.
-- [ ] 🟡 **S.10 Validate `userPreferredLocale`** in `get-my-profile/:locale` against an allow-list
+- [x] 🟡 **S.10 Validate `userPreferredLocale`** in `get-my-profile/:locale` against an allow-list
       before writing it.
-- [ ] 🟡 **S.11 Make `delete-user` consistent.** It deletes the Cognito user but leaves the DB
+  - _Done 2026-11-08, tested by hand. `appConstants.SUPPORTED_LOCALES` (`en`, `id`);
+    anything else is a 400 and isn't saved. Tests in `tests/user-routes.test.ts`._
+- [x] 🟡 **S.11 Make `delete-user` consistent.** It deletes the Cognito user but leaves the DB
       records (that code is commented out). Either disable the route until 1.1/1.2 or finish it:
       delete the DB rows and memberships, refuse while the user is the only member of a live store,
       then delete from Cognito last.
+  - _Done 2026-11-08, tested by hand. **Disabled for now:** returns 501 and deletes
+    nothing (the webapp never calls it). **Re-enable after 1.2** with the full delete described
+    above._
 
 ### S.C — Hardening
 - [ ] 🟡 **S.12 Move identity off `req.body`.** The wrapper writes `cognito_id`, `is_user_admin`
