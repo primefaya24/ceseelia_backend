@@ -3,7 +3,7 @@ import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
 import { ConditionalCheckFailedException, TransactionCanceledException } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { ulid } from "ulid";
 
 vi.mock("../layers/aws/cognito", () => ({
@@ -161,5 +161,58 @@ describe("routes return 404 for missing records", () => {
     });
     expect(res.status).toBe(200);
     expect(res.text).toMatch(/^[0-7][0-9A-HJKMNP-TV-Z]{25}$/);
+  });
+});
+
+describe("image cleanup runs only after a successful write", () => {
+  const app = createApp();
+  const STORE = ulid();
+  const ID = ulid();
+  const asAdmin = (path: string) =>
+    request(app).post(`/api/v1${path}`).set("Host", "localhost").set("Authorization", "Bearer good");
+
+  beforeEach(() => {
+    vi.mocked(verifyCognitoAccessToken).mockResolvedValue({ sub: "admin-1", "cognito:groups": ["Admins"] });
+  });
+
+  const cases = [
+    [
+      "category",
+      "/store/category/create",
+      { storeId: STORE, categoryId: ID, isUpdate: true, storeCategory: { ...initStoreCategory("", "Drinks"), storeCategoryBannerUri: "keep.png" } },
+      `store/${STORE}/category/${ID}/images/`,
+    ],
+    [
+      "item",
+      "/store/inventory/create-item",
+      { storeId: STORE, storeItemId: ID, isUpdate: true, storeItem: { ...item(), storeItemImageUris: ["keep.png"] } },
+      `store/${STORE}/item/${ID}/images/`,
+    ],
+  ] as const;
+
+  it.each(cases)("%s: a failed update deletes nothing", async (_name, path, body) => {
+    ddb.on(UpdateCommand).rejects(conditionFailed());
+    const res = await asAdmin(path).send(body);
+    expect(res.status).toBe(404);
+    expect(s3.calls()).toHaveLength(0);
+  });
+
+  it.each(cases)("%s: a successful update then removes unused images", async (_name, path, body, folder) => {
+    const order: string[] = [];
+    ddb.on(UpdateCommand).callsFake(() => {
+      order.push("write");
+      return {};
+    });
+    s3.on(ListObjectsV2Command).callsFake(() => {
+      order.push("list");
+      return { Contents: [{ Key: `${folder}old.png` }, { Key: "keep.png" }] };
+    });
+    s3.on(DeleteObjectsCommand).resolves({});
+
+    const res = await asAdmin(path).send(body);
+    expect(res.status).toBe(200);
+    expect(order).toEqual(["write", "list"]);
+    const deleted = s3.commandCalls(DeleteObjectsCommand)[0].args[0].input.Delete?.Objects?.map((o) => o.Key);
+    expect(deleted).toEqual([`${folder}old.png`]);
   });
 });

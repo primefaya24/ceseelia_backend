@@ -66,14 +66,6 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeCategoryId = req.body.categoryId;
     const isUpdate = req.body.isUpdate;
 
-    // Clean up s3 leaks - category images
-    if (isUpdate) {
-      await cleanUpS3Folder(
-        `store/${storeId}/category/${storeCategoryId}/images/`,
-        [storeCategory?.storeCategoryBannerUri || ""]
-      );
-    }
-
     // Create category
     // On create the client's ID is ignored and a new one is generated.
     const categoryId: string = await updateStoreCategory(
@@ -82,6 +74,15 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       isUpdate ? storeCategoryId : undefined,
       isUpdate
     );
+
+    // Clean up unused images only after the write succeeded, so a failed save never deletes
+    // images the stored record still uses.
+    if (isUpdate) {
+      await cleanUpS3Folder(
+        `store/${storeId}/category/${storeCategoryId}/images/`,
+        [storeCategory?.storeCategoryBannerUri || ""]
+      );
+    }
 
     // Respond to user
     res.send(categoryId);

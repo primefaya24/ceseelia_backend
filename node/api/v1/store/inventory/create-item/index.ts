@@ -57,14 +57,6 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeItemId = req.body.storeItemId;
     const isUpdate = req.body.isUpdate;
 
-    // Clean up s3 leaks - item images
-    if (isUpdate) {
-      await cleanUpS3Folder(
-        `store/${storeId}/item/${storeItemId}/images/`,
-        storeItem?.storeItemImageUris
-      );
-    }
-
     // Create item
     // On create the client's ID is ignored and a new one is generated.
     const itemId: string = await updateStoreItem(
@@ -73,6 +65,15 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       isUpdate ? storeItemId : undefined,
       isUpdate
     );
+
+    // Clean up unused images only after the write succeeded, so a failed save never deletes
+    // images the stored record still uses.
+    if (isUpdate) {
+      await cleanUpS3Folder(
+        `store/${storeId}/item/${storeItemId}/images/`,
+        storeItem?.storeItemImageUris
+      );
+    }
 
     // Respond to user
     res.send(itemId);

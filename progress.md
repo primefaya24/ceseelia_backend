@@ -99,9 +99,12 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
         use `attribute_exists`. Today `isUpdate=false` plus an existing id silently overwrites a record.
   - [x] c. Check that the store exists (its `SETTINGS` row) before creating a category or item.
   - [x] d. Tests for each case.
-- [ ] 🟠 **S.6 Run S3 cleanup only after the DB write succeeds**, in `category/create` and
+- [x] 🟠 **S.6 Run S3 cleanup only after the DB write succeeds**, in `category/create` and
       `inventory/create-item`. They currently delete "unused" images before the write. The same bug
       was fixed for update-settings in Stage 0.
+  - _Done 2026-11-08, tested by hand. Both routes now write first and clean up after.
+    Tests in `tests/store-writes.test.ts` check that a failed update deletes nothing and a
+    successful one lists and deletes only after the write._
 - [ ] 🟠 **S.7 Fix the batch helper so it reports failures.** `dynamoWriteManyItems` uses
       `Promise.allSettled` and never throws, so `createStore` (and `registerUser`) return success even
       when the write failed or items were left unprocessed. Throw when a batch is rejected or
