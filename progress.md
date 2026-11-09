@@ -24,7 +24,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > WA 1.6a–c (profile pages) done too; 1.6d waits on a real `delete-user` (501 since S.11).
 > Stage 2.1–2.3 are done (item counts, category delete rule, upload limits; WA uses all three).
 > **Next: BE 2.4 public data endpoint** (only active items, 404 for unknown or suspended stores).
-> WA 2.4 (size/type checks before upload) can be done any time.
+> WA 2.4 (size/type checks before upload) is done too.
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
