@@ -4,6 +4,7 @@
 /* Max string lengths, in characters. */
 export const MAX_LENGTH = {
   storeName: 60,
+  personName: 50,
   storeSlug: 40,
   storeSlogan: 120,
   categoryName: 60,

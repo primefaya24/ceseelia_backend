@@ -155,7 +155,7 @@ export default function registerRoute(router: Router): void {
 | Admin | `POST /admin/assign-store-member` `{storeId, email, role?}` | ✅ existing account → member now (`ADDED`); no account → pending invite + SES email (`INVITED`, `emailSent`); 409 `ALREADY_MEMBER` |
 | Admin | `DELETE /admin/remove-store-member/:storeId/:userId`, `DELETE /admin/cancel-store-invite/:storeId/:email` | ✅ 404 `NOT_A_MEMBER` / `NOT_INVITED` |
 | User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |
-| User | `PUT /user/update-profile`, `PUT /user/update-fcm-token` | ✅ |
+| User | `PUT /user/update-profile` `{userFirstName, userLastName}` (trimmed, 1–50 chars), `PUT /user/update-fcm-token` | ✅ |
 | User | `DELETE /user/delete-user` | ⛔ disabled (501) until a full delete exists (after 1.2) |
 | Merchant | `GET /merchant/path` | ❌ template stub |
 | Customer | — | ❌ empty router |

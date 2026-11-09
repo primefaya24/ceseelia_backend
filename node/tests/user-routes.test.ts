@@ -11,6 +11,7 @@ vi.mock("../layers/aws/dynamodb/dynamo-entities/user", async (importOriginal) =>
   findUserIdByCognitoId: vi.fn(async () => "USER1"),
   getMyProfile: vi.fn(async () => ({ info: {} })),
   updateUserLocale: vi.fn(async () => undefined),
+  updateUserProfile: vi.fn(async () => undefined),
 }));
 
 vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", () => ({
@@ -19,7 +20,7 @@ vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", () => ({
 }));
 
 import { deleteUser, verifyCognitoAccessToken } from "../layers/aws/cognito";
-import { updateUserLocale } from "../layers/aws/dynamodb/dynamo-entities/user";
+import { updateUserLocale, updateUserProfile } from "../layers/aws/dynamodb/dynamo-entities/user";
 import { createApp } from "../app";
 
 const app = createApp();
@@ -67,5 +68,31 @@ describe("delete-user (S.11)", () => {
   it("still requires sign-in", async () => {
     const res = await request(app).delete("/api/v1/user/delete-user").set("Host", "localhost");
     expect(res.status).toBe(401);
+  });
+});
+
+describe("update-profile (WA 1.6a)", () => {
+  const put = (body: object) =>
+    request(app).put("/api/v1/user/update-profile").set("Host", "localhost").set("Authorization", "Bearer good").send(body);
+
+  it("saves trimmed names for the signed-in user", async () => {
+    const res = await put({ userFirstName: "  Ada ", userLastName: "Lovelace  " });
+    expect(res.status).toBe(200);
+    expect(updateUserProfile).toHaveBeenCalledWith("USER1", "Ada", "Lovelace");
+  });
+
+  it.each([
+    [{ userFirstName: "", userLastName: "L" }],
+    [{ userFirstName: "A", userLastName: "   " }],
+    [{ userFirstName: "x".repeat(51), userLastName: "L" }],
+    [{ userFirstName: "A" }],
+    [{ userFirstName: 1, userLastName: "L" }],
+  ])("rejects %j without saving", async (body) => {
+    expect((await put(body)).status).toBe(400);
+    expect(updateUserProfile).not.toHaveBeenCalled();
+  });
+
+  it("accepts exactly 50 characters", async () => {
+    expect((await put({ userFirstName: "x".repeat(50), userLastName: "L" })).status).toBe(200);
   });
 });

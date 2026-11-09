@@ -6,6 +6,7 @@ import {IN_DEV} from "../../../../config";
 import {appConstants} from "../../../../constants";
 import {fetchUserUUID, updateUserProfile} from "../../../../layers/aws/dynamodb/dynamo-entities/user";
 import {sendUserLookupError} from "../user-errors";
+import {MAX_LENGTH} from "../../../../constants/input-limits";
 dotenv.config();
 
 /*
@@ -40,10 +41,8 @@ function pureRequestParams(req: Request): boolean {
 * Ensure request params are valid
 */
 function validRequestParams(req: Request): boolean {
-    return (
-        req.body.userFirstName.length > 0 &&
-        req.body.userLastName.length > 0
-    );
+    const ok = (name: string) => name.trim().length > 0 && name.trim().length <= MAX_LENGTH.personName;
+    return ok(req.body.userFirstName) && ok(req.body.userLastName);
 }
 
 /*
@@ -52,8 +51,8 @@ function validRequestParams(req: Request): boolean {
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
     try {
         // Extract params
-        const userFirstName = req.body.userFirstName;
-        const userLastName = req.body.userLastName;
+        const userFirstName = req.body.userFirstName.trim();
+        const userLastName = req.body.userLastName.trim();
 
         // Get user UUID
         const userId = await fetchUserUUID(getAuth(res).cognitoId);

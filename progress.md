@@ -21,8 +21,9 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 > **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
 > are done, as are WA 1.1–1.5.
-> **Next: WA 1.6 Profile pages** (1.6d delete account waits on `delete-user`, 501 since S.11).
-> Then Stage 2 (inventory hardening).
+> WA 1.6a–c (profile pages) done too; 1.6d waits on a real `delete-user` (501 since S.11).
+> **Next: Stage 2**, starting with **2.1 item counts** and **2.2 category delete rule** (WA 2.1
+> needs both).
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -45,7 +46,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser` and `ses:SendEmail` |
 
-**Health check (2026-11-09):** `npm test` 354/354 passing · `npm run typecheck` clean ·
+**Health check (2026-11-09):** `npm test` 361/361 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 92 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -478,6 +479,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | WA 1.6 support: `update-profile` trims names and caps them at 50 (`MAX_LENGTH.personName`, same in the webapp). |
 | 2026-11-09 | 1.8 done: slug format rule, `SLUG#<slug>` reservations (create/rename in one transaction, 409 on clash, freed on delete), public `resolve-slug`, backfill script (dev backfilled). |
 | 2026-11-09 | §1 status table and health check refreshed; "Pick up here" note added (next: BE 1.8, WA 1.6). |
 | 2026-11-09 | 1.7 done: `DELETE /store/delete/:storeId` deletes the whole store, retry-safe; S3 batch delete fixed (1000-key limit, partial failures). |
