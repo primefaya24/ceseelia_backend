@@ -25,13 +25,19 @@ export const MAX_LENGTH = {
   currencySign: 5,
 } as const;
 
+/*
+ * Stock rule (progress.md 2.6): `storeItemStock` is either STOCK_UNLIMITED (never runs out, never
+ * goes down) or a tracked count >= 0 (0 = sold out). Paid orders lower tracked stock (5.5).
+ */
+export const STOCK_UNLIMITED = -1;
+
 /* Numeric ranges (inclusive). */
 export const NUMBER_RANGE = {
   percent: { min: 0, max: 100 },
   price: { min: 0, max: 1_000_000 },
   // Item prices in minor units (cents), per currency (progress.md 2.5): up to 1,000,000.00
   priceMinor: { min: 0, max: 100_000_000 },
-  // -1 means "unlimited" (progress.md 2.6); the webapp only sends >= 0 until WA 2.7.
+  // STOCK_UNLIMITED (-1) or a tracked count 0..1,000,000 (progress.md 2.6)
   stock: { min: -1, max: 1_000_000 },
   points: { min: 0, max: 1_000_000 },
   salesCommission: { min: 0, max: 1_000 },

@@ -24,7 +24,9 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > WA 1.6a–c (profile pages) done too; 1.6d waits on a real `delete-user` (501 since S.11).
 > Stage 2.1–2.3 are done (item counts, category delete rule, upload limits; WA uses all three).
 > 2.4 (public data endpoint) and 2.5 (prices: whole cents per currency, `storeItemPrices`) are
-> done too (WA 2.6 has a price box per currency). **Next: 2.6 stock rules** (`-1` = unlimited).
+> done too (WA 2.6 has a price box per currency), and 2.6 (stock rule: `-1` unlimited, `0`
+> sold out). **Stage 2 is done.** Next: WA 2.7 (unlimited toggle, low-stock badge), or Stage 3
+> (3.1 `GET /store/public/storefront/:slug`).
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -47,7 +49,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging` |
 
-**Health check (2026-11-09):** `npm test` 435/435 passing · `npm run typecheck` clean ·
+**Health check (2026-11-09):** `npm test` 439/439 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 80 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -413,8 +415,15 @@ match the backend and webapp._
     6500}`; run on prod when it exists). Orders (`StoreOrderItem.price`) and reward amounts are
     untouched until Stages 4–5. The webapp bridge came with it: its one price box edits the default
     currency's price; WA 2.6 adds a box per currency._
-- [ ] 🟡 **2.6 Stock rules:** `-1` = unlimited, `≥ 0` = tracked. Document it and validate it
+- [x] 🟡 **2.6 Stock rules:** `-1` = unlimited, `≥ 0` = tracked. Document it and validate it
       (S.9b). Stock goes down on paid orders in 5.5. (WA 2.5)
+  - _Done 2026-11-09, tested by hand. The rule lives in `constants/input-limits.ts`
+    (`STOCK_UNLIMITED = -1`): unlimited never runs out or goes down; a tracked count is a whole
+    number 0–1,000,000, 0 = sold out. Validation was already in place since S.9b (integer,
+    −1…1,000,000; categories have no stock, so there was nothing to add there).
+    `isUnlimitedStock` / `hasStockFor(stock, qty)` in `interfaces/store` are the one check the
+    quote (4.1) and paid-order decrement (5.5) will call. The webapp storefront grid hid
+    anything with stock ≤ 0, unlimited included; it now uses `isInStock` (WA side)._
 
 ---
 
@@ -531,6 +540,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 2.6 done: stock rule named (`STOCK_UNLIMITED = -1`, 0 = sold out) with `hasStockFor` for 4.1/5.5; webapp storefront no longer hides unlimited items. |
 | 2026-11-09 | 2.5 done: item prices are `storeItemPrices` (whole cents per currency, set by the merchant, no conversion); public data shows only offered currencies; migration script run on dev. |
 | 2026-11-09 | 2.4 done: public storefront data shows only active items in active categories (counts match), 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` for unknown or suspended stores. |
 | 2026-11-09 | 2.3 done: image uploads are presigned POSTs (png/jpg, ≤ 5 MB, 1–10 per request, item/category must exist), tagged pending until saved; bucket allows POST and expires unsaved uploads after a day. |

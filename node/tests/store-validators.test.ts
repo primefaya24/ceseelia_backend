@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { ulid } from "ulid";
 import {
+  hasStockFor,
   initStoreCategory,
   initStoreSettings,
   isStoreCategoryPure,
@@ -9,11 +10,12 @@ import {
   isStoreItemValid,
   isStoreSettingsPure,
   isStoreSettingsValid,
+  isUnlimitedStock,
   StoreCategory,
   StoreItem,
   StoreSettings,
 } from "../layers/core/interfaces/store";
-import { MAX_COUNT, MAX_CUSTOMIZE_JSON, MAX_LENGTH } from "../constants/input-limits";
+import { MAX_COUNT, MAX_CUSTOMIZE_JSON, MAX_LENGTH, STOCK_UNLIMITED } from "../constants/input-limits";
 
 const STORE = ulid();
 const OTHER_STORE = ulid();
@@ -251,5 +253,31 @@ describe("non-object payloads are rejected, not crashed on", () => {
     expect(isStoreItemPure(v as any)).toBe(false);
     expect(isStoreCategoryPure(v as any)).toBe(false);
     expect(isStoreSettingsPure(v as any)).toBe(false);
+  });
+});
+
+describe("stock rule (2.6)", () => {
+  it("-1 is unlimited; 0 and up are tracked", () => {
+    expect(STOCK_UNLIMITED).toBe(-1);
+    expect(isUnlimitedStock(-1)).toBe(true);
+    expect(isUnlimitedStock(0)).toBe(false);
+  });
+
+  it("unlimited stock always has enough", () => {
+    expect(hasStockFor(-1)).toBe(true);
+    expect(hasStockFor(-1, 1_000_000)).toBe(true);
+  });
+
+  it("tracked stock needs at least the quantity; 0 is sold out", () => {
+    expect(hasStockFor(3, 3)).toBe(true);
+    expect(hasStockFor(3, 4)).toBe(false);
+    expect(hasStockFor(0)).toBe(false);
+  });
+
+  it("refuses a quantity that isn't a whole number >= 1, and broken stock values", () => {
+    expect(hasStockFor(5, 0)).toBe(false);
+    expect(hasStockFor(5, 1.5)).toBe(false);
+    expect(hasStockFor(-2, 1)).toBe(false);
+    expect(hasStockFor(2.5, 1)).toBe(false);
   });
 });

@@ -17,6 +17,7 @@ import {
   MAX_CUSTOMIZE_JSON,
   MAX_LENGTH,
   NUMBER_RANGE,
+  STOCK_UNLIMITED,
 } from "../../../../constants/input-limits";
 import {
   isEmailOrEmpty,
@@ -492,6 +493,7 @@ export interface StoreItem {
   storeItemCategoryId: string;
   storeItemImageUris: string[];
   storeItemName: string;
+  /* STOCK_UNLIMITED (-1), or a tracked whole number >= 0 where 0 = sold out (2.6). */
   storeItemStock: number;
   /*
    * Price per currency code in minor units (2.5): { USD: 6500, CAD: 8900 } = $65.00 / CA$89.00.
@@ -557,6 +559,14 @@ export function isStoreItemValid(
     i.storeItemCustomParams.length <= MAX_COUNT.itemParams &&
     i.storeItemCustomParams.every(isStoreParameterValid)
   );
+}
+
+/* Stock rule (2.6): unlimited never runs out; a tracked count needs at least `quantity`. */
+export const isUnlimitedStock = (stock: number): boolean => stock === STOCK_UNLIMITED;
+
+export function hasStockFor(stock: number, quantity = 1): boolean {
+  if (!Number.isInteger(quantity) || quantity < 1) return false;
+  return isUnlimitedStock(stock) || (Number.isInteger(stock) && stock >= quantity);
 }
 
 export type StoreItemPrices = Partial<Record<(typeof CURRENCY_CODES)[number], number>>;

@@ -245,7 +245,8 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     settings and any private fields, and 404 when `isStoreLive === false` or store not found.
 2.5 ✅ Price model: `storeItemPrices` = whole cents per currency, each set by the merchant (no
     conversion); replaces `storeItemPrice`. `scripts/migrate-item-prices.mjs` moves old prices.
-2.6 Stock semantics: `-1` = unlimited vs. tracked; decrement on paid order (Stage 5).
+2.6 ✅ Stock semantics: `STOCK_UNLIMITED` (-1) vs. a tracked count (0 = sold out); `hasStockFor`
+    is the check for quotes and the paid-order decrement (Stage 5).
 
 ### Stage 3 — Public storefront API
 3.1 `GET /store/public/storefront/:slug` → settings + categories + active items (wraps 2.4/1.8).
