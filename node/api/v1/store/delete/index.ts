@@ -1,7 +1,7 @@
 // Imports
 import {Request, Response, Router} from 'express';
 import dotenv from 'dotenv';
-import { validateAndExecuteHttpApiRoute, STORE_ROUTES_ADMIN_ONLY } from "../../../../layers/core/http";
+import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import {IN_DEV} from "../../../../config";
 import {appConstants} from "../../../../constants";
 import { isUlid } from "../../../../layers/core/utils";
@@ -21,7 +21,7 @@ interface ResBody {
 */
 export default function registerRoute(router: Router): void {
     router.delete('/delete/:storeId', (req: Request, res: Response): void => {
-        validateAndExecuteHttpApiRoute(req, res, pureRequestParams, validRequestParams, executeRouteCore, true, STORE_ROUTES_ADMIN_ONLY);
+        validateAndExecuteHttpApiRoute(req, res, pureRequestParams, validRequestParams, executeRouteCore, true, /* admins only */ true);
     });
 };
 

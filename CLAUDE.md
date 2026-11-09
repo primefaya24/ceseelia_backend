@@ -81,10 +81,14 @@ parent router's `index.ts` imports it and calls it (`route_create(storeRouter)`)
 export default function registerRoute(router: Router): void {
   router.post('/create', (req, res) => {
     validateAndExecuteHttpApiRoute(req, res, pureRequestParams, validRequestParams, executeRouteCore,
-      /* withAuth */ true, /* adminOnly */ false);
+      /* withAuth */ true, /* access */ storeMember((req) => req.body.storeId));
   });
 }
-// order: auth (401) -> adminOnly (403) -> pureRequestParams (400) -> validRequestParams (400) -> core
+// access: false = any signed-in user · true = admins only
+//         storeMember(getStoreId, role?) = admins, or members of that store (min role optional)
+// order: auth (401) -> access (403; 400 if the store id isn't a ULID) -> pureRequestParams (400)
+//        -> validRequestParams (400) -> core
+// After a store check, getAuth(res) also has `userId` and `storeRole` (not for admins).
 // pureRequestParams  -> type checks only   ("Bad request parameters"); a throwing check = failed check
 // validRequestParams -> value checks       ("Invalid request parameters")
 // executeRouteCore   -> try/catch, 500 on error; the wrapper also catches anything that escapes
@@ -154,12 +158,10 @@ in-process DQS queue.
 ## 5. Known issues & risks
 
 Open:
-1. **No store-level authorization yet.** There is no user↔store link. As an interim fix (S.0),
-   every authenticated `/store/**` route is admin-only via `STORE_ROUTES_ADMIN_ONLY` in
-   `layers/core/http`, so merchants can't use the store area until Stage 1.3 adds the
-   membership check (then remove the flag).
-2. Memberships can't be created through the API yet (admin assignment is 1.4), so
-   `get-my-profile` returns `stores: []` for everyone until then.
+1. Store routes check membership (1.3), but nothing in the API creates memberships yet
+   (admin assignment is 1.4), so in practice only admins and hand-added members get in.
+2. The store check costs two reads per request (user id by Cognito id, then the membership).
+   Fine for now; cache or put the user id in a token claim if it shows up in latency.
 3. The password that used to be in `node/README.md` is still in **git history** — make sure it has
    been rotated (S.2).
 4. `updateStoreSettings` ignores `storeSettings.admin`, so the admin's commission/“store live”
@@ -311,9 +313,8 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 
 - Keep the one-folder-per-endpoint pattern and `validateAndExecuteHttpApiRoute`; don't introduce
   a second framework.
-- Every new `/store/**` route must pass `STORE_ROUTES_ADMIN_ONLY` as `adminOnly` (and be added to
-  `tests/store-access.test.ts`) until Stage 1.3 lands; after that it must call the store-access
-  check instead.
+- Every new `/store/**` route must pass `storeMember(…)` as `access` (or `true` if it's
+  admin-only) and be added to the matrix in `tests/store-access.test.ts`.
 - Never commit credentials; read config from env.
 - When changing a response shape, update the WA interface and the calling component in the same
   change set and mention it in the summary.

@@ -246,12 +246,18 @@ match the backend and webapp._
     `userStoreIds`. Tests in `tests/membership.test.ts`._
 
 ### 1.3 Store access check (replaces S.0)
-- [ ] a. `assertStoreAccess(req, storeId, role?)`. Admin bypasses it; otherwise it reads
+- [x] a. `assertStoreAccess(req, storeId, role?)`. Admin bypasses it; otherwise it reads
       `getMembership` and returns 403 if there's none.
-- [ ] b. Apply it to **every** `/store/**` route (settings, uploads, categories, items, get-data),
+- [x] b. Apply it to **every** `/store/**` route (settings, uploads, categories, items, get-data),
       then remove `STORE_ROUTES_ADMIN_ONLY` (S.0) from `layers/core/http` and the routes
       (`create` and `delete` stay admin-only). Update `tests/store-access.test.ts`.
-- [ ] c. Route-matrix test: no token → 401 · non-member → 403 · member → 200 · admin → 200.
+- [x] c. Route-matrix test: no token → 401 · non-member → 403 · member → 200 · admin → 200.
+  - _Done 2026-11-08, tested by hand. The wrapper's 7th argument is now `access`:
+    `false`, `true` (admins only) or `storeMember((req) => …storeId, role?)`. The check runs right
+    after sign-in, before param validation, so non-members get 403 `STORE_ACCESS_DENIED` without
+    seeing validation errors; a malformed store id is 400. Deactivated users get 403
+    `ACCOUNT_DEACTIVATED`. `STORE_ROUTES_ADMIN_ONLY` is gone; `create` and `delete` stay
+    admin-only. Dev test data: `shukybadeer+m1@gmail.com` is a `MERCHANT` of Northern Hoop._
 
 ### 1.4 Admin member management
 - [ ] a. `GET /admin/get-store-members/:storeId`
@@ -426,6 +432,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-08 | 1.3 done: store-member check on every `/store/**` route (admin bypass); S.0 lockdown removed. |
 | 2026-11-08 | 1.2 done: membership rows (`STORE#…/MEMBER#…` + `USER#…/STORE#…`) and helpers; `get-my-profile` returns `stores`. |
 | 2026-11-08 | 1.1d–f done: `get-my-profile` creates missing user rows from the user pool (verified email only); 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED`. |
 | 2026-11-08 | Registration found in `ceseelia_cloudformation` (PostConfirmation Lambda): 1.1a/b settled; S.1b (key revoked) confirmed by the owner. |

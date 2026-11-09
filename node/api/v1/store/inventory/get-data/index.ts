@@ -1,7 +1,7 @@
 // Imports
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
-import { validateAndExecuteHttpApiRoute, STORE_ROUTES_ADMIN_ONLY } from "../../../../../layers/core/http";
+import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { getStoreInventoryData } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
@@ -20,7 +20,7 @@ export default function registerRoute(router: Router): void {
       validRequestParams,
       executeRouteCore,
       true,
-      STORE_ROUTES_ADMIN_ONLY
+      storeMember((req) => req.params.storeId)
     );
   });
 };
