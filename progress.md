@@ -53,13 +53,14 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
       category create/delete, item create/delete and `inventory/get-data`. Merchants can't reach
       their stores yet anyway (no membership), so nothing legitimate breaks. Add a test that a
       non-admin gets 403.
-- [~] 🔴 **S.1 Revoke the hard-coded Google Maps API key** in `layers/core/utils/index.ts`
+- [x] 🔴 **S.1 Revoke the hard-coded Google Maps API key** in `layers/core/utils/index.ts`
       (`getLatLngTimezoneData`). It is in git history, so treat it as public: revoke or restrict it
       in Google Cloud, then delete the function (nothing calls it).
   - [x] a. Code removed 2026-11-08 (`getLatLngTimezoneData` and its only helper
         `sendHttpsRequest`). No other copy of the key exists in either repo.
-  - [ ] b. **Manual:** revoke (or restrict) the key in Google Cloud Console → APIs & Services →
+  - [x] b. **Manual:** revoke (or restrict) the key in Google Cloud Console → APIs & Services →
         Credentials. It stays readable in git history, so it must be revoked, not just deleted.
+        _Done by the owner (confirmed 2026-11-08)._
 - [ ] 🔴 **S.2 Rotate the old password** that used to be in `node/README.md`. It's still in git
       history (manual step, carried over from Stage 0).
 - [x] 🟠 **S.3 Patch dependencies:** `npm audit fix`, re-run tests. Remove unused deps
@@ -200,14 +201,23 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
 Closes the cross-tenant access hole for good, and replaces S.0.
 
 ### 1.1 User registration
-- [ ] a. Decide: Cognito **Post Confirmation Lambda** (recommended, always runs) or
-      `POST /user/register` called by the webapp after the first sign-in.
-- [ ] b. Implement it. Read email and `email_verified` from the **verified token / Cognito event**,
-      never from the request body.
-- [ ] c. `registerUser` links a new Cognito identity to an existing user just because the email
+_Registration already exists in `../ceseelia_cloudformation`: the `OnUserRegister` Cognito
+**PostConfirmation** Lambda (deployed in dev, attached to pool `us-east-1_8P3eUW341`) writes
+`PROFILE#INFO`, `PROFILE#COGNITO_DATA#<sub>` and `PROFILE#NOTIFICATION_SETTINGS`. Checked
+2026-11-08: table, GSI, entity and attribute names, pool/client IDs and the `Admins` group all
+match the backend and webapp._
+- [x] a. Decide: Cognito **Post Confirmation Lambda** (the CloudFormation project).
+- [x] b. Implement it. The Lambda reads email from the Cognito event (verified by Cognito), never
+      a request body.
+- [ ] c. The Lambda links a new Cognito identity to an existing user just because the email
       matches. Only link when `email_verified === true`, or an unverified federated identity could
-      take over an account.
-- [ ] d. Fallback: `get-my-profile` creates the record on first call if it's missing.
+      take over an account. **Not exploitable today** (no social/federated providers are
+      configured); fix it in `ceseelia_cloudformation` before adding social sign-in.
+- [ ] d. Fallback: `get-my-profile` creates the record on first call if it's missing. Needed:
+      the Lambda logs and swallows every error, and its batch helper has the pre-S.7 bug, so a
+      failed write leaves a Cognito user with no DB rows. Write **exactly the Lambda's rows and
+      attributes** (the backend's own unused `registerUser` also adds `userPlan`; align or replace
+      it).
 - [ ] e. Return a clear `404 PROFILE_NOT_FOUND` instead of a generic 500 when there's still no
       record. (WA 1.1)
 - [ ] f. Tests.

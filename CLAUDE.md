@@ -14,6 +14,14 @@ stage usually touches both repos.
 - AWS: DynamoDB (single table), Cognito (auth), S3 (images via presigned URLs), SES (email),
   Secrets Manager, Route53; Stripe SDK installed but not wired up
 - Deployed as Docker containers on EC2: `node` (port 3100) behind `nginx` (TLS via certbot)
+- **Infrastructure lives in `../ceseelia_cloudformation`** (AWS SAM, stacks `ceseelia-dev` /
+  `ceseelia-prod`): the Cognito user pool and client, the `ceseelia_<stage>` table and its GSIs
+  (`CognitoIdentifierGSI` ALL, `UserEmailGSI` KEYS_ONLY), the `ceseelia-storage-<stage>` bucket,
+  and the **`OnUserRegister` Cognito PostConfirmation Lambda, which creates every user's DB
+  records** (`USER#<ulid>` with `PROFILE#INFO`, `PROFILE#COGNITO_DATA#<sub>`,
+  `PROFILE#NOTIFICATION_SETTINGS`). The backend only reads and updates those rows; keep key
+  names, attribute names and GSI names in step with that repo. The `Admins` Cognito group (used by
+  `isUserAdmin`) isn't in the template; it was created by hand.
 
 ```
 ceseelia_backend/
@@ -192,9 +200,10 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 - [x] 0.7 `node/dist` was already untracked.
 
 ### Stage 1 — Users, merchants & store ownership
-1.1 User registration: add a Cognito **Post Confirmation** trigger (Lambda) *or* a
-    `POST /user/register` called after first sign-in that runs `registerUser`. Make
-    `get-my-profile` create-on-first-call as a fallback.
+1.1 User registration: done by the `OnUserRegister` PostConfirmation Lambda in
+    `../ceseelia_cloudformation`. Left for the backend: `get-my-profile` creates the same records
+    on first call if they're missing (the Lambda logs and swallows write errors), and a clear 404
+    `PROFILE_NOT_FOUND` otherwise.
 1.2 Data model for membership: `STORE#<storeId>` / `MEMBER#<userId>` (`StoreMember`, already
     defined) plus reverse `USER#<userId>` / `STORE#<storeId>` so a user can list their stores.
     Return `userStoreIds` (or full store summaries) from `get-my-profile`.
