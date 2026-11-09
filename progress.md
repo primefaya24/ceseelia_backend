@@ -89,6 +89,11 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
 - [ ] 🟠 **S.8 Paginate `getStoreInventoryData`.** Queries stop at 1 MB, so a large store silently
       loses categories and items. Loop on `LastEvaluatedKey`, as `getAllStores` already does.
 - [ ] 🟡 **S.9 Tighten the validators** (`layers/core/interfaces/store`):
+  - _Use the same limits as the webapp (WA S.15, 2026-11-08):
+    `ceseelia_webapp/src/app/core/constants/input-limits.constants.ts` for lengths and ranges,
+    `…/core/functions/input-validation.functions.ts` for URL / email / phone formats. Note the
+    webapp accepts phone and WhatsApp as digits with optional `+`, spaces, `-`, `()` (7–15
+    digits), and stock as an integer ≥ 0 (no `-1`)._
   - [ ] a. Max lengths on every string (names, descriptions, slogan, hashtags, labels, options).
   - [ ] b. Numbers: price ≥ 0, stock is an integer ≥ -1, item/category discount 0–100, priority
         is one of `PRIORITY_*`.
