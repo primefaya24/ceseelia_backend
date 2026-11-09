@@ -74,10 +74,16 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
     `jwt-decode` stays: the legacy Cognito helpers in S.16a still use it; drop it with them._
 
 ### S.B — Request validation & data integrity
-- [ ] 🟠 **S.4 ID validation helper.** Add `isUlid(id)` and use it in `pureRequestParams` for every
+- [x] 🟠 **S.4 ID validation helper.** Add `isUlid(id)` and use it in `pureRequestParams` for every
       `storeId`, `storeCategoryId`/`categoryId` and `storeItemId`/`itemId`, in both path params and
       body. Right now those values are put straight into DynamoDB keys and S3 prefixes
       (`store/${storeId}/…`) with no checks.
+  - _Done 2026-11-08, tested by hand. `isUlid` / `isUlidOrEmpty` in `layers/core/utils`,
+    applied on all 14 routes that take an ID (path and body), including the public
+    `get-data-public` and `admin/update-store-info`. Creates (`isUpdate=false`) may still omit
+    `categoryId` / `storeItemId`; updates must send a valid one. Tests in `tests/ids.test.ts`.
+    `vitest.config.mts` now gives tests fake AWS credentials and a dead endpoint, so a test can
+    never write to the real dev table._
 - [ ] 🟠 **S.5 No more blind upserts.**
   - [ ] a. `updateStoreSettings`: add `ConditionExpression: attribute_exists(pk)`. Without it,
         a PUT with a made-up `storeId` creates a junk `SETTINGS` row.

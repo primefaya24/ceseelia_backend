@@ -8,6 +8,7 @@ import { getStoreInventoryData } from "../../../../../layers/aws/dynamodb/dynamo
 import geoip from "geoip-lite";
 import {
   getClientIp,
+  isUlid,
   resolveCurrencyFromGeo,
 } from "../../../../../layers/core/utils";
 dotenv.config();
@@ -32,7 +33,7 @@ export default function registerRoute(router: Router): void {
 };
 
 function pureRequestParams(req: Request): boolean {
-  return true;
+  return isUlid(req.params.storeId);
 }
 
 /*

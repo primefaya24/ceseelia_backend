@@ -6,6 +6,7 @@ import { IN_DEV } from "../../../../config";
 import { appConstants } from "../../../../constants";
 import { updateStoreInfo } from "../../../../layers/aws/dynamodb/dynamo-entities/admin";
 import { StoreOverview } from "../../../../layers/core/interfaces/store";
+import { isUlid } from "../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -37,7 +38,7 @@ export default function registerRoute(router: Router): void {
  */
 function pureRequestParams(req: Request): boolean {
   return (
-    typeof req.body.storeId === "string" &&
+    isUlid(req.body.storeId) &&
     typeof req.body.storeName === "string" &&
     typeof req.body.storeSlug === "string"
   );

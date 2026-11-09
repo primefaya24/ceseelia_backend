@@ -7,6 +7,7 @@ import { appConstants } from "../../../../constants";
 import { getUploadSignedUrl } from "../../../../layers/aws/s3";
 dotenv.config();
 const ULID = require("ulid");
+import { isUlid } from "../../../../layers/core/utils";
 
 /*
  * Request/Response interfaces
@@ -36,7 +37,7 @@ export default function registerRoute(router: Router): void {
 };
 
 function pureRequestParams(req: Request): boolean {
-  return true;
+  return isUlid(req.params.storeId);
 }
 
 /*

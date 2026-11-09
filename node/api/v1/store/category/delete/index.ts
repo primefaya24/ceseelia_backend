@@ -6,6 +6,7 @@ import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import { deleteStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { isUlid } from "../../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -33,7 +34,7 @@ export default function registerRoute(router: Router): void {
 };
 
 function pureRequestParams(req: Request): boolean {
-  return true;
+  return isUlid(req.params.storeId) && isUlid(req.params.storeCategoryId);
 }
 
 /*

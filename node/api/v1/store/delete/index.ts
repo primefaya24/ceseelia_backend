@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { validateAndExecuteHttpApiRoute, STORE_ROUTES_ADMIN_ONLY } from "../../../../layers/core/http";
 import {IN_DEV} from "../../../../config";
 import {appConstants} from "../../../../constants";
+import { isUlid } from "../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -28,7 +29,7 @@ export default function registerRoute(router: Router): void {
 * Ensure request params are pure
 */
 function pureRequestParams(req: Request): boolean {
-    return true;
+    return isUlid(req.params.storeId);
 }
 
 /*

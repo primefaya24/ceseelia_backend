@@ -15,6 +15,7 @@ import {
   cleanUpS3Folder,
   extractStoreHeaderStripImageUri,
   extractStorePromoImageUris,
+  isUlid,
 } from "../../../../layers/core/utils";
 dotenv.config();
 
@@ -47,7 +48,7 @@ export default function registerRoute(router: Router): void {
  */
 function pureRequestParams(req: Request): boolean {
   return (
-    typeof req.body.storeId === "string" &&
+    isUlid(req.body.storeId) &&
     isStoreSettingsPure(req.body.storeSettings)
   );
 }

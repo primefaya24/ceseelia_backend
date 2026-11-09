@@ -5,6 +5,7 @@ import { validateAndExecuteHttpApiRoute, STORE_ROUTES_ADMIN_ONLY } from "../../.
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { getStoreInventoryData } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { isUlid } from "../../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -25,7 +26,7 @@ export default function registerRoute(router: Router): void {
 };
 
 function pureRequestParams(req: Request): boolean {
-  return true;
+  return isUlid(req.params.storeId);
 }
 
 /*

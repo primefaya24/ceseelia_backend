@@ -10,7 +10,7 @@ import {
 } from "../../../../../layers/core/interfaces/store";
 import { updateStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
-import { cleanUpS3Folder } from "../../../../../layers/core/utils";
+import { cleanUpS3Folder, isUlid, isUlidOrEmpty } from "../../../../../layers/core/utils";
 dotenv.config();
 
 /*
@@ -39,8 +39,9 @@ export default function registerRoute(router: Router): void {
 
 function pureRequestParams(req: Request): boolean {
   return (
-    typeof req.body.storeId === "string" &&
+    isUlid(req.body.storeId) &&
     typeof req.body.isUpdate === "boolean" &&
+    (req.body.isUpdate ? isUlid(req.body.categoryId) : isUlidOrEmpty(req.body.categoryId)) &&
     isStoreCategoryPure(req.body.storeCategory)
   );
 }
