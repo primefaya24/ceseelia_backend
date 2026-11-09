@@ -39,7 +39,8 @@ ceseelia_backend/
         ├── core/http      # validateAndExecuteHttpApiRoute (auth + validation wrapper)
         ├── core/interfaces/store   # StoreOverview, StoreSettings, StoreCategory, StoreItem, StoreOrder…
         ├── core/utils     # misc helpers, S3 cleanup, geo-IP currency, PDF invoice, DQS
-        ├── aws/dynamodb/dynamo-entities/{store,admin,user}   # data access
+        ├── aws/dynamodb/dynamo-entities/{store,admin,user,membership}   # data access
+        ├── aws/dynamodb/{dynamo-batch-ops,dynamo-query}   # batch read/write with retries; paged queries
         ├── aws/{cognito,s3,ses,sqs,route53,secret-manager}
         └── stripe         # generateStripeCheckoutLink (legacy, from a previous project)
 ```
@@ -91,7 +92,11 @@ export default function registerRoute(router: Router): void {
 
 - Auth: `Authorization: Bearer <Cognito access token>` (bare token also accepted). The token's
   signature, issuer, expiry and `client_id` are always verified (dev included). The wrapper then
-  attaches verified `req.body.cognito_id`, `cognito_groups`, `is_user_admin` (group `Admins`).
+  puts the verified identity in `res.locals.auth`; routes read it with `getAuth(res)`
+  (`{cognitoId, groups, isAdmin}`, admin = group `Admins`). Never read identity from `req.body`:
+  the wrapper strips the old `cognito_id` / `is_user_admin` keys from every body.
+- IDs in paths and bodies are checked with `isUlid`. Value limits live in
+  `constants/input-limits.ts` (same numbers as the webapp's `input-limits.constants.ts`).
 - The Express app is built in `app.ts` (`createApp()`, used by tests); `index.ts` only listens.
 - Add a test in `node/tests/` for any new validator or wrapper behaviour.
 - DynamoDB single table `ceseelia_<stage>` with `pk`/`sk`:
@@ -101,7 +106,9 @@ export default function registerRoute(router: Router): void {
   | Store settings | `STORE#<storeId>` | `SETTINGS` |
   | Category | `STORE#<storeId>` | `CATEGORY#<categoryId>` |
   | Item | `STORE#<storeId>` | `ITEM#<itemId>` |
-  | User profile | `USER#<uuid>` | `PROFILE#INFO`, `PROFILE#COGNITO_DATA#<cognitoId>` |
+  | User profile | `USER#<uuid>` | `PROFILE#INFO`, `PROFILE#COGNITO_DATA#<cognitoId>`, `PROFILE#NOTIFICATION_SETTINGS` (written by the CloudFormation sign-up Lambda) |
+  | Store member | `STORE#<storeId>` | `MEMBER#<userId>` (role `ADMIN`/`MERCHANT`) |
+  | User's store (reverse) | `USER#<userId>` | `STORE#<storeId>` (same role; written with the member row in one transaction) |
   | (planned) Order | `STORE#<storeId>` | `ORDER#<createdAt>#<orderId>` (see `StoreOrder` interface) |
   GSIs used by user code: `CognitoIdentifierGSI`, `UserEmailGSI`.
 - S3 keys: `store/<storeId>/images/{logo,header,promo}/<ulid>.<ext>`,
@@ -133,7 +140,9 @@ export default function registerRoute(router: Router): void {
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/...` | ✅ |
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug) | ✅ |
-| User | `GET /user/get-my-profile[/:locale]`, `PUT /user/update-profile`, `PUT /user/update-fcm-token`, `DELETE /user/delete-user` | ⚠️ depend on a user record that nothing in this repo creates |
+| User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |
+| User | `PUT /user/update-profile`, `PUT /user/update-fcm-token` | ✅ |
+| User | `DELETE /user/delete-user` | ⛔ disabled (501) until a full delete exists (after 1.2) |
 | Merchant | `GET /merchant/path` | ❌ template stub |
 | Customer | — | ❌ empty router |
 | Payments | `POST /api/v1/website/listen-to-stripe-event/:websiteId` | ❌ returns 501 until Stage 5 (registered before `express.json()` so the raw body is available) |
@@ -149,17 +158,15 @@ Open:
    every authenticated `/store/**` route is admin-only via `STORE_ROUTES_ADMIN_ONLY` in
    `layers/core/http`, so merchants can't use the store area until Stage 1.3 adds the
    membership check (then remove the flag).
-2. **User records are never created.** `registerUser` exists but no route or Cognito trigger calls
-   it, so `get-my-profile` fails for new sign-ups. `userStoreIds` (used by the frontend) is never
-   written. → Stage 1.1/1.2
+2. Memberships can't be created through the API yet (admin assignment is 1.4), so
+   `get-my-profile` returns `stores: []` for everyone until then.
 3. The password that used to be in `node/README.md` is still in **git history** — make sure it has
-   been rotated.
+   been rotated (S.2).
 4. `updateStoreSettings` ignores `storeSettings.admin`, so the admin's commission/“store live”
    toggles in the UI never save. → Stage 1.6
 5. `updateStoreCategory` resets `storeCategoryItemCount` to 0 on every save. → Stage 2.1
 6. Deleting a category leaves its items orphaned; deleting a store is unimplemented. → 2.2 / 1.7
-7. `validRequestParams` returns `true` on several routes (no checks on ids, counts, image types for
-   promo/item uploads — counts are unbounded). → Stage 2.3
+7. Upload-URL routes don't cap the requested image counts or file sizes. → Stage 2.3
 8. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
    saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3
 9. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.

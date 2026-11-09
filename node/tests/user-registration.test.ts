@@ -34,6 +34,7 @@ function tableWith({ cognitoRows = [] as any[], emailRows = [] as any[], profile
   ddb.on(QueryCommand).callsFake((input) => {
     if (input.IndexName === "CognitoIdentifierGSI") return { Items: cognitoRows };
     if (input.IndexName === "UserEmailGSI") return { Items: emailRows };
+    if (input.ExpressionAttributeValues[":sk_prefix"] === "STORE#") return { Items: [] }; // memberships
     return { Items: structuredClone(profileRows) }; // getMyProfile deletes pk/sk from what it gets
   });
 }
@@ -114,6 +115,7 @@ describe("GET /user/get-my-profile", () => {
     const res = await getProfile();
     expect(res.status).toBe(200);
     expect(res.body.info).toMatchObject({ userId: "U1", userIsAdmin: false });
+    expect(res.body.stores).toEqual([]);
     expect(cognito.calls()).toHaveLength(0);
   });
 

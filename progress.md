@@ -231,13 +231,19 @@ match the backend and webapp._
     to allow `cognito-idp:AdminGetUser`** on the pool._
 
 ### 1.2 Membership data model
-- [ ] a. Write `STORE#<storeId>` / `MEMBER#<userId>` (`StoreMember`) and the reverse
+- [x] a. Write `STORE#<storeId>` / `MEMBER#<userId>` (`StoreMember`) and the reverse
       `USER#<userId>` / `STORE#<storeId>` (store id, name, slug, role), in one transaction.
-- [ ] b. Entity helpers: `addStoreMember`, `removeStoreMember`, `listStoreMembers(storeId)`,
+- [x] b. Entity helpers: `addStoreMember`, `removeStoreMember`, `listStoreMembers(storeId)`,
       `listUserStores(userId)`, `getMembership(storeId, userId)`.
-- [ ] c. `get-my-profile` returns `stores: [{storeId, storeName, storeSlug, role}]` (replaces
+- [x] c. `get-my-profile` returns `stores: [{storeId, storeName, storeSlug, role}]` (replaces
       `userStoreIds`). (WA 1.2)
-- [ ] d. Tests.
+- [x] d. Tests.
+  - _Done 2026-11-08, tested by hand. `layers/aws/dynamodb/dynamo-entities/membership`.
+    Roles are the existing `ADMIN` / `MERCHANT`. **Change from the plan:** the reverse row holds
+    only `storeId` + role; names/slugs/emails are read from the store overview and user profile
+    when listing, so a rename never leaves stale copies. Paged query helper moved to
+    `layers/aws/dynamodb/dynamo-query`. WA `UserProfile.stores` replaces the unused
+    `userStoreIds`. Tests in `tests/membership.test.ts`._
 
 ### 1.3 Store access check (replaces S.0)
 - [ ] a. `assertStoreAccess(req, storeId, role?)`. Admin bypasses it; otherwise it reads
@@ -420,6 +426,19 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-08 | 1.2 done: membership rows (`STORE#…/MEMBER#…` + `USER#…/STORE#…`) and helpers; `get-my-profile` returns `stores`. |
+| 2026-11-08 | 1.1d–f done: `get-my-profile` creates missing user rows from the user pool (verified email only); 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED`. |
+| 2026-11-08 | Registration found in `ceseelia_cloudformation` (PostConfirmation Lambda): 1.1a/b settled; S.1b (key revoked) confirmed by the owner. |
+| 2026-11-08 | S.13 done: client IP from trusted proxy hops only (`TRUST_PROXY_HOPS`, default 1). |
+| 2026-11-08 | S.12 done: identity moved to `res.locals.auth` / `getAuth(res)`; old identity keys stripped from bodies; token not kept. |
+| 2026-11-08 | S.10 + S.11 done: profile locale allow-list (`en`, `id`); `delete-user` disabled (501) until after 1.2. |
+| 2026-11-08 | S.9 done: lengths, ranges, list caps, own-store image keys, formats, currencies, customize checks (limits match WA S.15). |
+| 2026-11-08 | S.8 done: `getStoreInventoryData` follows every page. |
+| 2026-11-08 | S.7 done: batch helpers retry unprocessed items and throw on failure; reads return every batch. |
+| 2026-11-08 | S.6 done: category/item image cleanup runs only after a successful write. |
+| 2026-11-08 | S.5 done: no blind upserts (conditional writes, store-exists check on create, 404s). |
+| 2026-11-08 | S.4 done: `isUlid` on every store/category/item ID; tests can't reach real AWS. |
+| 2026-11-08 | S.3 done: unused deps removed, `npm audit fix`, `geoip-lite` 2, Docker image on Node 24 (53 → 10 moderate dev-only advisories). |
 | 2026-11-08 | S.1a done: hard-coded Google Maps key and its unused helpers removed (revoking the key is still manual). |
 | 2026-11-08 | S.0 done: all authenticated `/store/**` routes are admin-only; 27 route-access tests added. |
 | 2026-11-08 | File created from a full code review. Added Stage S (security and bug fixes) and broke stages 1–9 into sub-tasks. |

@@ -3,7 +3,6 @@ import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DynamoDBDocumentClient,
   GetCommand,
-  QueryCommand,
   PutCommand,
   UpdateCommand,
   DeleteCommand,
@@ -12,6 +11,7 @@ import {
 import * as ULID from "ulid";
 import { appConstants } from "../../../../../constants";
 import { dynamoWriteManyItems } from "../../dynamo-batch-ops";
+import { queryAllWithPrefix } from "../../dynamo-query";
 import { DB_TABLE_NAME } from "../../../../../config";
 import {
   initStore,
@@ -260,32 +260,6 @@ export async function deleteStoreCategory(
     console.error("In deleteStoreCategory", e);
     throw e;
   }
-}
-
-/*
- * Every row under `pk` whose sort key starts with `skPrefix`. A query returns at most 1 MB, so
- * keep following LastEvaluatedKey until there are no more pages.
- */
-async function queryAllWithPrefix(
-  pk: string,
-  skPrefix: string
-): Promise<Record<string, any>[]> {
-  const records: Record<string, any>[] = [];
-  let ExclusiveStartKey: Record<string, any> | undefined;
-  do {
-    const result = await dynamoDbDocumentClient.send(
-      new QueryCommand({
-        TableName: DEFAULT_TABLE_NAME,
-        KeyConditionExpression: "#pk = :pk and begins_with(#sk, :sk_prefix)",
-        ExpressionAttributeNames: { "#pk": "pk", "#sk": "sk" },
-        ExpressionAttributeValues: { ":pk": pk, ":sk_prefix": skPrefix },
-        ExclusiveStartKey,
-      })
-    );
-    records.push(...(result.Items ?? []));
-    ExclusiveStartKey = result.LastEvaluatedKey;
-  } while (ExclusiveStartKey);
-  return records;
 }
 
 export async function getStoreInventoryData(

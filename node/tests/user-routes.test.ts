@@ -13,6 +13,10 @@ vi.mock("../layers/aws/dynamodb/dynamo-entities/user", async (importOriginal) =>
   updateUserLocale: vi.fn(async () => undefined),
 }));
 
+vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", () => ({
+  listUserStores: vi.fn(async () => []),
+}));
+
 import { deleteUser, verifyCognitoAccessToken } from "../layers/aws/cognito";
 import { updateUserLocale } from "../layers/aws/dynamodb/dynamo-entities/user";
 import { createApp } from "../app";
