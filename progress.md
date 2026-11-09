@@ -260,12 +260,20 @@ match the backend and webapp._
     admin-only. Dev test data: `shukybadeer+m1@gmail.com` is a `MERCHANT` of Northern Hoop._
 
 ### 1.4 Admin member management
-- [ ] a. `GET /admin/get-store-members/:storeId`
-- [ ] b. `POST /admin/assign-store-member` (by email; if there's no account, store a pending invite
+- [x] a. `GET /admin/get-store-members/:storeId`
+- [x] b. `POST /admin/assign-store-member` (by email; if there's no account, store a pending invite
       and email it via SES)
-- [ ] c. Turn a pending invite into a membership on registration (1.1)
-- [ ] d. `DELETE /admin/remove-store-member/:storeId/:userId`
-- [ ] e. Tests. (WA 1.4)
+- [x] c. Turn a pending invite into a membership on registration (1.1)
+- [x] d. `DELETE /admin/remove-store-member/:storeId/:userId`
+- [x] e. Tests. (WA 1.4)
+  - _Done 2026-11-09; checked against the dev table, to be tested by hand through WA 1.4. Invites are two rows (`STORE#…/INVITE#<email>` and
+    `INVITE#<email>/STORE#…`); re-inviting replaces the invite, so it doubles as "resend". c is
+    done in `get-my-profile` (owner's choice; the CloudFormation Lambda is untouched): every
+    pending invite for the profile's verified email becomes a membership, one transaction per
+    store; a failure there never blocks sign-in. Also added `DELETE
+    /admin/cancel-store-invite/:storeId/:email` (needed by the WA 1.4 UI) and `WEBAPP_URL`
+    config for the email link. Adding an existing account sends no email. Tests in
+    `tests/admin-members.test.ts` and `tests/membership.test.ts`; also run against the dev table._
 
 ### 1.5 Merchant overview
 - [ ] Replace the `/merchant/path` stub with `GET /merchant/get-overview-data`: the merchant's
@@ -432,6 +440,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 1.4 done: admin member routes (list, assign by email or invite, remove, cancel invite); invites claimed on first profile load. |
 | 2026-11-08 | 1.3 done: store-member check on every `/store/**` route (admin bypass); S.0 lockdown removed. |
 | 2026-11-08 | 1.2 done: membership rows (`STORE#…/MEMBER#…` + `USER#…/STORE#…`) and helpers; `get-my-profile` returns `stores`. |
 | 2026-11-08 | 1.1d–f done: `get-my-profile` creates missing user rows from the user pool (verified email only); 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED`. |

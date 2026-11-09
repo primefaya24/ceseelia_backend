@@ -10,6 +10,10 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 import {
   addStoreMember,
+  cancelStoreInvite,
+  claimStoreInvites,
+  inviteStoreMember,
+  listStoreInvites,
   getMembership,
   listStoreMembers,
   listUserStores,
@@ -155,3 +159,98 @@ describe("listing", () => {
     ]);
   });
 });
+
+describe("invites (1.4)", () => {
+  it("inviteStoreMember writes both rows with a normalized email, after checking the store", async () => {
+    ddb.on(TransactWriteCommand).resolves({});
+    const invite = await inviteStoreMember("S1", "  New@Example.COM ", "MERCHANT");
+    expect(invite).toMatchObject({ email: "new@example.com", role: "MERCHANT" });
+    const items = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
+    expect(items[0].ConditionCheck!.Key).toEqual({ pk: "STORE#S1", sk: "SETTINGS" });
+    expect(items[1].Put!.Item).toMatchObject({ pk: "STORE#S1", sk: "INVITE#new@example.com", storeInviteEmail: "new@example.com" });
+    expect(items[2].Put!.Item).toMatchObject({ pk: "INVITE#new@example.com", sk: "STORE#S1", storeId: "S1" });
+    // Re-inviting replaces the invite instead of failing
+    expect(items[1].Put!.ConditionExpression).toBeUndefined();
+  });
+
+  it("inviteStoreMember reports a missing store", async () => {
+    ddb.on(TransactWriteCommand).rejects(cancelledAt(0, 3));
+    await expect(inviteStoreMember("S1", "a@b.co", "ADMIN")).rejects.toMatchObject({ reason: "STORE_NOT_FOUND" });
+  });
+
+  it("cancelStoreInvite deletes both rows, or reports NOT_INVITED", async () => {
+    ddb.on(TransactWriteCommand).resolvesOnce({}).rejectsOnce(cancelledAt(0, 2));
+    await cancelStoreInvite("S1", "A@B.co");
+    const keys = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!.map((i) => i.Delete!.Key);
+    expect(keys).toEqual([
+      { pk: "STORE#S1", sk: "INVITE#a@b.co" },
+      { pk: "INVITE#a@b.co", sk: "STORE#S1" },
+    ]);
+    await expect(cancelStoreInvite("S1", "a@b.co")).rejects.toMatchObject({ reason: "NOT_INVITED" });
+  });
+
+  it("listStoreInvites returns email and role, oldest first", async () => {
+    ddb.on(QueryCommand).resolves({
+      Items: [
+        { storeInviteEmail: "b@x.co", storeMemberPermission: "MERCHANT", storeInviteCreatedAt: 2 },
+        { storeInviteEmail: "a@x.co", storeMemberPermission: "ADMIN", storeInviteCreatedAt: 1 },
+      ],
+    });
+    expect(await listStoreInvites("S1")).toEqual([
+      { email: "a@x.co", role: "ADMIN", createdAt: 1 },
+      { email: "b@x.co", role: "MERCHANT", createdAt: 2 },
+    ]);
+    expect(ddb.commandCalls(QueryCommand)[0].args[0].input.ExpressionAttributeValues).toEqual({ ":pk": "STORE#S1", ":sk_prefix": "INVITE#" });
+  });
+
+  describe("claimStoreInvites", () => {
+    const invites = (...storeIds: string[]) =>
+      ddb.on(QueryCommand).resolves({ Items: storeIds.map((storeId) => ({ storeId, storeMemberPermission: "MERCHANT" })) });
+
+    it("turns each invite into a membership in one transaction per store", async () => {
+      invites("S1", "S2");
+      ddb.on(TransactWriteCommand).resolves({});
+      expect(await claimStoreInvites("U1", " A@B.co ")).toEqual(["S1", "S2"]);
+      expect(ddb.commandCalls(QueryCommand)[0].args[0].input.ExpressionAttributeValues).toEqual({ ":pk": "INVITE#a@b.co" });
+      const items = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
+      expect(items[0].ConditionCheck!.Key).toEqual({ pk: "STORE#S1", sk: "SETTINGS" });
+      expect(items[1].Delete).toMatchObject({ Key: { pk: "STORE#S1", sk: "INVITE#a@b.co" }, ConditionExpression: "attribute_exists(pk)" });
+      expect(items[2].Delete!.Key).toEqual({ pk: "INVITE#a@b.co", sk: "STORE#S1" });
+      expect(items[3].Put).toMatchObject({ Item: { pk: "STORE#S1", sk: "MEMBER#U1", storeMemberPermission: "MERCHANT" }, ConditionExpression: "attribute_not_exists(pk)" });
+      expect(items[4].Put!.Item).toMatchObject({ pk: "USER#U1", sk: "STORE#S1" });
+    });
+
+    it.each([
+      [0, "the store is gone"],
+      [3, "the user is already a member"],
+    ])("just removes the invite when condition %i fails (%s)", async (index) => {
+      invites("S1");
+      ddb.on(TransactWriteCommand).rejectsOnce(cancelledAt(index, 5)).resolves({});
+      expect(await claimStoreInvites("U1", "a@b.co")).toEqual([]);
+      const cleanup = ddb.commandCalls(TransactWriteCommand)[1].args[0].input.TransactItems!;
+      expect(cleanup.map((i) => i.Delete!.Key)).toEqual([
+        { pk: "STORE#S1", sk: "INVITE#a@b.co" },
+        { pk: "INVITE#a@b.co", sk: "STORE#S1" },
+      ]);
+    });
+
+    it("skips an invite another request claimed first", async () => {
+      invites("S1");
+      ddb.on(TransactWriteCommand).rejects(cancelledAt(1, 5));
+      expect(await claimStoreInvites("U1", "a@b.co")).toEqual([]);
+      expect(ddb.commandCalls(TransactWriteCommand)).toHaveLength(1);
+    });
+
+    it("rethrows other errors", async () => {
+      invites("S1");
+      ddb.on(TransactWriteCommand).rejects(new Error("throttled"));
+      await expect(claimStoreInvites("U1", "a@b.co")).rejects.toThrow("throttled");
+    });
+
+    it("does nothing without an email", async () => {
+      expect(await claimStoreInvites("U1", "")).toEqual([]);
+      expect(ddb.calls()).toHaveLength(0);
+    });
+  });
+});
+

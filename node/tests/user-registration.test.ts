@@ -30,10 +30,16 @@ const cognitoUser = (patch: Record<string, string> = {}) => ({
 
 // Route queries by index: CognitoIdentifierGSI (lookup by sub), UserEmailGSI (lookup by email),
 // or the user's own rows (getMyProfile).
-function tableWith({ cognitoRows = [] as any[], emailRows = [] as any[], profileRows = [] as any[] } = {}) {
+function tableWith({
+  cognitoRows = [] as any[],
+  emailRows = [] as any[],
+  profileRows = [] as any[],
+  inviteRows = [] as any[],
+} = {}) {
   ddb.on(QueryCommand).callsFake((input) => {
     if (input.IndexName === "CognitoIdentifierGSI") return { Items: cognitoRows };
     if (input.IndexName === "UserEmailGSI") return { Items: emailRows };
+    if (String(input.ExpressionAttributeValues[":pk"]).startsWith("INVITE#")) return { Items: inviteRows }; // 1.4c
     if (input.ExpressionAttributeValues[":sk_prefix"] === "STORE#") return { Items: [] }; // memberships
     return { Items: structuredClone(profileRows) }; // getMyProfile deletes pk/sk from what it gets
   });
@@ -117,6 +123,33 @@ describe("GET /user/get-my-profile", () => {
     expect(res.body.info).toMatchObject({ userId: "U1", userIsAdmin: false });
     expect(res.body.stores).toEqual([]);
     expect(cognito.calls()).toHaveLength(0);
+  });
+
+  it("claims pending store invites for the profile's email (1.4c)", async () => {
+    tableWith({
+      cognitoRows: [{ pk: "USER#U1", userDeactivated: false }],
+      profileRows: [infoRow],
+      inviteRows: [{ pk: "INVITE#a@b.co", sk: "STORE#S1", storeId: "S1", storeMemberPermission: "MERCHANT" }],
+    });
+    ddb.on(TransactWriteCommand).resolves({});
+    const res = await getProfile();
+    expect(res.status).toBe(200);
+    const inviteQuery = ddb.commandCalls(QueryCommand).find((c) => c.args[0].input.ExpressionAttributeValues?.[":pk"] === "INVITE#a@b.co");
+    expect(inviteQuery).toBeDefined();
+    const items = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
+    expect(items.find((i) => i.Put?.Item?.sk === "MEMBER#U1")?.Put?.Item).toMatchObject({ pk: "STORE#S1", storeMemberPermission: "MERCHANT" });
+  });
+
+  it("still returns the profile when claiming invites fails", async () => {
+    tableWith({
+      cognitoRows: [{ pk: "USER#U1", userDeactivated: false }],
+      profileRows: [infoRow],
+      inviteRows: [{ storeId: "S1", storeMemberPermission: "MERCHANT" }],
+    });
+    ddb.on(TransactWriteCommand).rejects(new Error("DynamoDB down"));
+    const res = await getProfile();
+    expect(res.status).toBe(200);
+    expect(res.body.info.userId).toBe("U1");
   });
 
   it("creates the missing rows from the user pool, then returns the profile", async () => {

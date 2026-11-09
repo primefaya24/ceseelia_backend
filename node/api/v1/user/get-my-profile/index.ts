@@ -12,7 +12,7 @@ import {
     updateUserLocale,
 } from '../../../../layers/aws/dynamodb/dynamo-entities/user';
 import {getCognitoUserAttributes} from "../../../../layers/aws/cognito";
-import {listUserStores} from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
+import {claimStoreInvites, listUserStores} from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
 import {sendUserLookupError} from "../user-errors";
 dotenv.config();
 
@@ -81,6 +81,13 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
             throw new ProfileNotFoundError();
         }
         profile.info["userIsAdmin"] = isAdmin;
+        // Pending store invites for this (verified) email become memberships (progress.md 1.4c).
+        // A failure here mustn't block sign-in; the next profile load retries.
+        try {
+            await claimStoreInvites(userId, profile.info["userEmailAddress"]);
+        } catch (e) {
+            console.error("In get-my-profile: claiming store invites failed", e);
+        }
         // Stores this user is a member of, with their role (progress.md 1.2)
         profile.stores = await listUserStores(userId);
 

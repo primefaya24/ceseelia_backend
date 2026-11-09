@@ -64,7 +64,8 @@ npm run typecheck  # tsc --noEmit
 ```
 
 Config comes from env vars (see `node/.env.example`): `STAGE` (dev|prod), `ALLOWED_API_HOSTS`,
-`CORS_ORIGINS` (required in prod), plus optional overrides for table/bucket/Cognito ids. The
+`CORS_ORIGINS` (required in prod), `WEBAPP_URL` (links in emails), plus optional overrides for
+table/bucket/Cognito ids. The
 server refuses to start in prod if required vars are missing.
 
 Deploy: build locally, build the Docker image from `node/` (it copies the prebuilt `dist/`), ship
@@ -113,6 +114,8 @@ export default function registerRoute(router: Router): void {
   | User profile | `USER#<uuid>` | `PROFILE#INFO`, `PROFILE#COGNITO_DATA#<cognitoId>`, `PROFILE#NOTIFICATION_SETTINGS` (written by the CloudFormation sign-up Lambda) |
   | Store member | `STORE#<storeId>` | `MEMBER#<userId>` (role `ADMIN`/`MERCHANT`) |
   | User's store (reverse) | `USER#<userId>` | `STORE#<storeId>` (same role; written with the member row in one transaction) |
+  | Store invite | `STORE#<storeId>` | `INVITE#<email>` (pending, for an email with no account) |
+  | Invite by email (reverse) | `INVITE#<email>` | `STORE#<storeId>` (found and claimed on that user's first `get-my-profile`) |
   | (planned) Order | `STORE#<storeId>` | `ORDER#<createdAt>#<orderId>` (see `StoreOrder` interface) |
   GSIs used by user code: `CognitoIdentifierGSI`, `UserEmailGSI`.
 - S3 keys: `store/<storeId>/images/{logo,header,promo}/<ulid>.<ext>`,
@@ -144,6 +147,9 @@ export default function registerRoute(router: Router): void {
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/...` | ✅ |
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug) | ✅ |
+| Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
+| Admin | `POST /admin/assign-store-member` `{storeId, email, role?}` | ✅ existing account → member now (`ADDED`); no account → pending invite + SES email (`INVITED`, `emailSent`); 409 `ALREADY_MEMBER` |
+| Admin | `DELETE /admin/remove-store-member/:storeId/:userId`, `DELETE /admin/cancel-store-invite/:storeId/:email` | ✅ 404 `NOT_A_MEMBER` / `NOT_INVITED` |
 | User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |
 | User | `PUT /user/update-profile`, `PUT /user/update-fcm-token` | ✅ |
 | User | `DELETE /user/delete-user` | ⛔ disabled (501) until a full delete exists (after 1.2) |
@@ -158,8 +164,8 @@ in-process DQS queue.
 ## 5. Known issues & risks
 
 Open:
-1. Store routes check membership (1.3), but nothing in the API creates memberships yet
-   (admin assignment is 1.4), so in practice only admins and hand-added members get in.
+1. Admins can assign members through the API (1.4), but there's no admin UI for it yet (WA 1.4).
+   Adding an existing account sends no email; only invites to new emails do.
 2. The store check costs two reads per request (user id by Cognito id, then the membership).
    Fine for now; cache or put the user id in a token claim if it shows up in latency.
 3. The password that used to be in `node/README.md` is still in **git history** — make sure it has

@@ -15,6 +15,7 @@ vi.mock("../layers/aws/dynamodb/dynamo-entities/user", async (importOriginal) =>
 
 vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", () => ({
   listUserStores: vi.fn(async () => []),
+  claimStoreInvites: vi.fn(async () => []),
 }));
 
 import { deleteUser, verifyCognitoAccessToken } from "../layers/aws/cognito";

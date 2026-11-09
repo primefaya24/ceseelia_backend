@@ -6,8 +6,14 @@
 // The first lists a store's members, the second a user's stores. Neither copies names, emails or
 // store names/slugs: those are read from the user's PROFILE#INFO and the store's OVERVIEW row, so
 // a rename never leaves stale copies behind.
+//
+// Pending invites (progress.md 1.4) for an email with no account yet, also two rows:
+//   STORE#<storeId>  / INVITE#<email>   { storeInviteEmail, storeMemberPermission, created }
+//   INVITE#<email>   / STORE#<storeId>  { storeId, storeMemberPermission, created }
+// The first lists a store's invites, the second finds them when that email signs up.
+// claimStoreInvites turns them into memberships on the user's first get-my-profile.
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { appConstants } from "../../../../../constants";
 import { DB_TABLE_NAME } from "../../../../../config";
 import { dynamGetManyItems } from "../../dynamo-batch-ops";
@@ -49,9 +55,16 @@ export interface StoreMemberView {
   createdAt: number;
 }
 
+/* A pending invite, as get-store-members returns it. */
+export interface StoreInvite {
+  email: string;
+  role: StoreRole;
+  createdAt: number;
+}
+
 export class MembershipError extends Error {
   constructor(
-    readonly reason: "STORE_NOT_FOUND" | "USER_NOT_FOUND" | "ALREADY_MEMBER" | "NOT_A_MEMBER",
+    readonly reason: "STORE_NOT_FOUND" | "USER_NOT_FOUND" | "ALREADY_MEMBER" | "NOT_A_MEMBER" | "NOT_INVITED",
     message: string
   ) {
     super(message);
@@ -67,6 +80,13 @@ const profileInfoKey = (userId: string) => ({
   pk: userPk(userId),
   sk: `${appConstants.DYNAMO_ENTITY_PROFILE}#${appConstants.DYNAMO_ENTITY_INFO}`,
 });
+const invitePk = (email: string) => `${appConstants.DYNAMO_ENTITY_INVITE}#${email}`;
+const inviteSk = (email: string) => `${appConstants.DYNAMO_ENTITY_INVITE}#${email}`;
+const settingsKey = (storeId: string) => ({ pk: storePk(storeId), sk: appConstants.DYNAMO_ENTITY_SETTINGS });
+
+/* Emails are stored and matched lower-case and trimmed. */
+export const normalizeEmail = (email: string) => email.trim().toLowerCase();
+
 const storeOverviewKey = (storeId: string) => ({
   pk: appConstants.DYNAMO_ENTITY_APP_STORE,
   sk: `${appConstants.DYNAMO_ENTITY_STORE}#${storeId}#${appConstants.DYNAMO_ENTITY_OVERVIEW}`,
@@ -236,4 +256,171 @@ export async function listUserStores(userId: string): Promise<UserStore[]> {
     }
   }
   return stores.sort((a, b) => a.storeName.localeCompare(b.storeName));
+}
+
+/* The store's overview row (name, slug, …), or null if there's no such store. */
+export async function getStoreOverviewRow(storeId: string): Promise<Record<string, any> | null> {
+  const res = await dynamoDbDocumentClient.send(new GetCommand({ TableName: TABLE, Key: storeOverviewKey(storeId) }));
+  return res.Item ?? null;
+}
+
+////////////////////////////////////////
+// Invites (progress.md 1.4)
+////////////////////////////////////////
+
+/*
+ * Invite an email that has no account yet. Inviting the same email to the same store again
+ * replaces the invite (new role, new date), so an admin can simply resend it.
+ * Throws MembershipError STORE_NOT_FOUND if the store doesn't exist.
+ */
+export async function inviteStoreMember(storeId: string, rawEmail: string, role: StoreRole): Promise<StoreInvite> {
+  if (!STORE_ROLES.includes(role)) {
+    throw new Error(`Unknown store role: ${role}`);
+  }
+  const email = normalizeEmail(rawEmail);
+  const now = Date.now();
+  try {
+    await dynamoDbDocumentClient.send(
+      new TransactWriteCommand({
+        TransactItems: [
+          { ConditionCheck: { TableName: TABLE, Key: settingsKey(storeId), ConditionExpression: "attribute_exists(pk)" } },
+          {
+            Put: {
+              TableName: TABLE,
+              Item: {
+                pk: storePk(storeId),
+                sk: inviteSk(email),
+                storeInviteEmail: email,
+                storeMemberPermission: role,
+                storeInviteCreatedAt: now,
+              },
+            },
+          },
+          {
+            Put: {
+              TableName: TABLE,
+              Item: {
+                pk: invitePk(email),
+                sk: userStoreSk(storeId),
+                storeId,
+                storeMemberPermission: role,
+                storeInviteCreatedAt: now,
+              },
+            },
+          },
+        ],
+      })
+    );
+  } catch (e) {
+    if (failedConditionIndex(e) === 0) {
+      throw new MembershipError("STORE_NOT_FOUND", "Store not found");
+    }
+    throw e;
+  }
+  return { email, role, createdAt: now };
+}
+
+/* Delete both invite rows. Throws MembershipError NOT_INVITED if there was no invite. */
+export async function cancelStoreInvite(storeId: string, rawEmail: string): Promise<void> {
+  const email = normalizeEmail(rawEmail);
+  try {
+    await dynamoDbDocumentClient.send(
+      new TransactWriteCommand({
+        TransactItems: inviteDeletes(storeId, email, true),
+      })
+    );
+  } catch (e) {
+    if (failedConditionIndex(e) === 0) {
+      throw new MembershipError("NOT_INVITED", "No pending invite for this email");
+    }
+    throw e;
+  }
+}
+
+function inviteDeletes(storeId: string, email: string, mustExist: boolean) {
+  return [
+    {
+      Delete: {
+        TableName: TABLE,
+        Key: { pk: storePk(storeId), sk: inviteSk(email) },
+        ...(mustExist ? { ConditionExpression: "attribute_exists(pk)" } : {}),
+      },
+    },
+    { Delete: { TableName: TABLE, Key: { pk: invitePk(email), sk: userStoreSk(storeId) } } },
+  ];
+}
+
+/* A store's pending invites, oldest first. */
+export async function listStoreInvites(storeId: string): Promise<StoreInvite[]> {
+  const rows = await queryAllWithPrefix(storePk(storeId), `${appConstants.DYNAMO_ENTITY_INVITE}#`, TABLE);
+  return rows
+    .map((r) => ({ email: r.storeInviteEmail, role: r.storeMemberPermission, createdAt: r.storeInviteCreatedAt }))
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/*
+ * Turn every pending invite for `email` into a membership of `userId` (called from get-my-profile;
+ * the email must be the user's verified one, from their profile, never from a request).
+ * Each invite is claimed in its own transaction: invite rows deleted and membership rows written
+ * together. An invite to a store that's gone, or one the user already belongs to, is just
+ * removed. Returns the store IDs joined.
+ */
+export async function claimStoreInvites(userId: string, rawEmail: string): Promise<string[]> {
+  const email = normalizeEmail(rawEmail ?? "");
+  if (!email) return [];
+  const res = await dynamoDbDocumentClient.send(
+    new QueryCommand({
+      TableName: TABLE,
+      KeyConditionExpression: "#pk = :pk",
+      ExpressionAttributeNames: { "#pk": "pk" },
+      ExpressionAttributeValues: { ":pk": invitePk(email) },
+    })
+  );
+  const joined: string[] = [];
+  for (const invite of res.Items ?? []) {
+    const storeId: string = invite.storeId;
+    const role: StoreRole = invite.storeMemberPermission;
+    const now = Date.now();
+    try {
+      await dynamoDbDocumentClient.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            { ConditionCheck: { TableName: TABLE, Key: settingsKey(storeId), ConditionExpression: "attribute_exists(pk)" } },
+            ...inviteDeletes(storeId, email, true),
+            {
+              Put: {
+                TableName: TABLE,
+                Item: {
+                  pk: storePk(storeId),
+                  sk: memberSk(userId),
+                  storeMemberId: userId,
+                  storeMemberPermission: role,
+                  storeMemberCreatedAt: now,
+                  storeMemberUpdatedAt: now,
+                },
+                ConditionExpression: "attribute_not_exists(pk)",
+              },
+            },
+            {
+              Put: {
+                TableName: TABLE,
+                Item: { pk: userPk(userId), sk: userStoreSk(storeId), storeId, storeMemberPermission: role, storeMemberCreatedAt: now },
+              },
+            },
+          ],
+        })
+      );
+      joined.push(storeId);
+    } catch (e) {
+      const failed = failedConditionIndex(e);
+      if (failed === 0 || failed === 3) {
+        // Store deleted, or already a member: the invite has nothing left to do
+        await dynamoDbDocumentClient.send(new TransactWriteCommand({ TransactItems: inviteDeletes(storeId, email, false) }));
+      } else if (failed !== 1) {
+        // 1 = claimed by a parallel request already; anything else is a real error
+        throw e;
+      }
+    }
+  }
+  return joined;
 }

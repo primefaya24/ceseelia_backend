@@ -47,6 +47,11 @@ export const CORS_ORIGINS: string[] = envList("CORS_ORIGINS");
 // Proxies in front of the API (nginx = 1). Express then derives req.ip from X-Forwarded-For
 // counting only that many trusted hops, so a client-sent header can't fake the IP.
 export const TRUST_PROXY_HOPS: number = envNumber("TRUST_PROXY_HOPS", 1);
+// Base URL of the webapp, for links in emails (store invites, progress.md 1.4)
+export const WEBAPP_URL: string = env(
+    "WEBAPP_URL",
+    stageValue === appConstants.STAGE_DEV ? "http://localhost:4200" : "https://app.ceseelia.com"
+).replace(/\/+$/, "");
 
 /*
 * DynamoDB
