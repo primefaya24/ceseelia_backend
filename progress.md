@@ -84,14 +84,21 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
     `categoryId` / `storeItemId`; updates must send a valid one. Tests in `tests/ids.test.ts`.
     `vitest.config.mts` now gives tests fake AWS credentials and a dead endpoint, so a test can
     never write to the real dev table._
-- [ ] 🟠 **S.5 No more blind upserts.**
-  - [ ] a. `updateStoreSettings`: add `ConditionExpression: attribute_exists(pk)`. Without it,
+- [x] 🟠 **S.5 No more blind upserts.**
+  - _Done 2026-11-08, tested by hand. Shared `writeStoreChild` in the store entity:
+    create = new ULID in a transaction that checks the store's `SETTINGS` row
+    (`attribute_exists`) and the new row (`attribute_not_exists`); update = `attribute_exists`.
+    Missing records throw `StoreRecordNotFoundError`, which the routes map to **404** ("Store /
+    Category / Item not found"). Tests in `tests/store-writes.test.ts`. **Webapp change (same
+    task):** the category and item forms used to send `isUpdate: false` with the existing ID
+    when editing; they now send a single update for edits and only create for new records._
+  - [x] a. `updateStoreSettings`: add `ConditionExpression: attribute_exists(pk)`. Without it,
         a PUT with a made-up `storeId` creates a junk `SETTINGS` row.
-  - [ ] b. `updateStoreCategory` / `updateStoreItem`: on `isUpdate=false`, ignore any
+  - [x] b. `updateStoreCategory` / `updateStoreItem`: on `isUpdate=false`, ignore any
         client-supplied id and use `attribute_not_exists`. On `isUpdate=true`, require the id and
         use `attribute_exists`. Today `isUpdate=false` plus an existing id silently overwrites a record.
-  - [ ] c. Check that the store exists (its `SETTINGS` row) before creating a category or item.
-  - [ ] d. Tests for each case.
+  - [x] c. Check that the store exists (its `SETTINGS` row) before creating a category or item.
+  - [x] d. Tests for each case.
 - [ ] 🟠 **S.6 Run S3 cleanup only after the DB write succeeds**, in `category/create` and
       `inventory/create-item`. They currently delete "unused" images before the write. The same bug
       was fixed for update-settings in Stage 0.

@@ -8,7 +8,7 @@ import {
   isStoreCategoryPure,
   isStoreCategoryValid,
 } from "../../../../../layers/core/interfaces/store";
-import { updateStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { StoreRecordNotFoundError, updateStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import { cleanUpS3Folder, isUlid, isUlidOrEmpty } from "../../../../../layers/core/utils";
 dotenv.config();
@@ -75,15 +75,21 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     }
 
     // Create category
+    // On create the client's ID is ignored and a new one is generated.
     const categoryId: string = await updateStoreCategory(
       storeId,
       storeCategory,
-      storeCategoryId
+      isUpdate ? storeCategoryId : undefined,
+      isUpdate
     );
 
     // Respond to user
     res.send(categoryId);
   } catch (e) {
+    if (e instanceof StoreRecordNotFoundError) {
+      res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: e.message });
+      return;
+    }
     if (IN_DEV) {
       console.error(e);
     }

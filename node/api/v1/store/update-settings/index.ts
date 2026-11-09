@@ -9,7 +9,7 @@ import {
   isStoreSettingsValid,
   StoreSettings,
 } from "../../../../layers/core/interfaces/store";
-import { updateStoreSettings } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { StoreRecordNotFoundError, updateStoreSettings } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../layers/aws/s3";
 import {
   cleanUpS3Folder,
@@ -93,6 +93,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Respond to user
     res.send();
   } catch (e) {
+    if (e instanceof StoreRecordNotFoundError) {
+      res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: e.message });
+      return;
+    }
     if (IN_DEV) {
       console.error(e);
     }

@@ -7,6 +7,7 @@ import {
   PutCommand,
   UpdateCommand,
   DeleteCommand,
+  TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import * as ULID from "ulid";
 import { appConstants } from "../../../../../constants";
@@ -34,6 +35,84 @@ const dynamoDbDocumentClient: DynamoDBDocumentClient =
 
 // Constants
 const DEFAULT_TABLE_NAME: string | undefined = DB_TABLE_NAME;
+
+/* Thrown when a write targets a store, category or item that doesn't exist. Routes map it to 404. */
+export class StoreRecordNotFoundError extends Error {
+  constructor(what: "Store" | "Category" | "Item") {
+    super(`${what} not found`);
+    this.name = "StoreRecordNotFoundError";
+  }
+}
+
+function isConditionalCheckFailure(e: unknown): boolean {
+  return (e as { name?: string })?.name === "ConditionalCheckFailedException";
+}
+
+/* In a create transaction, reason 0 is the store's SETTINGS check. */
+function isStoreMissingInTransaction(e: unknown): boolean {
+  const err = e as { name?: string; CancellationReasons?: Array<{ Code?: string }> };
+  return (
+    err?.name === "TransactionCanceledException" &&
+    err.CancellationReasons?.[0]?.Code === "ConditionalCheckFailed"
+  );
+}
+
+/*
+ * Write a category or item row under STORE#<storeId> without ever upserting blindly:
+ * - create: a fresh ULID (any client ID is ignored), only if the store's SETTINGS row exists and
+ *   the new row doesn't;
+ * - update: the given ID, only if that row already exists.
+ */
+async function writeStoreChild(
+  storeId: string,
+  entity: "Category" | "Item",
+  childId: string | undefined,
+  isUpdate: boolean,
+  updateExpression: string,
+  values: (id: string) => Record<string, unknown>
+): Promise<string> {
+  if (isUpdate && !childId) {
+    throw new Error(`${entity} update needs an ID`);
+  }
+  const id = isUpdate ? (childId as string) : ULID.ulid();
+  const pk = appConstants.DYNAMO_ENTITY_STORE + "#" + storeId;
+  const skPrefix =
+    entity === "Category" ? appConstants.DYNAMO_ENTITY_CATEGORY : appConstants.DYNAMO_ENTITY_ITEM;
+  const update = {
+    TableName: DEFAULT_TABLE_NAME,
+    Key: { pk, sk: skPrefix + "#" + id },
+    UpdateExpression: updateExpression,
+    ExpressionAttributeValues: values(id),
+  };
+
+  try {
+    if (isUpdate) {
+      await dynamoDbDocumentClient.send(
+        new UpdateCommand({ ...update, ConditionExpression: "attribute_exists(pk)" })
+      );
+    } else {
+      await dynamoDbDocumentClient.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              ConditionCheck: {
+                TableName: DEFAULT_TABLE_NAME,
+                Key: { pk, sk: appConstants.DYNAMO_ENTITY_SETTINGS },
+                ConditionExpression: "attribute_exists(pk)",
+              },
+            },
+            { Update: { ...update, ConditionExpression: "attribute_not_exists(pk)" } },
+          ],
+        })
+      );
+    }
+  } catch (e) {
+    if (isUpdate && isConditionalCheckFailure(e)) throw new StoreRecordNotFoundError(entity);
+    if (!isUpdate && isStoreMissingInTransaction(e)) throw new StoreRecordNotFoundError("Store");
+    throw e;
+  }
+  return id;
+}
 
 export async function createStore(
   storeName: string,
@@ -84,21 +163,18 @@ export async function createStore(
 export async function updateStoreItem(
   storeId: string,
   storeItem: StoreItem,
-  storeItemId: string | undefined
+  storeItemId: string | undefined,
+  isUpdate: boolean
 ): Promise<string> {
   try {
-    const itemId: string =
-      storeItemId && storeItemId.length > 0 ? storeItemId : ULID.ulid();
-    const command = new UpdateCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      Key: {
-        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
-        sk: appConstants.DYNAMO_ENTITY_ITEM + "#" + itemId,
-      },
-      UpdateExpression:
-        "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemHashtagIds = :storeItemHashtagIds, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams",
-      ExpressionAttributeValues: {
-        ":storeItemId": itemId,
+    return await writeStoreChild(
+      storeId,
+      "Item",
+      storeItemId,
+      isUpdate,
+      "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemHashtagIds = :storeItemHashtagIds, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams",
+      (id) => ({
+        ":storeItemId": id,
         ":storeItemCategoryId": storeItem.storeItemCategoryId,
         ":storeItemImageUris": storeItem.storeItemImageUris,
         ":storeItemName": storeItem.storeItemName,
@@ -109,10 +185,8 @@ export async function updateStoreItem(
         ":storeItemHashtagIds": storeItem.storeItemHashtagIds,
         ":storeItemDiscountPercent": storeItem.storeItemDiscountPercent,
         ":storeItemCustomParams": storeItem.storeItemCustomParams,
-      },
-    });
-    await dynamoDbDocumentClient.send(command);
-    return itemId;
+      })
+    );
   } catch (e) {
     console.error("In updateStoreItem", e);
     throw e;
@@ -141,23 +215,18 @@ export async function deleteStoreItem(
 export async function updateStoreCategory(
   storeId: string,
   storeCategory: StoreCategory,
-  storeCategoryId: string | undefined
+  storeCategoryId: string | undefined,
+  isUpdate: boolean
 ): Promise<string> {
   try {
-    const categoryId: string =
-      storeCategoryId && storeCategoryId.length > 0
-        ? storeCategoryId
-        : ULID.ulid();
-    const command = new UpdateCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      Key: {
-        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
-        sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + categoryId,
-      },
-      UpdateExpression:
-        "SET storeCategoriyId = :storeCategoriyId, storeCategoriyPriority = :storeCategoriyPriority, storeCategoryName = :storeCategoryName, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoriyHashtags = :storeCategoriyHashtags, storeCategoryItemCount = :storeCategoryItemCount",
-      ExpressionAttributeValues: {
-        ":storeCategoriyId": categoryId,
+    return await writeStoreChild(
+      storeId,
+      "Category",
+      storeCategoryId,
+      isUpdate,
+      "SET storeCategoriyId = :storeCategoriyId, storeCategoriyPriority = :storeCategoriyPriority, storeCategoryName = :storeCategoryName, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoriyHashtags = :storeCategoriyHashtags, storeCategoryItemCount = :storeCategoryItemCount",
+      (id) => ({
+        ":storeCategoriyId": id,
         ":storeCategoriyPriority": storeCategory.storeCategoriyPriority,
         ":storeCategoryName": storeCategory.storeCategoryName,
         ":storeCategoryBannerUri": storeCategory.storeCategoryBannerUri,
@@ -166,10 +235,8 @@ export async function updateStoreCategory(
           storeCategory.storeCategoryDiscountPercent,
         ":storeCategoriyHashtags": storeCategory.storeCategoriyHashtags,
         ":storeCategoryItemCount": 0,
-      },
-    });
-    await dynamoDbDocumentClient.send(command);
-    return categoryId;
+      })
+    );
   } catch (e) {
     console.error("In updateStoreCategory", e);
     throw e;
@@ -301,10 +368,13 @@ export async function updateStoreSettings(
         ":general": storeSettings.general,
         ":customize": storeSettings.customize ?? {},
       },
+      // Never create a SETTINGS row for a store that doesn't exist.
+      ConditionExpression: "attribute_exists(pk)",
     });
     await dynamoDbDocumentClient.send(command);
   } catch (e) {
     console.error("In updateStoreSettings", e);
+    if (isConditionalCheckFailure(e)) throw new StoreRecordNotFoundError("Store");
     throw e;
   }
 }
