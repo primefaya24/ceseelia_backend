@@ -29,6 +29,8 @@ export const MAX_LENGTH = {
 export const NUMBER_RANGE = {
   percent: { min: 0, max: 100 },
   price: { min: 0, max: 1_000_000 },
+  // Item prices in minor units (cents), per currency (progress.md 2.5): up to 1,000,000.00
+  priceMinor: { min: 0, max: 100_000_000 },
   // -1 means "unlimited" (progress.md 2.6); the webapp only sends >= 0 until WA 2.7.
   stock: { min: -1, max: 1_000_000 },
   points: { min: 0, max: 1_000_000 },

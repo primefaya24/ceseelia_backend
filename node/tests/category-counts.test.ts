@@ -36,7 +36,7 @@ const item = (categoryId: string): StoreItem => ({
   storeItemImageUris: [],
   storeItemName: "Tea",
   storeItemStock: 1,
-  storeItemPrice: 2,
+  storeItemPrices: { USD: 200 },
   storeItemDescription: "",
   storeItemIsActive: true,
   storeItemHashtagIds: [],

@@ -37,7 +37,7 @@ const item = (): StoreItem => ({
   storeItemImageUris: [],
   storeItemName: "Tea",
   storeItemStock: 1,
-  storeItemPrice: 2,
+  storeItemPrices: { USD: 200 },
   storeItemDescription: "",
   storeItemIsActive: true,
   storeItemHashtagIds: [],
@@ -133,6 +133,33 @@ describe("Category updates", () => {
     const create = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems![1].Update!;
     expect(create.UpdateExpression).toContain("storeCategoryItemCount = :storeCategoryItemCount");
     expect(create.ExpressionAttributeValues![":storeCategoryItemCount"]).toBe(0);
+  });
+});
+
+describe("item prices are written per currency (2.5)", () => {
+  it("sets storeItemPrices and removes the old single storeItemPrice", async () => {
+    ddb.on(TransactWriteCommand).resolves({});
+    await updateStoreItem("S1", { ...item(), storeItemPrices: { USD: 6500, CAD: 8900 } }, undefined, false);
+    const write = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems![1].Update!;
+    expect(write.UpdateExpression).toContain("storeItemPrices = :storeItemPrices");
+    expect(write.UpdateExpression).toMatch(/ REMOVE storeItemPrice$/);
+    expect(write.ExpressionAttributeValues![":storeItemPrices"]).toEqual({ USD: 6500, CAD: 8900 });
+    expect(write.ExpressionAttributeValues).not.toHaveProperty(":storeItemPrice");
+  });
+
+  it("the route refuses an item priced in decimals (the old model)", async () => {
+    vi.mocked(verifyCognitoAccessToken).mockResolvedValue({ sub: "admin-1", "cognito:groups": ["Admins"] });
+    const res = await request(createApp())
+      .post("/api/v1/store/inventory/create-item")
+      .set("Host", "localhost")
+      .set("Authorization", "Bearer good")
+      .send({
+      storeId: ulid(),
+      isUpdate: false,
+        storeItem: { ...item(), storeItemPrices: { USD: 19.99 } },
+      });
+    expect(res.status).toBe(400);
+    expect(ddb.commandCalls(TransactWriteCommand)).toHaveLength(0);
   });
 });
 

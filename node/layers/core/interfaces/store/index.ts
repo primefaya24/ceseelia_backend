@@ -19,7 +19,6 @@ import {
   NUMBER_RANGE,
 } from "../../../../constants/input-limits";
 import {
-  hasAtMost2Decimals,
   isEmailOrEmpty,
   isHexColor,
   isImageKeyOrEmpty,
@@ -494,7 +493,12 @@ export interface StoreItem {
   storeItemImageUris: string[];
   storeItemName: string;
   storeItemStock: number;
-  storeItemPrice: number;
+  /*
+   * Price per currency code in minor units (2.5): { USD: 6500, CAD: 8900 } = $65.00 / CA$89.00.
+   * The merchant sets each one; nothing is converted. A currency the store offers but the item
+   * has no price in is a currency the item isn't sold in.
+   */
+  storeItemPrices: StoreItemPrices;
   storeItemDescription: string;
   storeItemIsActive: boolean;
   storeItemHashtagIds: string[];
@@ -511,7 +515,8 @@ export function isStoreItemPure(storeItem: StoreItem): boolean {
     i.storeItemImageUris.every((uri) => typeof uri === "string") &&
     typeof i.storeItemName === "string" &&
     typeof i.storeItemStock === "number" &&
-    typeof i.storeItemPrice === "number" &&
+    isObject(i.storeItemPrices) &&
+    Object.values(i.storeItemPrices).every((v) => typeof v === "number") &&
     typeof i.storeItemDescription === "string" &&
     typeof i.storeItemIsActive === "boolean" &&
     Array.isArray(i.storeItemHashtagIds) &&
@@ -539,8 +544,7 @@ export function isStoreItemValid(
     i.storeItemName.length > 0 &&
     isMaxLength(i.storeItemName, MAX_LENGTH.itemName) &&
     isMaxLength(i.storeItemDescription, MAX_LENGTH.itemDescription) &&
-    isInRange(i.storeItemPrice, NUMBER_RANGE.price) &&
-    hasAtMost2Decimals(i.storeItemPrice) &&
+    isStoreItemPricesValid(i.storeItemPrices) &&
     isInRange(i.storeItemStock, NUMBER_RANGE.stock) &&
     Number.isInteger(i.storeItemStock) &&
     isInRange(i.storeItemDiscountPercent, NUMBER_RANGE.percent) &&
@@ -552,6 +556,23 @@ export function isStoreItemValid(
     i.storeItemHashtagIds.every((id) => id.length > 0 && isMaxLength(id, MAX_LENGTH.hashtagId)) &&
     i.storeItemCustomParams.length <= MAX_COUNT.itemParams &&
     i.storeItemCustomParams.every(isStoreParameterValid)
+  );
+}
+
+export type StoreItemPrices = Partial<Record<(typeof CURRENCY_CODES)[number], number>>;
+
+/* 1-3 prices, keyed by allowed currency codes, each a whole number of cents in range. */
+export function isStoreItemPricesValid(prices: StoreItemPrices): boolean {
+  const entries = Object.entries(prices);
+  return (
+    entries.length > 0 &&
+    entries.length <= MAX_COUNT.currencies &&
+    entries.every(
+      ([code, cents]) =>
+        (CURRENCY_CODES as readonly string[]).includes(code) &&
+        Number.isInteger(cents) &&
+        isInRange(cents as number, NUMBER_RANGE.priceMinor)
+    )
   );
 }
 

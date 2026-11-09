@@ -34,7 +34,7 @@ ceseelia_backend/
     ├── tests/             # vitest specs
     ├── config/index.ts    # env-driven config (STAGE, hosts, CORS, Cognito, table/bucket)
     ├── constants/index.ts # appConstants (entity names, HTTP codes, limits, etc.); input-limits.ts, slug.ts
-    ├── scripts/           # one-off maintenance scripts (slug backfill, category item recount)
+    ├── scripts/           # one-off maintenance scripts (slug backfill, category item recount, item price migration)
     ├── api/v1/<area>/<route>/index.ts   # one file per endpoint
     └── layers/
         ├── core/http      # validateAndExecuteHttpApiRoute (auth + validation wrapper)
@@ -145,7 +145,7 @@ export default function registerRoute(router: Router): void {
 | Category | `POST /store/category/create` (create + update via `isUpdate`) | ✅ |
 | Category | `DELETE /store/category/delete/:storeId/:storeCategoryId` | ✅ only when the category has no items, else 409 `CATEGORY_NOT_EMPTY` `{message, itemCount}`; then deletes its banner |
 | Category | `GET /store/category/get-banner-upload-url/:storeId/:categoryId/:imageType` | ✅ 404 unless the category exists |
-| Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing |
+| Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing; prices are `storeItemPrices` in whole cents per currency (2.5) |
 | Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ −1 on its category, then deletes its images |
 | Inventory | `GET /store/inventory/get-data/:storeId` (auth) | ✅ categories + items + settings |
 | Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ active items in active categories only (counts match), no admin block, geo-IP default currency; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (suspended) |
@@ -243,9 +243,8 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     presigned POST conditions; unsaved uploads expire (pending tag + lifecycle rule).
 2.4 ✅ Public data endpoint: return only `storeItemIsActive` items in active categories, strip admin
     settings and any private fields, and 404 when `isStoreLive === false` or store not found.
-2.5 Price model: store prices as integer minor units (cents) per base currency; decide how
-    multi-currency works (fixed per-currency prices vs. conversion). Add `storeItemPrices` map if
-    per-currency. (WA mirrors.)
+2.5 ✅ Price model: `storeItemPrices` = whole cents per currency, each set by the merchant (no
+    conversion); replaces `storeItemPrice`. `scripts/migrate-item-prices.mjs` moves old prices.
 2.6 Stock semantics: `-1` = unlimited vs. tracked; decrement on paid order (Stage 5).
 
 ### Stage 3 — Public storefront API

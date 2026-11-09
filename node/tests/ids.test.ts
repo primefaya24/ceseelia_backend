@@ -107,7 +107,7 @@ describe("routes reject malformed IDs with 400 before touching data", () => {
       storeItemImageUris: [],
       storeItemName: "Tea",
       storeItemStock: 1,
-      storeItemPrice: 2,
+      storeItemPrices: { USD: 200 },
       storeItemDescription: "",
       storeItemIsActive: true,
       storeItemHashtagIds: [],

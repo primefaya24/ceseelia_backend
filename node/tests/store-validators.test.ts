@@ -48,7 +48,7 @@ const item = (patch: Partial<StoreItem> = {}): StoreItem => ({
   storeItemImageUris: [],
   storeItemName: "Tea",
   storeItemStock: 3,
-  storeItemPrice: 19.99,
+  storeItemPrices: { USD: 1999 },
   storeItemDescription: "",
   storeItemIsActive: true,
   storeItemHashtagIds: [],
@@ -103,9 +103,14 @@ describe("a. max lengths", () => {
 
 describe("b. numbers", () => {
   it.each([
-    ["negative price", { storeItemPrice: -1 }],
-    ["huge price", { storeItemPrice: 1_000_001 }],
-    ["3-decimal price", { storeItemPrice: 1.005 }],
+    ["negative price", { storeItemPrices: { USD: -1 } }],
+    ["price over 1,000,000.00", { storeItemPrices: { USD: 100_000_001 } }],
+    ["fractional cents", { storeItemPrices: { USD: 19.99 } }],
+    ["no prices", { storeItemPrices: {} }],
+    ["unknown currency", { storeItemPrices: { EUR: 100 } }],
+    ["a non-number price", { storeItemPrices: { USD: "100" } }],
+    ["prices not an object", { storeItemPrices: 100 }],
+    ["the old single price", { storeItemPrices: undefined, storeItemPrice: 19.99 }],
     ["fractional stock", { storeItemStock: 1.5 }],
     ["stock below -1", { storeItemStock: -2 }],
     ["discount over 100", { storeItemDiscountPercent: 101 }],
@@ -114,10 +119,11 @@ describe("b. numbers", () => {
     expect(itemOk(item(patch as Partial<StoreItem>))).toBe(false);
   });
 
-  it("item accepts unlimited stock (-1), zero and 2-decimal prices", () => {
+  it("item accepts unlimited stock (-1), free items and a price per currency (2.5)", () => {
     expect(itemOk(item({ storeItemStock: -1 }))).toBe(true);
-    expect(itemOk(item({ storeItemStock: 0, storeItemPrice: 0 }))).toBe(true);
-    expect(itemOk(item({ storeItemPrice: 1234.56 }))).toBe(true);
+    expect(itemOk(item({ storeItemStock: 0, storeItemPrices: { USD: 0 } }))).toBe(true);
+    expect(itemOk(item({ storeItemPrices: { USD: 6500, CAD: 8900, AUD: 9900 } }))).toBe(true);
+    expect(itemOk(item({ storeItemPrices: { CAD: 100_000_000 } }))).toBe(true);
   });
 
   it("category discount and priority", () => {

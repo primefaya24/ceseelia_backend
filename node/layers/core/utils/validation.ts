@@ -8,7 +8,6 @@ export const isInRange = (v: number, range: { min: number; max: number }): boole
   Number.isFinite(v) && v >= range.min && v <= range.max;
 
 /* At most 2 decimal places (prices are entered in cents precision). */
-export const hasAtMost2Decimals = (v: number): boolean => Math.abs(v * 100 - Math.round(v * 100)) < 1e-6;
 
 /* Empty, or an http(s) URL whose host has a dot. */
 export function isUrlOrEmpty(v: string): boolean {

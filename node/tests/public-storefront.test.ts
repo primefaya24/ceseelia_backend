@@ -21,8 +21,14 @@ const category = (id: string, active: boolean, count = 99) => ({
   storeCategoryIsActive: active,
   storeCategoryItemCount: count,
 });
-const item = (name: string, categoryId: string, active = true) =>
-  ({ storeItemId: ulid(), storeItemName: name, storeItemCategoryId: categoryId, storeItemIsActive: active }) as StoreItem;
+const item = (name: string, categoryId: string, active = true, storeItemPrices: object = { USD: 6500 }) =>
+  ({
+    storeItemId: ulid(),
+    storeItemName: name,
+    storeItemCategoryId: categoryId,
+    storeItemIsActive: active,
+    storeItemPrices,
+  }) as StoreItem;
 
 const inventory = () => ({
   settings: initStoreSettings(),
@@ -69,6 +75,33 @@ describe("toPublicInventory (2.4b)", () => {
     const data = inventory();
     data.items = [];
     expect(toPublicInventory(data).categories[0].storeCategoryItemCount).toBe(0);
+  });
+});
+
+describe("toPublicInventory prices (2.5)", () => {
+  const withCurrencies = (codes: string[], prices: object[]) => {
+    const settings = initStoreSettings();
+    settings.currencies = codes.map((c, i) => ({ ...settings.currencies[0], currencyCode: c, currencyIsDefault: i === 0 }));
+    return {
+      settings,
+      categories: [category(A, true)],
+      items: prices.map((p, i) => item(`item ${i}`, A, true, p)),
+    };
+  };
+
+  it("keeps only the prices of currencies the store offers", () => {
+    const out = toPublicInventory(withCurrencies(["USD", "CAD"], [{ USD: 6500, CAD: 8900, AUD: 9900 }]));
+    expect(out.items[0].storeItemPrices).toEqual({ USD: 6500, CAD: 8900 });
+  });
+
+  it("leaves out an item with no price in any offered currency, and doesn't count it", () => {
+    const out = toPublicInventory(withCurrencies(["CAD"], [{ CAD: 100 }, { USD: 100 }, {}]));
+    expect(out.items.map((i) => i.storeItemName)).toEqual(["item 0"]);
+    expect(out.categories[0].storeCategoryItemCount).toBe(1);
+  });
+
+  it("a free item (0) is still for sale", () => {
+    expect(toPublicInventory(withCurrencies(["USD"], [{ USD: 0 }])).items).toHaveLength(1);
   });
 });
 

@@ -23,8 +23,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > are done, as are WA 1.1–1.5.
 > WA 1.6a–c (profile pages) done too; 1.6d waits on a real `delete-user` (501 since S.11).
 > Stage 2.1–2.3 are done (item counts, category delete rule, upload limits; WA uses all three).
-> 2.4 (public data endpoint) is done too. **Next: 2.5 price model** (a decision first: integer
-> minor units, and fixed per-currency prices vs. conversion), then 2.6 stock rules.
+> 2.4 (public data endpoint) and 2.5 (prices: whole cents per currency, `storeItemPrices`) are
+> done too. **Next: 2.6 stock rules** (`-1` = unlimited), or WA 2.6 (a price box per currency).
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -47,7 +47,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging` |
 
-**Health check (2026-11-09):** `npm test` 425/425 passing · `npm run typecheck` clean ·
+**Health check (2026-11-09):** `npm test` 435/435 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 80 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -150,7 +150,7 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
     webapp accepts phone and WhatsApp as digits with optional `+`, spaces, `-`, `()` (7–15
     digits), and stock as an integer ≥ 0 (no `-1`)._
   - [x] a. Max lengths on every string (names, descriptions, slogan, hashtags, labels, options).
-  - [x] b. Numbers: price ≥ 0, stock is an integer ≥ -1, item/category discount 0–100, priority
+  - [x] b. Numbers: price ≥ 0 (since 2.5: whole cents per currency), stock is an integer ≥ -1, item/category discount 0–100, priority
         is one of `PRIORITY_*`.
   - [x] c. Array caps: images per item (e.g. ≤ 10), hashtags, custom params, options, promo images,
         currencies.
@@ -399,8 +399,20 @@ match the backend and webapp._
     `admin` (a, already done in 1.6). Tests in `tests/public-storefront.test.ts`; checked live
     on dev (Northern Hoop 200, unknown id 404). The webapp already shows "Store unavailable" on
     any error; WA 3.1b can use the codes for better wording._
-- [ ] 🟡 **2.5 Price model.** Decide on integer minor units per currency (fixed per-currency price
+- [x] 🟡 **2.5 Price model.** Decide on integer minor units per currency (fixed per-currency price
       vs. conversion), add `storeItemPrices` if per-currency, migrate existing items. (WA 2.4)
+  - _Done 2026-11-09, tested by hand. **Decision: fixed per-currency prices, no
+    conversion** (owner's choice): exact prices, no rates service, Stripe charges what's shown.
+    `storeItemPrices: { USD: 6500, CAD: 8900 }` (whole cents) replaces `storeItemPrice` (decimal).
+    Valid: 1–3 entries, codes from `CURRENCY_CODES`, integers 0–100,000,000
+    (`NUMBER_RANGE.priceMinor`). A key for a currency the store doesn't offer is allowed (prices
+    survive turning a currency off and on). Item writes `SET storeItemPrices … REMOVE
+    storeItemPrice`. The public data keeps only the store's offered currencies and leaves out an
+    item priced in none of them. `scripts/migrate-item-prices.mjs` moves old prices under the
+    store's default currency (dry run by default, `--write`; run on dev: Pink Slay 65 → `{USD:
+    6500}`; run on prod when it exists). Orders (`StoreOrderItem.price`) and reward amounts are
+    untouched until Stages 4–5. The webapp bridge came with it: its one price box edits the default
+    currency's price; WA 2.6 adds a box per currency._
 - [ ] 🟡 **2.6 Stock rules:** `-1` = unlimited, `≥ 0` = tracked. Document it and validate it
       (S.9b). Stock goes down on paid orders in 5.5. (WA 2.5)
 
@@ -519,6 +531,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 2.5 done: item prices are `storeItemPrices` (whole cents per currency, set by the merchant, no conversion); public data shows only offered currencies; migration script run on dev. |
 | 2026-11-09 | 2.4 done: public storefront data shows only active items in active categories (counts match), 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` for unknown or suspended stores. |
 | 2026-11-09 | 2.3 done: image uploads are presigned POSTs (png/jpg, ≤ 5 MB, 1–10 per request, item/category must exist), tagged pending until saved; bucket allows POST and expires unsaved uploads after a day. |
 | 2026-11-09 | 2.2 done: category delete refused with 409 `CATEGORY_NOT_EMPTY` while it has items (conditional delete on the count); banner deleted after the row. |

@@ -172,7 +172,7 @@ export async function createStore(
 }
 
 const ITEM_SET_EXPRESSION =
-  "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemHashtagIds = :storeItemHashtagIds, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams";
+  "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrices = :storeItemPrices, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemHashtagIds = :storeItemHashtagIds, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams REMOVE storeItemPrice";
 
 function itemValues(id: string, storeItem: StoreItem): Record<string, unknown> {
   return {
@@ -181,7 +181,7 @@ function itemValues(id: string, storeItem: StoreItem): Record<string, unknown> {
     ":storeItemImageUris": storeItem.storeItemImageUris,
     ":storeItemName": storeItem.storeItemName,
     ":storeItemStock": storeItem.storeItemStock,
-    ":storeItemPrice": storeItem.storeItemPrice,
+    ":storeItemPrices": storeItem.storeItemPrices,
     ":storeItemDescription": storeItem.storeItemDescription,
     ":storeItemIsActive": storeItem.storeItemIsActive,
     ":storeItemHashtagIds": storeItem.storeItemHashtagIds,
@@ -619,13 +619,22 @@ export class StoreUnavailableError extends Error {
  * What a shopper may see: no admin block, only active categories, only active items in them
  * (items of a missing or inactive category are left out), and each category's count is the
  * number of items returned, so hidden items aren't given away by the counts.
+ * Prices (2.5) are cut to the currencies the store offers; an item priced in none of them can't
+ * be bought, so it's left out too.
  */
 export function toPublicInventory(data: StoreInventoryData): StoreInventoryData {
   const categories = data.categories.filter((c) => c.storeCategoryIsActive === true);
   const activeCategoryIds = new Set(categories.map((c) => c.storeCategoriyId));
-  const items = data.items.filter(
-    (i) => i.storeItemIsActive === true && activeCategoryIds.has(i.storeItemCategoryId)
-  );
+  const offered = new Set(data.settings.currencies.map((c) => c.currencyCode));
+  const items = data.items
+    .filter((i) => i.storeItemIsActive === true && activeCategoryIds.has(i.storeItemCategoryId))
+    .map((i) => ({
+      ...i,
+      storeItemPrices: Object.fromEntries(
+        Object.entries(i.storeItemPrices ?? {}).filter(([code]) => offered.has(code))
+      ),
+    }))
+    .filter((i) => Object.keys(i.storeItemPrices).length > 0);
   const counts = new Map<string, number>();
   for (const i of items) counts.set(i.storeItemCategoryId, (counts.get(i.storeItemCategoryId) ?? 0) + 1);
   return withoutAdminSettings({
