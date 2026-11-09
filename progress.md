@@ -25,7 +25,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > Stage 2.1–2.3 are done (item counts, category delete rule, upload limits; WA uses all three).
 > 2.4 (public data endpoint) and 2.5 (prices: whole cents per currency, `storeItemPrices`) are
 > done too (WA 2.6 has a price box per currency), and 2.6 (stock rule: `-1` unlimited, `0`
-> sold out). **Stage 2 is done** (WA 2.7 added the unlimited toggle). **Next: Stage 3**
+> sold out). **Stage 2 is done** in both repos (WA 2.7–2.8 too). **Next: Stage 3**
 > (3.1 `GET /store/public/storefront/:slug`).
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
