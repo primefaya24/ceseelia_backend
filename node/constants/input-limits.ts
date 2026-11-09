@@ -32,6 +32,9 @@ export const MAX_LENGTH = {
  */
 export const STOCK_UNLIMITED = -1;
 
+/* The most of one cart line (4.1); the webapp's item sheet and cart use the same 99. */
+export const MAX_QUANTITY_PER_LINE = 99;
+
 /* Numeric ranges (inclusive). */
 export const NUMBER_RANGE = {
   percent: { min: 0, max: 100 },

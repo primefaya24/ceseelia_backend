@@ -26,8 +26,9 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > 2.4 (public data endpoint) and 2.5 (prices: whole cents per currency, `storeItemPrices`) are
 > done too (WA 2.6 has a price box per currency), and 2.6 (stock rule: `-1` unlimited, `0`
 > sold out). **Stage 2 is done** in both repos (WA 2.7–2.8 too). **Next: Stage 3**
-> (3.1–3.4 done except 3.2b CloudFront; WA 3.3b uses contact-store). **Next: Stage 4** (4.1
-> pricing function), or WA 3.4/3.5 (item sheet, deep links via 3.3).
+> (3.1–3.4 done except 3.2b CloudFront; WA 3.3b uses contact-store). 4.1 (`priceLines`) is
+> done: biggest discount wins. **Next: 4.3** `POST /customer/quote` (WA 4.4 waits on it), or
+> 4.2 (tax and delivery settings) first so the quote has them.
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -50,7 +51,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging`; SES production access for contact-store; contact-store's in-memory rate limits need a shared store with >1 instance |
 
-**Health check (2026-11-09):** `npm test` 494/494 passing · `npm run typecheck` clean ·
+**Health check (2026-11-09):** `npm test` 523/523 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 79 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -479,8 +480,22 @@ match the backend and webapp._
 
 ## 6. Stage 4 — Cart & pricing service
 
-- [ ] 4.1 A pure pricing function `priceLines(store, lines, currency)`: item, category and store
+- [x] 4.1 A pure pricing function `priceLines(store, lines, currency)`: item, category and store
       discounts, custom-param validation, stock checks. Heavy unit tests.
+  - _Done 2026-11-09, tested by hand (unit tests; nothing calls it until 4.3). `layers/core/pricing`.
+    **Discounts: the biggest of item, category and store wins; they never stack** (the user's
+    decision, 2026-11-09; the storefront badge shows the same). Ties go to the most specific
+    (item, then category); percents are clamped to 0–100. A line's discount is worked out on
+    the whole line and rounded half up to a cent (integer maths, decimals like 12.5% are
+    exact). Line errors, each counting for nothing while the other lines are still priced:
+    `ITEM_NOT_FOUND` (unknown, hidden item, or hidden/missing category), `NOT_SOLD_IN_CURRENCY`,
+    `INVALID_QUANTITY` (whole 1–99, `MAX_QUANTITY_PER_LINE`), `OUT_OF_STOCK`,
+    `INSUFFICIENT_STOCK` (with `available`; lines of one item share its stock in line order),
+    `MISSING_PARAM` / `INVALID_PARAM` (with `param`: unknown param or option, two picks on a
+    single choice, a repeated pick, a param given twice). A currency the store doesn't offer
+    fails the whole quote (`CURRENCY_NOT_OFFERED`). Picks come back in the item's order. `ok`
+    only when there are lines and all are fine. Totals: subtotal, discount, total (tax and
+    delivery are 4.2)._
 - [ ] 4.2 Tax and delivery settings: extend `StoreSettings.general` (`taxRate`, pickup/delivery
       flags, delivery fee/zones), `initStoreSettings` and the validators. (WA 4.4)
 - [ ] 4.3 `POST /customer/quote` (public, rate-limited) returns validated lines, totals and errors
@@ -577,6 +592,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 4.1 done: pure `priceLines` (biggest discount wins, per-line half-up rounding, param/stock/currency checks with per-line errors). |
 | 2026-11-09 | 3.2a/3.3/3.4 done: cache headers (+ immutable images), `GET /store/public/item/:storeId/:itemId`, `POST /customer/contact-store` (honeypot, rate limits, Reply-To). |
 | 2026-11-09 | 3.1 done: `GET /store/public/storefront/:slug` (slug lookup + public data, with `storeId`); the shopper's currency is the default only if the store offers it. |
 | 2026-11-09 | 2.6 done: stock rule named (`STOCK_UNLIMITED = -1`, 0 = sold out) with `hasStockFor` for 4.1/5.5; webapp storefront no longer hides unlimited items. |

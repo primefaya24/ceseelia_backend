@@ -263,7 +263,9 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     `POST /customer/quote` takes `{storeId, currency, lines:[{itemId, qty, params}]}` and returns
     validated lines, unit prices, item/category/store discounts, subtotal, delivery, tax, total,
     and errors (out of stock, inactive item, invalid mandatory params).
-4.2 Single shared pricing function used by both `quote` and order creation (unit-tested).
+4.2 ✅ Single shared pricing function used by both `quote` and order creation (unit-tested):
+    `priceLines` in `layers/core/pricing`. Biggest of item/category/store discount wins (no
+    stacking); line discount rounded half up per line.
 4.3 Tax & delivery configuration in store settings (`general.taxRate`, pickup/delivery options,
     delivery fee/zones) — extend `StoreSettings` + `initStoreSettings` + validators.
 

@@ -1,0 +1,185 @@
+import { describe, it, expect } from "vitest";
+
+import {
+  bestDiscount,
+  checkParams,
+  percentOf,
+  priceLines,
+  PricingStore,
+  QuoteLineInput,
+} from "../layers/core/pricing";
+import {
+  initStoreCategory,
+  initStoreSettings,
+  StoreItem,
+  StoreParameter,
+} from "../layers/core/interfaces/store";
+
+const size: StoreParameter = { storeParamLabel: "Size", storeParamType: "SINGLE_SELECT", storeParamIsMandatory: true, storeParamOptions: ["S", "M", " ", "L"] };
+const extras: StoreParameter = { storeParamLabel: "Extras", storeParamType: "MULTI_SELECT", storeParamIsMandatory: false, storeParamOptions: ["Card", "Wrap"] };
+
+function item(id: string, patch: Partial<StoreItem> = {}): StoreItem {
+  return {
+    storeItemId: id,
+    storeItemCategoryId: "CAT",
+    storeItemImageUris: [],
+    storeItemDescription: "",
+    storeItemHashtagIds: [],
+    storeItemName: id,
+    storeItemIsActive: true,
+    storeItemStock: -1,
+    storeItemPrices: { USD: 1000, AUD: 1500 },
+    storeItemDiscountPercent: 0,
+    storeItemCustomParams: [],
+    ...patch,
+  } as StoreItem;
+}
+
+function store(opts: { items?: StoreItem[]; categoryPercent?: number; storePercent?: number; categoryActive?: boolean } = {}): PricingStore {
+  const settings = initStoreSettings();
+  return {
+    settings: {
+      currencies: [
+        { currencyCode: "USD", currencySign: "$", currencyIsDefault: true },
+        { currencyCode: "AUD", currencySign: "A$", currencyIsDefault: false },
+      ] as never,
+      general: { ...settings.general, discountPercent: opts.storePercent ?? 0 },
+    },
+    categories: [
+      { ...initStoreCategory("CAT", "Drinks"), storeCategoryIsActive: opts.categoryActive ?? true, storeCategoryDiscountPercent: opts.categoryPercent ?? 0 },
+    ],
+    items: opts.items ?? [item("TEA")],
+  };
+}
+const line = (itemId: string, quantity = 1, params: QuoteLineInput["params"] = []): QuoteLineInput => ({ itemId, quantity, params });
+
+describe("priceLines (4.1)", () => {
+  it("prices lines in the chosen currency and totals them", () => {
+    const q = priceLines(store({ items: [item("TEA"), item("CAKE", { storeItemPrices: { USD: 250 } })] }), [line("TEA", 2), line("CAKE", 3)], "USD");
+    expect(q.ok).toBe(true);
+    expect(q.lines.map((l) => [l.unitPriceMinor, l.subtotalMinor, l.totalMinor])).toEqual([[1000, 2000, 2000], [250, 750, 750]]);
+    expect([q.subtotalMinor, q.discountMinor, q.totalMinor]).toEqual([2750, 0, 2750]);
+    expect(priceLines(store(), [line("TEA")], "AUD").totalMinor).toBe(1500);
+  });
+
+  it("the biggest discount wins: item, category or store, never stacked", () => {
+    const tea = item("TEA", { storeItemDiscountPercent: 10 });
+    const byCategory = priceLines(store({ items: [tea], categoryPercent: 25, storePercent: 5 }), [line("TEA", 4)], "USD");
+    expect(byCategory.lines[0]).toMatchObject({ discountPercent: 25, discountSource: "CATEGORY", subtotalMinor: 4000, discountMinor: 1000, totalMinor: 3000 });
+    expect(priceLines(store({ items: [tea], storePercent: 30 }), [line("TEA")], "USD").lines[0]).toMatchObject({ discountPercent: 30, discountSource: "STORE" });
+    expect(priceLines(store({ items: [tea], storePercent: 5 }), [line("TEA")], "USD").lines[0]).toMatchObject({ discountPercent: 10, discountSource: "ITEM" });
+    expect(priceLines(store(), [line("TEA")], "USD").lines[0]).toMatchObject({ discountPercent: 0, discountSource: null, discountMinor: 0 });
+  });
+
+  it("ties go to the most specific source; out-of-range percents are clamped", () => {
+    expect(bestDiscount({ storeItemDiscountPercent: 20 }, { storeCategoryDiscountPercent: 20 }, 20)).toEqual({ percent: 20, source: "ITEM" });
+    expect(bestDiscount({ storeItemDiscountPercent: 0 }, { storeCategoryDiscountPercent: 20 }, 20)).toEqual({ percent: 20, source: "CATEGORY" });
+    expect(bestDiscount({ storeItemDiscountPercent: 150 }, undefined, -5)).toEqual({ percent: 100, source: "ITEM" });
+    expect(bestDiscount({ storeItemDiscountPercent: Number.NaN }, undefined, undefined)).toEqual({ percent: 0, source: null });
+  });
+
+  it("rounds the line's discount once, half up, to a whole cent", () => {
+    expect(percentOf(999, 10)).toBe(100); // 99.9 → 100
+    expect(percentOf(5, 10)).toBe(1); // 0.5 → 1
+    expect(percentOf(4, 10)).toBe(0); // 0.4 → 0
+    expect(percentOf(2, 12.5)).toBe(0); // 0.25 → 0
+    expect(percentOf(333, 33.33)).toBe(111); // 110.99 → 111
+    expect(percentOf(100_000_000 * 99, 100)).toBe(9_900_000_000);
+    // A 3-for line at 333¢ and 10%: 999 × 10% = 99.9 → 100, not 3 × round(33.3) = 99
+    const q = priceLines(store({ items: [item("TEA", { storeItemPrices: { USD: 333 }, storeItemDiscountPercent: 10 })] }), [line("TEA", 3)], "USD");
+    expect(q.lines[0]).toMatchObject({ subtotalMinor: 999, discountMinor: 100, totalMinor: 899 });
+  });
+
+  it("100% off makes a free line; a price of 0 is allowed", () => {
+    const q = priceLines(store({ items: [item("TEA", { storeItemDiscountPercent: 100 }), item("FREE", { storeItemPrices: { USD: 0 } })] }), [line("TEA", 2), line("FREE")], "USD");
+    expect(q.ok).toBe(true);
+    expect(q.totalMinor).toBe(0);
+  });
+
+  it("a currency the store doesn't offer fails the whole quote", () => {
+    const q = priceLines(store(), [line("TEA")], "EUR");
+    expect(q).toMatchObject({ ok: false, lines: [], totalMinor: 0, error: { code: "CURRENCY_NOT_OFFERED" } });
+  });
+
+  it.each([
+    ["an unknown item", store(), line("NOPE"), "ITEM_NOT_FOUND"],
+    ["a hidden item", store({ items: [item("TEA", { storeItemIsActive: false })] }), line("TEA"), "ITEM_NOT_FOUND"],
+    ["an item in a hidden category", store({ categoryActive: false }), line("TEA"), "ITEM_NOT_FOUND"],
+    ["an item whose category is gone", store({ items: [item("TEA", { storeItemCategoryId: "OLD" })] }), line("TEA"), "ITEM_NOT_FOUND"],
+    ["an item not priced in the currency", store({ items: [item("TEA", { storeItemPrices: { AUD: 100 } })] }), line("TEA"), "NOT_SOLD_IN_CURRENCY"],
+    ["quantity 0", store(), line("TEA", 0), "INVALID_QUANTITY"],
+    ["quantity 1.5", store(), line("TEA", 1.5), "INVALID_QUANTITY"],
+    ["quantity 100", store(), line("TEA", 100), "INVALID_QUANTITY"],
+    ["a sold-out item", store({ items: [item("TEA", { storeItemStock: 0 })] }), line("TEA"), "OUT_OF_STOCK"],
+    ["more than the stock", store({ items: [item("TEA", { storeItemStock: 2 })] }), line("TEA", 3), "INSUFFICIENT_STOCK"],
+  ])("%s is a line error that counts for nothing", (_n, s, l, code) => {
+    const q = priceLines(s, [l, line("TEA2")], "USD");
+    expect(q.lines[0].error?.code).toBe(code);
+    expect(q.lines[0].totalMinor).toBe(0);
+    expect(q.ok).toBe(false);
+  });
+
+  it("other lines are still priced when one has a problem", () => {
+    const q = priceLines(store({ items: [item("TEA"), item("CAKE", { storeItemStock: 0 })] }), [line("CAKE"), line("TEA", 2)], "USD");
+    expect(q.lines.map((l) => l.error?.code ?? null)).toEqual(["OUT_OF_STOCK", null]);
+    expect(q.totalMinor).toBe(2000);
+    expect(q.ok).toBe(false);
+  });
+
+  it("lines of one item share its stock, in line order", () => {
+    const tea = item("TEA", { storeItemStock: 5, storeItemCustomParams: [size] });
+    const q = priceLines(store({ items: [tea] }), [
+      line("TEA", 3, [{ label: "Size", values: ["S"] }]),
+      line("TEA", 3, [{ label: "Size", values: ["M"] }]),
+      line("TEA", 1, [{ label: "Size", values: ["L"] }]),
+    ], "USD");
+    expect(q.lines.map((l) => l.error?.code ?? null)).toEqual([null, "INSUFFICIENT_STOCK", null]);
+    expect(q.lines[1].error?.available).toBe(2);
+    expect(q.subtotalMinor).toBe(4000);
+    const used = priceLines(store({ items: [tea] }), [line("TEA", 5, [{ label: "Size", values: ["S"] }]), line("TEA", 1, [{ label: "Size", values: ["M"] }])], "USD");
+    expect(used.lines[1].error).toMatchObject({ code: "OUT_OF_STOCK", available: 0 });
+  });
+
+  it("unlimited stock (-1) never runs out", () => {
+    expect(priceLines(store(), [line("TEA", 99), line("TEA", 99)], "USD").ok).toBe(true);
+  });
+
+  it("an empty cart is not ok, with zero totals", () => {
+    expect(priceLines(store(), [], "USD")).toMatchObject({ ok: false, lines: [], totalMinor: 0, error: null });
+  });
+
+  it("returns the picks in the item's order and names the item", () => {
+    const tea = item("TEA", { storeItemCustomParams: [size, extras] });
+    const q = priceLines(store({ items: [tea] }), [line("TEA", 1, [{ label: "Extras", values: ["Wrap", "Card"] }, { label: "Size", values: ["M"] }])], "USD");
+    expect(q.lines[0]).toMatchObject({ itemName: "TEA", params: [{ label: "Size", values: ["M"] }, { label: "Extras", values: ["Card", "Wrap"] }] });
+  });
+});
+
+describe("checkParams (4.1)", () => {
+  const params = [size, extras];
+  const err = (picks: QuoteLineInput["params"], p = params) => {
+    const r = checkParams(p, picks);
+    return "error" in r ? r.error : null;
+  };
+
+  it("accepts valid picks; optional params can be left out; blank picks are ignored", () => {
+    expect(err([{ label: "Size", values: ["L"] }])).toBeNull();
+    expect(err([{ label: "Size", values: [" M "] }, { label: "Extras", values: [] }])).toBeNull();
+  });
+
+  it.each([
+    ["a missing mandatory param", [], "MISSING_PARAM", "Size"],
+    ["two picks on a single choice", [{ label: "Size", values: ["S", "M"] }], "INVALID_PARAM", "Size"],
+    ["an option the param doesn't have", [{ label: "Size", values: ["XL"] }], "INVALID_PARAM", "Size"],
+    ["a repeated choice on a multiple choice", [{ label: "Size", values: ["S"] }, { label: "Extras", values: ["Card", "Card"] }], "INVALID_PARAM", "Extras"],
+    ["a param the item doesn't have", [{ label: "Size", values: ["S"] }, { label: "Colour", values: ["Red"] }], "INVALID_PARAM", "Colour"],
+    ["the same param twice", [{ label: "Size", values: ["S"] }, { label: "Size", values: ["M"] }], "INVALID_PARAM", "Size"],
+  ])("refuses %s", (_n, picks, code, param) => {
+    expect(err(picks as QuoteLineInput["params"])).toMatchObject({ code, param });
+  });
+
+  it("a mandatory param with no real options can't block the line", () => {
+    const empty: StoreParameter = { ...size, storeParamLabel: "Engraving", storeParamOptions: ["", " "] };
+    expect(err([], [empty])).toBeNull();
+  });
+});
