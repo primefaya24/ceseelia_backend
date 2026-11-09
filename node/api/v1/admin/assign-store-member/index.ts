@@ -6,6 +6,7 @@ import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { isUlid } from "../../../../layers/core/utils";
 import { isEmailOrEmpty } from "../../../../layers/core/utils/validation";
 import { sendEmail } from "../../../../layers/aws/ses";
+import { escapeHtml } from "../../../../layers/core/utils/validation";
 import { peekUserByEmail } from "../../../../layers/aws/dynamodb/dynamo-entities/user";
 import {
   addStoreMember,
@@ -79,8 +80,6 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   }
 }
 
-const escapeHtml = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /* The invite is saved either way; a failed email is reported so the admin can resend. */
 export async function sendInviteEmail(email: string, storeName: string): Promise<boolean> {

@@ -5,6 +5,7 @@
 //   ../ceseelia_cloudformation) deletes pending objects after a day, so uploads that never get
 //   saved don't pile up. Saving an entity calls `markImagesKept` on the images it references
 //   *before* the database write, so an image that's in use is never left pending.
+import { IMAGE_CACHE_CONTROL } from "../../core/http/cache";
 import { DeleteObjectTaggingCommand, S3Client } from "@aws-sdk/client-s3";
 import { createPresignedPost } from "@aws-sdk/s3-presigned-post";
 import * as ULID from "ulid";
@@ -54,8 +55,10 @@ export async function createImageUpload(folder: string, type: ImageType): Promis
       ["content-length-range", 1, IMAGE_UPLOAD_MAX_BYTES],
       ["eq", "$Content-Type", contentType],
       ["eq", "$tagging", PENDING_TAGGING],
+      ["eq", "$Cache-Control", IMAGE_CACHE_CONTROL],
     ],
-    Fields: { "Content-Type": contentType, tagging: PENDING_TAGGING },
+    // Cache-Control (3.2): keys are unique per upload, so browsers and CDNs may keep it a year
+    Fields: { "Content-Type": contentType, tagging: PENDING_TAGGING, "Cache-Control": IMAGE_CACHE_CONTROL },
     Expires: IMAGE_UPLOAD_EXPIRY_SECONDS,
   });
   return { key, url, fields };

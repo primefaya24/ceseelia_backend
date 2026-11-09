@@ -10,6 +10,7 @@ import {
 } from "../../aws/dynamodb/dynamo-entities/store";
 import { StoreCurrency, StoreInventoryData } from "../interfaces/store";
 import { getClientIp, resolveCurrencyFromGeo } from "../utils";
+import { CACHE_CONTROL, setCacheControl } from "./cache";
 
 export type PublicStorefront = StoreInventoryData & { storeId: string };
 
@@ -24,6 +25,7 @@ export function withShopperCurrency(currencies: StoreCurrency[], shopperCode: st
 }
 
 export const storeNotFound = (res: Response): void => {
+  setCacheControl(res, CACHE_CONTROL.none);
   res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ code: "STORE_NOT_FOUND", message: "Store not found" });
 };
 
@@ -36,26 +38,37 @@ export const storeNotFound = (res: Response): void => {
 export async function sendPublicStorefront(req: Request, res: Response, storeId: string): Promise<void> {
   try {
     const data = await getPublicStoreInventoryData(storeId);
-    const ip = getClientIp(req);
-    const shopperCode = ip ? resolveCurrencyFromGeo(geoip.lookup(ip)) : appConstants.CURRENCY_USD;
     const body: PublicStorefront = {
       storeId,
       ...data,
-      settings: { ...data.settings, currencies: withShopperCurrency(data.settings.currencies, shopperCode) },
+      settings: { ...data.settings, currencies: withShopperCurrency(data.settings.currencies, shopperCurrency(req)) },
     };
+    setCacheControl(res, CACHE_CONTROL.storefront);
     res.send(body);
   } catch (e) {
-    if (e instanceof StoreRecordNotFoundError) {
-      storeNotFound(res);
-      return;
-    }
-    if (e instanceof StoreUnavailableError) {
-      res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ code: "STORE_UNAVAILABLE", message: "Store unavailable" });
-      return;
-    }
-    if (IN_DEV) console.error(e);
-    res
-      .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
-      .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });
+    sendPublicError(res, e);
   }
+}
+
+/* The shopper's currency code from their IP (USD when unknown). */
+export function shopperCurrency(req: Request): string {
+  const ip = getClientIp(req);
+  return ip ? resolveCurrencyFromGeo(geoip.lookup(ip)) : appConstants.CURRENCY_USD;
+}
+
+/* 404 STORE_NOT_FOUND / STORE_UNAVAILABLE for those errors, otherwise a 500. */
+export function sendPublicError(res: Response, e: unknown): void {
+  setCacheControl(res, CACHE_CONTROL.none);
+  if (e instanceof StoreRecordNotFoundError) {
+    storeNotFound(res);
+    return;
+  }
+  if (e instanceof StoreUnavailableError) {
+    res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ code: "STORE_UNAVAILABLE", message: "Store unavailable" });
+    return;
+  }
+  if (IN_DEV) console.error(e);
+  res
+    .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
+    .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });
 }

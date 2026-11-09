@@ -7,6 +7,8 @@ dotenv.config();
 const customerRouter: Router = Router();
 
 // Routes
+import route_contact_store from './contact-store/index';
+route_contact_store(customerRouter);
 
 // Export Router
 export default customerRouter;

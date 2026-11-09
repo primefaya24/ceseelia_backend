@@ -26,8 +26,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > 2.4 (public data endpoint) and 2.5 (prices: whole cents per currency, `storeItemPrices`) are
 > done too (WA 2.6 has a price box per currency), and 2.6 (stock rule: `-1` unlimited, `0`
 > sold out). **Stage 2 is done** in both repos (WA 2.7–2.8 too). **Next: Stage 3**
-> (3.1 `GET /store/public/storefront/:slug` is done; WA 3.1 uses it at `/s/:slug`). **Next: 3.2**
-> (cache headers) or 3.3 (item deep links).
+> (3.1–3.4 done except 3.2b CloudFront; WA 3.3b uses contact-store). **Next: Stage 4** (4.1
+> pricing function), or WA 3.4/3.5 (item sheet, deep links via 3.3).
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -48,9 +48,9 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Merchant / customer APIs | ❌ Missing | `/merchant/path` stub (1.5 deferred) |
 | Cart, checkout, orders, payments | ❌ Not started | Stripe webhook returns 501 |
 | Admin stats, join requests, tickets | ❌ Not started | |
-| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging` |
+| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging`; SES production access for contact-store; contact-store's in-memory rate limits need a shared store with >1 instance |
 
-**Health check (2026-11-09):** `npm test` 453/453 passing · `npm run typecheck` clean ·
+**Health check (2026-11-09):** `npm test` 494/494 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 79 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -443,10 +443,37 @@ match the backend and webapp._
     `Northern-Hoop` 200, unknown 404, `a` 400)._
 - [ ] 3.2 Cache headers (`Cache-Control`, `ETag`) on public endpoints, and CloudFront in front of
       the API's public paths and the storage bucket.
-- [ ] 3.3 `GET /store/public/item/:storeId/:itemId` for deep links. (WA 3.5)
-- [ ] 3.4 `POST /customer/contact-store`: validate input, rate-limit (needs 9.2 / S.13), bot check
+  - [x] a. Headers. _Done 2026-11-09, tested by hand. `layers/core/http/cache.ts`:
+        storefront (both routes) and item → `private, max-age=30` (the body varies by shopper:
+        geo-IP default currency, so a shared cache must not keep one copy); slug lookup →
+        `public, max-age=300`; every public error and contact-store → `no-store`. Express's weak
+        ETag + 304 already worked (now tested; checked live). Uploaded images get
+        `public, max-age=31536000, immutable`, pinned in the presigned POST (keys are unique per
+        upload; the webapp sends the slot's fields as is)._
+  - [ ] b. CloudFront (infra, `ceseelia_cloudformation`) for the storage bucket and the slug
+        lookup. The storefront and item responses can only be shared-cached once the shopper's
+        currency default is keyed (e.g. `CloudFront-Viewer-Country`) or moved to the client.
+- [x] 3.3 `GET /store/public/item/:storeId/:itemId` for deep links. (WA 3.5)
+  - _Done 2026-11-09, tested by hand. `{ storeId, item, category, currencies }` via
+    `getPublicStoreItem` (three key reads, no inventory scan) with the storefront's rules
+    (`toPublicInventory`: live store, active category and item, prices cut to offered currencies)
+    and the shopper's currency as default if offered. 404 `ITEM_NOT_FOUND` for a missing or hidden
+    item (they look the same on purpose); the store's 404s; 400 for malformed ids. Checked live
+    (Pink Slay 200, unknown item 404)._
+- [x] 3.4 `POST /customer/contact-store`: validate input, rate-limit (needs 9.2 / S.13), bot check
       (honeypot or captcha), SES to the store's email with the customer email as reply-to (never as
       the From address). (WA 3.3)
+  - _Done 2026-11-09, tested by hand. Body `{ storeId, name, email,
+    message, website }`: name ≤ 50, email ≤ 254, message ≤ 2000 (`MAX_LENGTH.contactMessage`), no
+    control characters (newlines/tabs only in the message), so nothing can reach the subject or
+    headers. Sent to `storeInfo.emailaddress` from `Ceseelia <support@ceseelia.com>` with
+    `ReplyToAddresses: [customer]` (`sendEmail` gained a `replyTo` argument); all user text is
+    HTML-escaped (`escapeHtml` moved to `utils/validation.ts`). Honeypot `website`: same 200, nothing
+    sent. Rate limits in memory (`layers/core/http/rate-limit.ts`): 5/IP/10 min (honeypot hits
+    count too), 30/store/hour → 429 `RATE_LIMITED` + `Retry-After`. 409 `CONTACT_UNAVAILABLE` with
+    no store email; 500 `SEND_FAILED` if SES fails; the store's 404s. With more than one API
+    instance the limits need a shared store (9.2). SES sandbox: only verified recipients get
+    mail until production access is granted._
 
 ---
 
@@ -550,6 +577,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 3.2a/3.3/3.4 done: cache headers (+ immutable images), `GET /store/public/item/:storeId/:itemId`, `POST /customer/contact-store` (honeypot, rate limits, Reply-To). |
 | 2026-11-09 | 3.1 done: `GET /store/public/storefront/:slug` (slug lookup + public data, with `storeId`); the shopper's currency is the default only if the store offers it. |
 | 2026-11-09 | 2.6 done: stock rule named (`STOCK_UNLIMITED = -1`, 0 = sold out) with `hasStockFor` for 4.1/5.5; webapp storefront no longer hides unlimited items. |
 | 2026-11-09 | 2.5 done: item prices are `storeItemPrices` (whole cents per currency, set by the merchant, no conversion); public data shows only offered currencies; migration script run on dev. |

@@ -5,6 +5,7 @@ import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { isValidSlug } from "../../../../../constants/slug";
 import { getSlugOwner } from "../../../../../layers/aws/dynamodb/dynamo-entities/slug";
+import { CACHE_CONTROL, setCacheControl } from "../../../../../layers/core/http/cache";
 
 /*
  * GET /store/public/resolve-slug/:slug → { storeId } (public, no auth; progress.md 1.8 / WA 3.1)
@@ -38,9 +39,11 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     const storeId = await getSlugOwner(slugParam(req));
     if (!storeId) {
+      setCacheControl(res, CACHE_CONTROL.none);
       res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: "Store not found" });
       return;
     }
+    setCacheControl(res, CACHE_CONTROL.slug);
     res.send({ storeId });
   } catch (e) {
     if (IN_DEV) {

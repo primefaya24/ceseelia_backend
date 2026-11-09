@@ -17,7 +17,8 @@ function createSendEmailCommand(
     outerSubject: string,
     fromAddress: string,
     toAddress: string,
-    htmlBody: string
+    htmlBody: string,
+    replyTo?: string
 ): SendEmailCommand {
     try {
         const params: SendEmailCommandInput = {
@@ -37,6 +38,8 @@ function createSendEmailCommand(
                 },
             },
             Source: `${outerSubject} <${fromAddress}>`,
+            // Replies go here; the From address is always ours (never a customer's, 3.4)
+            ...(replyTo ? { ReplyToAddresses: [replyTo] } : {}),
         };
 
         return new SendEmailCommand(params);
@@ -54,7 +57,8 @@ export async function sendEmail(
     outerSubject: string,
     toAddress: string,
     htmlBody: string,
-    failStrict = false
+    failStrict = false,
+    replyTo?: string
 ): Promise<SendEmailCommandOutput | void> {
     try {
         const command = createSendEmailCommand(
@@ -62,7 +66,8 @@ export async function sendEmail(
             outerSubject,
             appConstants.SES_DEFAULT_FROM_ADDRESS,
             toAddress,
-            htmlBody
+            htmlBody,
+            replyTo
         );
         return await sesClient.send(command);
     } catch (error) {

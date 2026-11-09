@@ -75,6 +75,12 @@ describe("createImageUpload (2.3b)", () => {
     expect(conditions).toContainEqual(["eq", "$tagging", upload.fields.tagging]);
     expect(conditions).toContainEqual({ key: upload.key });
   });
+
+  it("pins a long, immutable Cache-Control on the object (3.2: keys are unique per upload)", async () => {
+    const upload = await createImageUpload(`store/${STORE}/images/logo/`, "png");
+    expect(upload.fields["Cache-Control"]).toBe("public, max-age=31536000, immutable");
+    expect(policyOf(upload.fields)).toContainEqual(["eq", "$Cache-Control", "public, max-age=31536000, immutable"]);
+  });
 });
 
 describe("upload routes (2.3a–c)", () => {

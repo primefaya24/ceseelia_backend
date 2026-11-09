@@ -23,6 +23,7 @@ export const MAX_LENGTH = {
   imageUri: 200,
   templateId: 40,
   currencySign: 5,
+  contactMessage: 2000,
 } as const;
 
 /*

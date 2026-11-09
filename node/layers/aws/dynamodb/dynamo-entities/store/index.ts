@@ -650,12 +650,54 @@ export function toPublicInventory(data: StoreInventoryData): StoreInventoryData 
  * as live.
  */
 export async function getPublicStoreInventoryData(storeId: string): Promise<StoreInventoryData> {
+  await getPublicStoreSettings(storeId);
+  return toPublicInventory(await getStoreInventoryData(storeId));
+}
+
+/* A live store's settings without the admin block; throws like getPublicStoreInventoryData. */
+export async function getPublicStoreSettings(storeId: string): Promise<StoreSettings> {
   const settings = await dynamoDbDocumentClient.send(
     new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS) })
   );
   if (!settings.Item) throw new StoreRecordNotFoundError("Store");
   if (settings.Item.admin?.isStoreLive === false) throw new StoreUnavailableError();
-  return toPublicInventory(await getStoreInventoryData(storeId));
+  const { pk: _pk, sk: _sk, admin: _admin, ...rest } = settings.Item;
+  return rest as StoreSettings;
+}
+
+/*
+ * One item for a deep link (3.3): the same rules as the storefront (live store, active category,
+ * active item, a price in an offered currency). Returns null when the item isn't shown publicly,
+ * so a hidden item looks the same as a missing one. Throws like getPublicStoreInventoryData for
+ * an unknown or suspended store.
+ */
+export async function getPublicStoreItem(
+  storeId: string,
+  itemId: string
+): Promise<{ item: StoreItem; category: StoreCategory; settings: StoreSettings } | null> {
+  const [settingsRes, itemRes] = await Promise.all([
+    dynamoDbDocumentClient.send(
+      new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS) })
+    ),
+    dynamoDbDocumentClient.send(new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: itemKey(storeId, itemId) })),
+  ]);
+  if (!settingsRes.Item) throw new StoreRecordNotFoundError("Store");
+  if (settingsRes.Item.admin?.isStoreLive === false) throw new StoreUnavailableError();
+  if (!itemRes.Item) return null;
+  const { pk: _ip, sk: _is, ...item } = itemRes.Item;
+  const categoryRes = await dynamoDbDocumentClient.send(
+    new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: categoryKey(storeId, String(item.storeItemCategoryId)) })
+  );
+  if (!categoryRes.Item) return null;
+  const { pk: _cp, sk: _cs, ...category } = categoryRes.Item;
+  const { pk: _sp, sk: _ss, ...settings } = settingsRes.Item;
+  const shown = toPublicInventory({
+    settings: settings as StoreSettings,
+    categories: [category as StoreCategory],
+    items: [item as StoreItem],
+  });
+  if (shown.items.length === 0) return null;
+  return { item: shown.items[0], category: shown.categories[0], settings: shown.settings };
 }
 
 ////////////////////////////////////////

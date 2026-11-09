@@ -54,3 +54,7 @@ export const storeImageFolder = {
   categoryBanner: (storeId: string, categoryId: string) => `store/${storeId}/category/${categoryId}/images/`,
   item: (storeId: string, itemId: string) => `store/${storeId}/item/${itemId}/images/`,
 };
+
+/* For user text placed in an HTML email. */
+export const escapeHtml = (s: string): string =>
+  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);

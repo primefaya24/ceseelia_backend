@@ -153,7 +153,9 @@ export default function registerRoute(router: Router): void {
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug; 409 if the slug is taken) | ✅ |
 | Public | `GET /store/public/resolve-slug/:slug` → `{storeId}` (404 if unknown) | ✅ |
-| Public | `GET /store/public/storefront/:slug` → `{storeId, settings, categories, items}` (no auth) | ✅ same body as `get-data-public` (`sendPublicStorefront`); 400 bad slug, 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (3.1) |
+| Public | `GET /store/public/storefront/:slug` → `{storeId, settings, categories, items}` (no auth) | ✅ same body as `get-data-public` (`sendPublicStorefront`); 400 bad slug, 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (3.1); `Cache-Control: private, max-age=30` (3.2) |
+| Public | `GET /store/public/item/:storeId/:itemId` → `{storeId, item, category, currencies}` (no auth) | ✅ storefront rules; 404 `ITEM_NOT_FOUND` for missing or hidden (3.3) |
+| Customer | `POST /customer/contact-store` `{storeId, name, email, message, website}` (no auth) | ✅ SES to the store, customer as Reply-To; honeypot; 5/IP/10 min + 30/store/h → 429; 409 `CONTACT_UNAVAILABLE` (3.4) |
 | Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
 | Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, salesCommission, isStoreLive}` | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
 | Admin | `POST /admin/assign-store-member` `{storeId, email, role?}` | ✅ existing account → member now (`ADDED`); no account → pending invite + SES email (`INVITED`, `emailSent`); 409 `ALREADY_MEMBER` |
@@ -251,9 +253,10 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 
 ### Stage 3 — Public storefront API
 3.1 ✅ `GET /store/public/storefront/:slug` → storeId + settings + categories + active items (wraps 2.4/1.8).
-3.2 Cache headers / CloudFront in front of public endpoints and the storage bucket.
-3.3 `GET /store/public/item/:storeId/:itemId` for deep-linked item pages (WA item sheet / share).
-3.4 Public "contact store" → `POST /customer/contact-store` (SES to store email, rate-limited).
+3.2 ✅ (headers) Cache headers / CloudFront in front of public endpoints and the storage bucket
+    (`layers/core/http/cache.ts`; CloudFront still to do).
+3.3 ✅ `GET /store/public/item/:storeId/:itemId` for deep-linked item pages (WA item sheet / share).
+3.4 ✅ Public "contact store" → `POST /customer/contact-store` (SES to store email, rate-limited).
 
 ### Stage 4 — Cart & pricing service
 4.1 Cart is client-side (localStorage per store). Server owns pricing:
