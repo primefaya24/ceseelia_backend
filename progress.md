@@ -272,7 +272,8 @@ match the backend and webapp._
     pending invite for the profile's verified email becomes a membership, one transaction per
     store; a failure there never blocks sign-in. Also added `DELETE
     /admin/cancel-store-invite/:storeId/:email` (needed by the WA 1.4 UI) and `WEBAPP_URL`
-    config for the email link. Adding an existing account sends no email. Tests in
+    config for the email link (`/auth/sign-up?email=…`, so the webapp prefills the address).
+    Adding an existing account sends no email. Tests in
     `tests/admin-members.test.ts` and `tests/membership.test.ts`; also run against the dev table._
 
 ### 1.5 Merchant overview

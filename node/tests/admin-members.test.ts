@@ -111,7 +111,7 @@ describe("POST /admin/assign-store-member", () => {
     expect(to).toBe("new@x.co");
     expect(subject).toContain("Northern <Hoop>");
     expect(html).toContain("Northern &lt;Hoop&gt;"); // store name is escaped in the HTML
-    expect(html).toContain("http://localhost:4200/auth/sign-up");
+    expect(html).toContain('href="http://localhost:4200/auth/sign-up?email=new%40x.co"'); // prefills sign-up
   });
 
   it("keeps the invite and reports emailSent=false when SES fails", async () => {

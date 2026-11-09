@@ -85,13 +85,14 @@ const escapeHtml = (s: string) =>
 /* The invite is saved either way; a failed email is reported so the admin can resend. */
 export async function sendInviteEmail(email: string, storeName: string): Promise<boolean> {
   const name = escapeHtml(storeName || "a store");
-  const signUpUrl = `${WEBAPP_URL}/auth/sign-up`;
+  // ?email= prefills the sign-up form with the invited address (WA sign-up page)
+  const signUpUrl = `${WEBAPP_URL}/auth/sign-up?email=${encodeURIComponent(email)}`;
   const html = `
     <p>Hello,</p>
     <p>You've been invited to manage <strong>${name}</strong> on Ceseelia.</p>
     <p>Create your account with this email address (${escapeHtml(email)}) and the store will be
     waiting for you when you sign in:</p>
-    <p><a href="${signUpUrl}">${signUpUrl}</a></p>
+    <p><a href="${escapeHtml(signUpUrl)}">Create your account</a></p>
     <p>If you weren't expecting this, you can ignore this email.</p>`;
   const result = await sendEmail(`You're invited to manage ${storeName || "a store"} on Ceseelia`, "Ceseelia", email, html);
   return result !== undefined;
