@@ -6,10 +6,10 @@ import {
     QueryCommand,
     PutCommand,
     UpdateCommand,
+    TransactWriteCommand,
 } from "@aws-sdk/lib-dynamodb";
 import * as ULID from "ulid";
 import {appConstants} from "../../../../../constants";
-import {dynamoWriteManyItems} from "../../dynamo-batch-ops";
 import {DB_TABLE_NAME} from "../../../../../config";
 
 // Initialize DynamoDB Document Client
@@ -22,110 +22,107 @@ const dynamoDbDocumentClient: DynamoDBDocumentClient = DynamoDBDocumentClient.fr
 // Constants
 const DEFAULT_TABLE_NAME: string | undefined = DB_TABLE_NAME;
 
-////////////////////////////////////////
-// Register a new user.
-////////////////////////////////////////
-export async function registerUser(
-    firstName: any, 
-    lastName: any, 
-    email: any, 
-    cognitoId: any,
-    userSocialProviderName: any,
-    userSocialProviderType: any, 
-    userSocialProviderUserId: any, 
-    tableName: string | undefined = DEFAULT_TABLE_NAME,
-    ) {
-    try {
-        // Peek user via email
-        const userCognitoData = await peekUserByEmail(email, tableName);
-        if (userCognitoData && userCognitoData.length > 0) {
-            let duplicateRegistration = false;
-            for (const userCognito of userCognitoData) {
-                if (userCognito["sk"].split("#")[2].valueOf() == cognitoId.valueOf()) {
-                    duplicateRegistration = true;
-                    break;
-                }
-            }
-
-            // User registered via federation or other cognito source with same email
-            if (!duplicateRegistration) {
-                // Record cognito id in the user's profile
-                const command = new PutCommand({
-                    TableName: tableName,
-                    Item: {
-                        "pk": appConstants.DYNAMO_ENTITY_USER + "#" + userCognitoData[0]["pk"].split("#")[1],
-                        "sk": appConstants.DYNAMO_ENTITY_PROFILE + "#" + appConstants.DYNAMO_ENTITY_COGNITO_DATA
-                            + "#" + cognitoId,
-                        "userSocialProviderName": userSocialProviderName,
-                        "userSocialProviderType": userSocialProviderType,
-                        "userSocialProviderUserId": userSocialProviderUserId,
-                        "userEmail": email,
-                        "userCognitoId": cognitoId,
-                        "userDeactivated": false,
-                    }
-                });
-                await dynamoDbDocumentClient.send(command);
-            }
-            else {
-                throw "User already registered";
-            }
-        }
-
-        else {
-            // New user
-            const userUUID = ULID.ulid();
-            const createdAt = Date.now();
-
-            // Write batch
-            await dynamoWriteManyItems(tableName, [
-                // User info
-                {
-                    PutRequest: {
-                        Item: {
-                            "pk": appConstants.DYNAMO_ENTITY_USER + "#" + userUUID,
-                            "sk": appConstants.DYNAMO_ENTITY_PROFILE + "#" + appConstants.DYNAMO_ENTITY_INFO,
-                            "userPlan": appConstants.PLAN_TYPE_FREE,
-                            "userEmailAddress": email,
-                            "userAvatarUri": "",
-                            "userFirstName": firstName,
-                            "userLastName": lastName,
-                            "userPreferredLocale": appConstants.LOCALE_EN,
-                            "isProfileComplete": false,
-                            "userCreatedAt": createdAt,
-                        }
-                    }
-                },
-                // User cognito ids
-                {
-                    PutRequest: {
-                        Item: {
-                            "pk": appConstants.DYNAMO_ENTITY_USER + "#" + userUUID,
-                            "sk": appConstants.DYNAMO_ENTITY_PROFILE + "#" + appConstants.DYNAMO_ENTITY_COGNITO_DATA + "#" + cognitoId,
-                            "userSocialProviderName": userSocialProviderName,
-                            "userSocialProviderType": userSocialProviderType,
-                            "userSocialProviderUserId": userSocialProviderUserId,
-                            "userEmail": email,
-                            "userCognitoId": cognitoId,
-                            "userDeactivated": false,
-                        }
-                    }
-                },
-                // User notification settings
-                {
-                    PutRequest: {
-                        Item: {
-                            "pk": appConstants.DYNAMO_ENTITY_USER + "#" + userUUID,
-                            "sk": appConstants.DYNAMO_ENTITY_PROFILE + "#" + appConstants.DYNAMO_ENTITY_NOTIFICATION_SETTINGS,
-                            "userFcmToken": "",
-                        }
-                    }
-                },
-            ]);
-        }
-    } catch (e) {
-        console.error("In registerUser", e);
-        throw e;
+/* No user rows exist yet for this Cognito identity. Routes map it to 404 PROFILE_NOT_FOUND. */
+export class ProfileNotFoundError extends Error {
+    constructor() {
+        super("Profile not found");
+        this.name = "ProfileNotFoundError";
     }
+}
+
+/* The user's account is deactivated. Routes map it to 403. */
+export class UserDeactivatedError extends Error {
+    constructor() {
+        super("Account deactivated");
+        this.name = "UserDeactivatedError";
+    }
+}
+
+/*
+ * Create the same rows the `OnUserRegister` PostConfirmation Lambda in ../ceseelia_cloudformation
+ * writes (keep the two in step). Used by get-my-profile when the Lambda's write failed (it logs
+ * and swallows errors), so a confirmed Cognito user is never left without a profile.
+ *
+ * `attrs` must come from the user pool (getCognitoUserAttributes), never from a request.
+ * Returns the user's ID, or null if the email isn't verified (nothing is written then).
+ */
+export async function createUserRecordsFromCognito(
+    attrs: Record<string, string>,
+    tableName: string | undefined = DEFAULT_TABLE_NAME,
+): Promise<string | null> {
+    const cognitoId = attrs["sub"];
+    const email = (attrs["email"] ?? "").trim().toLowerCase();
+    if (!cognitoId || !email || attrs["email_verified"] !== "true") {
+        return null;
+    }
+
+    // Names and social provider, parsed like the Lambda does
+    const [firstName = "", lastName = ""] = (attrs["custom:userName"] ?? "").split(" ");
+    let providerName = "";
+    let providerType = "";
+    let providerUserId = "";
+    if (attrs["identities"]) {
+        try {
+            const identity = JSON.parse(attrs["identities"])[0] ?? {};
+            providerName = identity.providerName ?? "";
+            providerType = identity.providerType ?? "";
+            providerUserId = identity.userId ?? "";
+        } catch {
+            // leave empty, as the Lambda would fail to parse too
+        }
+    }
+
+    const cognitoRow = (userId: string) => ({
+        pk: appConstants.DYNAMO_ENTITY_USER + "#" + userId,
+        sk: appConstants.DYNAMO_ENTITY_PROFILE + "#" + appConstants.DYNAMO_ENTITY_COGNITO_DATA + "#" + cognitoId,
+        userSocialProviderName: providerName,
+        userSocialProviderType: providerType,
+        userSocialProviderUserId: providerUserId,
+        userEmail: email,
+        userCognitoId: cognitoId,
+        userDeactivated: false,
+    });
+
+    // Same verified email already has a user (e.g. another sign-in method): link this identity to it
+    const existing: any[] = (await peekUserByEmail(email, tableName)) ?? [];
+    if (existing.length > 0) {
+        const userId: string = existing[0]["pk"].split("#")[1];
+        if (!existing.some((row) => row["sk"].split("#")[2] === cognitoId)) {
+            await dynamoDbDocumentClient.send(new PutCommand({ TableName: tableName, Item: cognitoRow(userId) }));
+        }
+        return userId;
+    }
+
+    // New user: all three rows or none
+    const userId = ULID.ulid();
+    const pk = appConstants.DYNAMO_ENTITY_USER + "#" + userId;
+    const put = (Item: Record<string, unknown>) => ({
+        Put: { TableName: tableName, Item, ConditionExpression: "attribute_not_exists(pk)" },
+    });
+    await dynamoDbDocumentClient.send(
+        new TransactWriteCommand({
+            TransactItems: [
+                put({
+                    pk,
+                    sk: appConstants.DYNAMO_ENTITY_PROFILE + "#" + appConstants.DYNAMO_ENTITY_INFO,
+                    userEmailAddress: email,
+                    userAvatarUri: "",
+                    userFirstName: firstName,
+                    userLastName: lastName,
+                    userPreferredLocale: appConstants.LOCALE_EN,
+                    isProfileComplete: false,
+                    userCreatedAt: Date.now(),
+                }),
+                put(cognitoRow(userId)),
+                put({
+                    pk,
+                    sk: appConstants.DYNAMO_ENTITY_PROFILE + "#" + appConstants.DYNAMO_ENTITY_NOTIFICATION_SETTINGS,
+                    userFcmToken: "",
+                }),
+            ],
+        })
+    );
+    return userId;
 }
 
 ////////////////////////////////////////
@@ -290,33 +287,52 @@ export async function peekUserByEmail(
 ////////////////////////////////////////
 // Fetch user UUID
 ////////////////////////////////////////
-export async function fetchUserUUID(
-    cognitoId: any, 
-    isStrict: boolean = true, 
+/*
+ * The user ID for a Cognito identity, or null if no rows exist yet.
+ * Throws UserDeactivatedError for a deactivated account.
+ */
+export async function findUserIdByCognitoId(
+    cognitoId: string,
     tableName: string | undefined = DEFAULT_TABLE_NAME,
-    ) {
-    try {
-        const command = new QueryCommand({
+): Promise<string | null> {
+    const doc = await findCognitoRow(cognitoId, tableName);
+    return doc ? doc["pk"].split("#")[1] : null;
+}
+
+async function findCognitoRow(cognitoId: string, tableName: string | undefined): Promise<any | null> {
+    const res: any = await dynamoDbDocumentClient.send(
+        new QueryCommand({
             TableName: tableName,
             IndexName: appConstants.INDEX_NAME_COGNITO_IDENTIFIER_GSI,
-            KeyConditionExpression: '#userCognitoId = :userCognitoId',
-            ExpressionAttributeNames: {
-                "#userCognitoId": "userCognitoId",
-            },
-            ExpressionAttributeValues: {
-                ":userCognitoId": cognitoId,
-            },
-        });
-        const userDocArr: any = await dynamoDbDocumentClient.send(command);
-        const userDoc = userDocArr["Items"][0];
-        if (userDoc["userDeactivated"]) {
-            throw appConstants.USER_DEACTIVATED_ERROR;
-        }
-        return isStrict ? userDoc["pk"].split("#")[1] : userDoc;
-    } catch (e) {
-        console.error("In fetchUserUUID", e);
-        throw "Invalid Token";
+            KeyConditionExpression: "#userCognitoId = :userCognitoId",
+            ExpressionAttributeNames: { "#userCognitoId": "userCognitoId" },
+            ExpressionAttributeValues: { ":userCognitoId": cognitoId },
+        })
+    );
+    const doc = res["Items"]?.[0];
+    if (!doc) {
+        return null;
     }
+    if (doc["userDeactivated"]) {
+        throw new UserDeactivatedError();
+    }
+    return doc;
+}
+
+/*
+ * The user ID (or, with isStrict=false, the COGNITO_DATA row) for a Cognito identity.
+ * Throws ProfileNotFoundError when there are no rows, UserDeactivatedError when deactivated.
+ */
+export async function fetchUserUUID(
+    cognitoId: any,
+    isStrict: boolean = true,
+    tableName: string | undefined = DEFAULT_TABLE_NAME,
+    ) {
+    const doc = await findCognitoRow(cognitoId, tableName);
+    if (!doc) {
+        throw new ProfileNotFoundError();
+    }
+    return isStrict ? doc["pk"].split("#")[1] : doc;
 }
 
 ////////////////////////////////////////

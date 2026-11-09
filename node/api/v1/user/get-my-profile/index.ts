@@ -4,7 +4,15 @@ import dotenv from 'dotenv';
 import {appConstants} from "../../../../constants";
 import {getAuth, validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
 import {IN_DEV} from "../../../../config";
-import {fetchUserUUID, getMyProfile, updateUserLocale} from '../../../../layers/aws/dynamodb/dynamo-entities/user';
+import {
+    createUserRecordsFromCognito,
+    findUserIdByCognitoId,
+    getMyProfile,
+    ProfileNotFoundError,
+    updateUserLocale,
+} from '../../../../layers/aws/dynamodb/dynamo-entities/user';
+import {getCognitoUserAttributes} from "../../../../layers/aws/cognito";
+import {sendUserLookupError} from "../user-errors";
 dotenv.config();
 
 /*
@@ -55,11 +63,22 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         const { cognitoId, isAdmin } = getAuth(res);
         const userPreferredLocale = req.params.userPreferredLocale;
 
-        // Get user UUID
-        const userId = await fetchUserUUID(cognitoId);
+        // Get user UUID. The OnUserRegister Lambda normally created the rows at sign-up; if its write
+        // failed, create them now from the user pool's verified attributes (progress.md 1.1d).
+        let userId = await findUserIdByCognitoId(cognitoId);
+        if (!userId) {
+            const attrs = await getCognitoUserAttributes(cognitoId);
+            userId = attrs ? await createUserRecordsFromCognito(attrs) : null;
+            if (!userId) {
+                throw new ProfileNotFoundError();
+            }
+        }
 
         // Fetch user profile
         const profile = await getMyProfile(userId);
+        if (!profile.info) {
+            throw new ProfileNotFoundError();
+        }
         profile.info["userIsAdmin"] = isAdmin;
 
         // Update locale if applicable
@@ -70,6 +89,9 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         // Respond to user
         res.send(profile);
     } catch (e) {
+        if (sendUserLookupError(e, res)) {
+            return;
+        }
         if (IN_DEV) {
             console.error(e);
         }

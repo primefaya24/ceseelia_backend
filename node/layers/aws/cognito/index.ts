@@ -16,6 +16,7 @@ import {
     ForgotPasswordCommand,
     ForgotPasswordCommandInput, ConfirmForgotPasswordCommand, ConfirmForgotPasswordCommandInput,
     AdminDeleteUserCommand,
+    AdminGetUserCommand,
     GetUserCommand
 } from "@aws-sdk/client-cognito-identity-provider";
 import {appConstants} from "../../../constants";
@@ -343,5 +344,28 @@ export async function isCognitoTokenValid(
     } catch (err) {
         console.error("Invalid token:", err);
         return false;
+    }
+}
+
+/*
+* A user's attributes straight from the user pool (source of truth for email / email_verified).
+* In this pool the username is the `sub`. Returns null if the user doesn't exist.
+*/
+export async function getCognitoUserAttributes(
+    sub: string,
+    userPoolId: string = COGNITO_USER_POOL_ID
+): Promise<Record<string, string> | null> {
+    try {
+        const res = await cognitoClient.send(new AdminGetUserCommand({ UserPoolId: userPoolId, Username: sub }));
+        const attrs: Record<string, string> = {};
+        for (const a of res.UserAttributes ?? []) {
+            if (a.Name) attrs[a.Name] = a.Value ?? "";
+        }
+        return attrs;
+    } catch (e) {
+        if ((e as { name?: string })?.name === "UserNotFoundException") {
+            return null;
+        }
+        throw e;
     }
 }

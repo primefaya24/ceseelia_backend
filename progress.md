@@ -213,14 +213,22 @@ match the backend and webapp._
       matches. Only link when `email_verified === true`, or an unverified federated identity could
       take over an account. **Not exploitable today** (no social/federated providers are
       configured); fix it in `ceseelia_cloudformation` before adding social sign-in.
-- [ ] d. Fallback: `get-my-profile` creates the record on first call if it's missing. Needed:
+- [x] d. Fallback: `get-my-profile` creates the record on first call if it's missing. Needed:
       the Lambda logs and swallows every error, and its batch helper has the pre-S.7 bug, so a
       failed write leaves a Cognito user with no DB rows. Write **exactly the Lambda's rows and
       attributes** (the backend's own unused `registerUser` also adds `userPlan`; align or replace
       it).
-- [ ] e. Return a clear `404 PROFILE_NOT_FOUND` instead of a generic 500 when there's still no
+- [x] e. Return a clear `404 PROFILE_NOT_FOUND` instead of a generic 500 when there's still no
       record. (WA 1.1)
-- [ ] f. Tests.
+- [x] f. Tests.
+  - _d–f done 2026-11-08, tested by hand. `get-my-profile`: if no `COGNITO_DATA` row
+    exists, read the user's attributes from the pool (`AdminGetUser` by `sub`) and, only when
+    `email_verified` is true, write the Lambda's three rows in one transaction
+    (`createUserRecordsFromCognito`; links to an existing user with the same verified email).
+    Otherwise 404 `{code: "PROFILE_NOT_FOUND"}`; a deactivated account is 403
+    `ACCOUNT_DEACTIVATED`; other `/user` routes map the same errors. Removed the backend's unused,
+    drifted `registerUser`. Tests in `tests/user-registration.test.ts`. **Prod needs the EC2 role
+    to allow `cognito-idp:AdminGetUser`** on the pool._
 
 ### 1.2 Membership data model
 - [ ] a. Write `STORE#<storeId>` / `MEMBER#<userId>` (`StoreMember`) and the reverse

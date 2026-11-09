@@ -5,6 +5,7 @@ import {getAuth, validateAndExecuteHttpApiRoute} from "../../../../layers/core/h
 import {IN_DEV} from "../../../../config";
 import {appConstants} from "../../../../constants";
 import {fetchUserUUID, updateUserProfile} from "../../../../layers/aws/dynamodb/dynamo-entities/user";
+import {sendUserLookupError} from "../user-errors";
 dotenv.config();
 
 /*
@@ -63,6 +64,9 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         // Respond to user
         res.send();
     } catch (e) {
+        if (sendUserLookupError(e, res)) {
+            return;
+        }
         if (IN_DEV) {
             console.error(e);
         }
