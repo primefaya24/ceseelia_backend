@@ -34,7 +34,7 @@ ceseelia_backend/
     ├── tests/             # vitest specs
     ├── config/index.ts    # env-driven config (STAGE, hosts, CORS, Cognito, table/bucket)
     ├── constants/index.ts # appConstants (entity names, HTTP codes, limits, etc.); input-limits.ts, slug.ts
-    ├── scripts/           # one-off maintenance scripts (e.g. backfill-slug-reservations.mjs)
+    ├── scripts/           # one-off maintenance scripts (slug backfill, category item recount)
     ├── api/v1/<area>/<route>/index.ts   # one file per endpoint
     └── layers/
         ├── core/http      # validateAndExecuteHttpApiRoute (auth + validation wrapper)
@@ -142,8 +142,8 @@ export default function registerRoute(router: Router): void {
 | Category | `POST /store/category/create` (create + update via `isUpdate`) | ✅ |
 | Category | `DELETE /store/category/delete/:storeId/:storeCategoryId` | ✅ (items in it are not handled) |
 | Category | `GET /store/category/get-banner-upload-url/:storeId/:categoryId/:imageType` | ✅ |
-| Inventory | `POST /store/inventory/create-item` (create + update) | ✅ |
-| Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ |
+| Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing |
+| Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ −1 on its category, then deletes its images |
 | Inventory | `GET /store/inventory/get-data/:storeId` (auth) | ✅ categories + items + settings |
 | Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ + geo-IP default currency |
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/...` | ✅ |
@@ -176,14 +176,13 @@ Open:
    been rotated (S.2).
 4. `isStoreLive` is saved but nothing acts on it yet: a suspended store's public page still
    loads. → Stage 2.4
-5. `updateStoreCategory` resets `storeCategoryItemCount` to 0 on every save. → Stage 2.1
-6. Deleting a category leaves its items orphaned. → 2.2.
-7. Upload-URL routes don't cap the requested image counts or file sizes. → Stage 2.3
-8. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
+5. Deleting a category leaves its items orphaned. → 2.2.
+6. Upload-URL routes don't cap the requested image counts or file sizes. → Stage 2.3
+7. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
    saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3
-9. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
-10. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
-11. No structured logging, rate limiting or CI yet. → Stage 9
+8. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
+9. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
+10. No structured logging, rate limiting or CI yet. → Stage 9
 
 Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
 `api.ceseelia.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);

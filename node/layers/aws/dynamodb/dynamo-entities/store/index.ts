@@ -27,6 +27,7 @@ import {
 } from "../../../../core/interfaces/store";
 import { getStorageImageUrl } from "../../../../core/utils";
 import { reserveSlugPut, SlugTakenError, slugKey, transactionFailedAt } from "../slug";
+import { TransactWriteCommandInput } from "@aws-sdk/lib-dynamodb";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient =
@@ -170,6 +171,81 @@ export async function createStore(
   }
 }
 
+const ITEM_SET_EXPRESSION =
+  "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemHashtagIds = :storeItemHashtagIds, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams";
+
+function itemValues(id: string, storeItem: StoreItem): Record<string, unknown> {
+  return {
+    ":storeItemId": id,
+    ":storeItemCategoryId": storeItem.storeItemCategoryId,
+    ":storeItemImageUris": storeItem.storeItemImageUris,
+    ":storeItemName": storeItem.storeItemName,
+    ":storeItemStock": storeItem.storeItemStock,
+    ":storeItemPrice": storeItem.storeItemPrice,
+    ":storeItemDescription": storeItem.storeItemDescription,
+    ":storeItemIsActive": storeItem.storeItemIsActive,
+    ":storeItemHashtagIds": storeItem.storeItemHashtagIds,
+    ":storeItemDiscountPercent": storeItem.storeItemDiscountPercent,
+    ":storeItemCustomParams": storeItem.storeItemCustomParams,
+  };
+}
+
+const storeKey = (storeId: string, sk: string) => ({
+  pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+  sk,
+});
+const itemKey = (storeId: string, itemId: string) =>
+  storeKey(storeId, appConstants.DYNAMO_ENTITY_ITEM + "#" + itemId);
+const categoryKey = (storeId: string, categoryId: string) =>
+  storeKey(storeId, appConstants.DYNAMO_ENTITY_CATEGORY + "#" + categoryId);
+
+/*
+ * Transaction part: add `delta` to a category's item count (2.1). Only if the category exists,
+ * so a count change can never create a stray category row.
+ */
+function categoryCountChange(storeId: string, categoryId: string, delta: 1 | -1) {
+  return {
+    Update: {
+      TableName: DEFAULT_TABLE_NAME,
+      Key: categoryKey(storeId, categoryId),
+      UpdateExpression: "ADD storeCategoryItemCount :delta",
+      ConditionExpression: "attribute_exists(pk)",
+      ExpressionAttributeValues: { ":delta": delta },
+    },
+  };
+}
+
+async function rowExists(key: { pk: string; sk: string }): Promise<boolean> {
+  const r = await dynamoDbDocumentClient.send(
+    new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: key, ConsistentRead: true, ProjectionExpression: "pk" })
+  );
+  return !!r.Item;
+}
+
+async function getItemCategoryId(storeId: string, itemId: string): Promise<string | null> {
+  const r = await dynamoDbDocumentClient.send(
+    new GetCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: itemKey(storeId, itemId),
+      ConsistentRead: true,
+      ProjectionExpression: "storeItemCategoryId",
+    })
+  );
+  if (!r.Item) return null;
+  return typeof r.Item.storeItemCategoryId === "string" ? r.Item.storeItemCategoryId : "";
+}
+
+/* How many times an item write is retried when its category changed between our read and write. */
+const ITEM_WRITE_ATTEMPTS = 3;
+
+/*
+ * Create or update an item, keeping `storeCategoryItemCount` right (2.1):
+ * - create: a fresh ULID; in one transaction, only if the store exists, the row is new and the
+ *   category exists (+1 to it);
+ * - update: only if the row exists; when the item moves category, +1 to the new one and -1 to the
+ *   old one (if it still exists) in the same transaction as the item write.
+ * Throws StoreRecordNotFoundError for a missing store, item or category.
+ */
 export async function updateStoreItem(
   storeId: string,
   storeItem: StoreItem,
@@ -177,45 +253,113 @@ export async function updateStoreItem(
   isUpdate: boolean
 ): Promise<string> {
   try {
-    return await writeStoreChild(
-      storeId,
-      "Item",
-      storeItemId,
-      isUpdate,
-      "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrice = :storeItemPrice, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemHashtagIds = :storeItemHashtagIds, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams",
-      (id) => ({
-        ":storeItemId": id,
-        ":storeItemCategoryId": storeItem.storeItemCategoryId,
-        ":storeItemImageUris": storeItem.storeItemImageUris,
-        ":storeItemName": storeItem.storeItemName,
-        ":storeItemStock": storeItem.storeItemStock,
-        ":storeItemPrice": storeItem.storeItemPrice,
-        ":storeItemDescription": storeItem.storeItemDescription,
-        ":storeItemIsActive": storeItem.storeItemIsActive,
-        ":storeItemHashtagIds": storeItem.storeItemHashtagIds,
-        ":storeItemDiscountPercent": storeItem.storeItemDiscountPercent,
-        ":storeItemCustomParams": storeItem.storeItemCustomParams,
-      })
-    );
+    if (isUpdate && !storeItemId) throw new Error("Item update needs an ID");
+    const newCategoryId = storeItem.storeItemCategoryId;
+
+    if (!isUpdate) {
+      const id = ULID.ulid();
+      try {
+        await dynamoDbDocumentClient.send(
+          new TransactWriteCommand({
+            TransactItems: [
+              {
+                ConditionCheck: {
+                  TableName: DEFAULT_TABLE_NAME,
+                  Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS),
+                  ConditionExpression: "attribute_exists(pk)",
+                },
+              },
+              {
+                Update: {
+                  TableName: DEFAULT_TABLE_NAME,
+                  Key: itemKey(storeId, id),
+                  UpdateExpression: ITEM_SET_EXPRESSION,
+                  ExpressionAttributeValues: itemValues(id, storeItem),
+                  ConditionExpression: "attribute_not_exists(pk)",
+                },
+              },
+              categoryCountChange(storeId, newCategoryId, 1),
+            ],
+          })
+        );
+      } catch (e) {
+        if (transactionFailedAt(e, 0)) throw new StoreRecordNotFoundError("Store");
+        if (transactionFailedAt(e, 2)) throw new StoreRecordNotFoundError("Category");
+        throw e;
+      }
+      return id;
+    }
+
+    const id = storeItemId as string;
+    for (let attempt = 0; attempt < ITEM_WRITE_ATTEMPTS; attempt++) {
+      const oldCategoryId = await getItemCategoryId(storeId, id);
+      if (oldCategoryId === null) throw new StoreRecordNotFoundError("Item");
+      const moved = oldCategoryId !== newCategoryId;
+      const itemUpdate = {
+        Update: {
+          TableName: DEFAULT_TABLE_NAME,
+          Key: itemKey(storeId, id),
+          UpdateExpression: ITEM_SET_EXPRESSION,
+          ExpressionAttributeValues: { ...itemValues(id, storeItem), ":oldCategoryId": oldCategoryId },
+          // Same category as when we read it, so the counts we change below are the right ones.
+          ConditionExpression: "attribute_exists(pk) AND storeItemCategoryId = :oldCategoryId",
+        },
+      };
+      const transactItems: NonNullable<TransactWriteCommandInput["TransactItems"]> = [itemUpdate];
+      if (moved) {
+        transactItems.push(categoryCountChange(storeId, newCategoryId, 1));
+        // An old category that's already gone (left over from before 2.2) has no count to fix.
+        if (oldCategoryId && (await rowExists(categoryKey(storeId, oldCategoryId)))) {
+          transactItems.push(categoryCountChange(storeId, oldCategoryId, -1));
+        }
+      }
+      try {
+        await dynamoDbDocumentClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+        return id;
+      } catch (e) {
+        if (moved && transactionFailedAt(e, 1)) throw new StoreRecordNotFoundError("Category");
+        if (transactionFailedAt(e, 0) || transactionFailedAt(e, 2)) continue; // changed under us
+        throw e;
+      }
+    }
+    throw new Error("Item changed while saving; gave up after 3 tries");
   } catch (e) {
-    console.error("In updateStoreItem", e);
+    if (!(e instanceof StoreRecordNotFoundError)) console.error("In updateStoreItem", e);
     throw e;
   }
 }
 
-export async function deleteStoreItem(
-  storeId: string,
-  storeItemId: string
-): Promise<void> {
+/*
+ * Delete an item and take it off its category's count (2.1), in one transaction.
+ * Returns false when the item was already gone.
+ */
+export async function deleteStoreItem(storeId: string, storeItemId: string): Promise<boolean> {
   try {
-    const command = new DeleteCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      Key: {
-        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
-        sk: appConstants.DYNAMO_ENTITY_ITEM + "#" + storeItemId,
-      },
-    });
-    await dynamoDbDocumentClient.send(command);
+    for (let attempt = 0; attempt < ITEM_WRITE_ATTEMPTS; attempt++) {
+      const categoryId = await getItemCategoryId(storeId, storeItemId);
+      if (categoryId === null) return false;
+      const transactItems: NonNullable<TransactWriteCommandInput["TransactItems"]> = [
+        {
+          Delete: {
+            TableName: DEFAULT_TABLE_NAME,
+            Key: itemKey(storeId, storeItemId),
+            ConditionExpression: "attribute_exists(pk) AND storeItemCategoryId = :categoryId",
+            ExpressionAttributeValues: { ":categoryId": categoryId },
+          },
+        },
+      ];
+      if (categoryId && (await rowExists(categoryKey(storeId, categoryId)))) {
+        transactItems.push(categoryCountChange(storeId, categoryId, -1));
+      }
+      try {
+        await dynamoDbDocumentClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+        return true;
+      } catch (e) {
+        if (transactionFailedAt(e, 0) || transactionFailedAt(e, 1)) continue; // changed under us
+        throw e;
+      }
+    }
+    throw new Error("Item changed while deleting; gave up after 3 tries");
   } catch (e) {
     console.error("In deleteStoreItem", e);
     throw e;
@@ -234,7 +378,10 @@ export async function updateStoreCategory(
       "Category",
       storeCategoryId,
       isUpdate,
-      "SET storeCategoriyId = :storeCategoriyId, storeCategoriyPriority = :storeCategoriyPriority, storeCategoryName = :storeCategoryName, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoriyHashtags = :storeCategoriyHashtags, storeCategoryItemCount = :storeCategoryItemCount",
+      // The item count is kept by the item writes (2.1): a new category starts at 0, and saving a
+      // category never touches it.
+      "SET storeCategoriyId = :storeCategoriyId, storeCategoriyPriority = :storeCategoriyPriority, storeCategoryName = :storeCategoryName, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoriyHashtags = :storeCategoriyHashtags" +
+        (isUpdate ? "" : ", storeCategoryItemCount = :storeCategoryItemCount"),
       (id) => ({
         ":storeCategoriyId": id,
         ":storeCategoriyPriority": storeCategory.storeCategoriyPriority,
@@ -244,7 +391,7 @@ export async function updateStoreCategory(
         ":storeCategoryDiscountPercent":
           storeCategory.storeCategoryDiscountPercent,
         ":storeCategoriyHashtags": storeCategory.storeCategoriyHashtags,
-        ":storeCategoryItemCount": 0,
+        ...(isUpdate ? {} : { ":storeCategoryItemCount": 0 }),
       })
     );
   } catch (e) {

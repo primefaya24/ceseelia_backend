@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
 import { ConditionalCheckFailedException, TransactionCanceledException } from "@aws-sdk/client-dynamodb";
-import { DynamoDBDocumentClient, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, GetCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { DeleteObjectsCommand, ListObjectsV2Command, S3Client } from "@aws-sdk/client-s3";
 import { ulid } from "ulid";
 
@@ -96,22 +96,43 @@ describe.each([
     await expect(write(undefined, false)).rejects.toThrow("Store not found");
   });
 
+});
+
+// Item updates go through a transaction with the category counts (2.1): see category-counts.test.ts.
+describe("Category updates", () => {
+  const write = (id: string | undefined, isUpdate: boolean) =>
+    updateStoreCategory("S1", initStoreCategory("", "Drinks"), id, isUpdate);
+
   it("update writes the given ID only if the row exists", async () => {
     ddb.on(UpdateCommand).resolves({});
     expect(await write("ID1", true)).toBe("ID1");
     const input = ddb.commandCalls(UpdateCommand)[0].args[0].input;
-    expect(input.Key).toEqual({ pk: "STORE#S1", sk: `${skPrefix}#ID1` });
+    expect(input.Key).toEqual({ pk: "STORE#S1", sk: `CATEGORY#ID1` });
     expect(input.ConditionExpression).toBe("attribute_exists(pk)");
   });
 
   it("update of a missing row fails with not found", async () => {
     ddb.on(UpdateCommand).rejects(conditionFailed());
-    await expect(write("ID1", true)).rejects.toThrow(`${entity} not found`);
+    await expect(write("ID1", true)).rejects.toThrow(`Category not found`);
   });
 
   it("update without an ID is refused", async () => {
     await expect(write(undefined, true)).rejects.toThrow();
     expect(ddb.calls()).toHaveLength(0);
+  });
+
+  it("never touches the item count on update, and starts it at 0 on create", async () => {
+    ddb.on(UpdateCommand).resolves({});
+    ddb.on(TransactWriteCommand).resolves({});
+    await write("ID1", true);
+    const update = ddb.commandCalls(UpdateCommand)[0].args[0].input;
+    expect(update.UpdateExpression).not.toContain("storeCategoryItemCount");
+    expect(update.ExpressionAttributeValues).not.toHaveProperty(":storeCategoryItemCount");
+
+    await write(undefined, false);
+    const create = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems![1].Update!;
+    expect(create.UpdateExpression).toContain("storeCategoryItemCount = :storeCategoryItemCount");
+    expect(create.ExpressionAttributeValues![":storeCategoryItemCount"]).toBe(0);
   });
 });
 
@@ -200,6 +221,7 @@ describe("image cleanup runs only after a successful write", () => {
 
   it.each(cases)("%s: a failed update deletes nothing", async (_name, path, body) => {
     ddb.on(UpdateCommand).rejects(conditionFailed());
+    ddb.on(GetCommand).resolves({}); // the item doesn't exist
     const res = await asAdmin(path).send(body);
     expect(res.status).toBe(404);
     expect(s3.calls()).toHaveLength(0);
@@ -207,10 +229,15 @@ describe("image cleanup runs only after a successful write", () => {
 
   it.each(cases)("%s: a successful update then removes unused images", async (_name, path, body, folder) => {
     const order: string[] = [];
-    ddb.on(UpdateCommand).callsFake(() => {
+    const write = () => {
       order.push("write");
       return {};
-    });
+    };
+    ddb.on(UpdateCommand).callsFake(write);
+    ddb.on(TransactWriteCommand).callsFake(write);
+    // Item updates read the stored item first (same category: no count change)
+    const categoryId = (body as { storeItem?: StoreItem }).storeItem?.storeItemCategoryId;
+    ddb.on(GetCommand).resolves({ Item: { storeItemCategoryId: categoryId } });
     s3.on(ListObjectsV2Command).callsFake(() => {
       order.push("list");
       return { Contents: [{ Key: `${folder}old.png` }, { Key: folder + KEEP }] };

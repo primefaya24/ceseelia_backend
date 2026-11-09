@@ -59,21 +59,18 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeId = req.params.storeId;
     const storeItemId = req.params.storeItemId;
 
-    // Delete category photos if any
+    // The item (and its category count, 2.1) first: if that fails, its images are still there.
+    await deleteStoreItem(storeId, storeItemId);
+
+    // Then its images. If this fails the item is already gone; the files are only orphans.
     const currentS3Uris: string[] = (
-      await listPrefixFiles(
-        S3_STORAGE_BUCKET_NAME,
-        `store/${storeId}/item/${storeItemId}/`
-      )
+      await listPrefixFiles(S3_STORAGE_BUCKET_NAME, `store/${storeId}/item/${storeItemId}/`)
     )
       .map((o) => o.Key)
       .filter((key): key is string => typeof key === "string");
     if (currentS3Uris.length > 0) {
       await deleteS3Keys(S3_STORAGE_BUCKET_NAME, currentS3Uris);
     }
-
-    // Delete category
-    await deleteStoreItem(storeId, storeItemId);
 
     // Respond to user
     res.send({});
