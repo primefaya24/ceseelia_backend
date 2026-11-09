@@ -235,6 +235,15 @@ async function getItemCategoryId(storeId: string, itemId: string): Promise<strin
   return typeof r.Item.storeItemCategoryId === "string" ? r.Item.storeItemCategoryId : "";
 }
 
+/* Whether a category or item exists in the store (2.3c: upload slots only for real records). */
+export async function storeChildExists(
+  storeId: string,
+  entity: "Category" | "Item",
+  id: string
+): Promise<boolean> {
+  return rowExists(entity === "Item" ? itemKey(storeId, id) : categoryKey(storeId, id));
+}
+
 /* How many times an item write is retried when its category changed between our read and write. */
 const ITEM_WRITE_ATTEMPTS = 3;
 

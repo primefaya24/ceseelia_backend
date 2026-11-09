@@ -224,7 +224,9 @@ describe("image cleanup runs only after a successful write", () => {
     ddb.on(GetCommand).resolves({}); // the item doesn't exist
     const res = await asAdmin(path).send(body);
     expect(res.status).toBe(404);
-    expect(s3.calls()).toHaveLength(0);
+    // Only the pending tag was cleared (2.3d); nothing was listed or deleted
+    expect(s3.commandCalls(ListObjectsV2Command)).toHaveLength(0);
+    expect(s3.commandCalls(DeleteObjectsCommand)).toHaveLength(0);
   });
 
   it.each(cases)("%s: a successful update then removes unused images", async (_name, path, body, folder) => {

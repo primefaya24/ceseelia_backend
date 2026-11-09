@@ -1,75 +1,48 @@
 // Imports
 import { Request, Response, Router } from "express";
-import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
-import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
+import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
-import { getUploadSignedUrl } from "../../../../../layers/aws/s3";
-dotenv.config();
-const ULID = require("ulid");
+import { createImageUpload, parseImageType } from "../../../../../layers/aws/s3/image-upload";
+import { storeChildExists } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { isUlid } from "../../../../../layers/core/utils";
 
 /*
- * Request/Response interfaces
- */
-interface ReqBody {}
-
-interface ResBody {}
-
-/*
- * Module Route
+ * Upload slot for an existing category's banner; 404 if the category isn't in this store.
+ * Returns a presigned POST (`{key, url, fields}`): ≤ 5 MB, fixed content type, tagged pending
+ * until the record that uses it is saved (progress.md 2.3).
  */
 export default function registerRoute(router: Router): void {
-  router.get(
-    "/get-banner-upload-url/:storeId/:categoryId/:imageType",
-    (req: Request, res: Response): void => {
-      validateAndExecuteHttpApiRoute(
-        req,
-        res,
-        pureRequestParams,
-        validRequestParams,
-        executeRouteCore,
-        true,
-        storeMember((req) => req.params.storeId)
-      );
-    }
-  );
-};
+  router.get("/get-banner-upload-url/:storeId/:categoryId/:imageType", (req: Request, res: Response): void => {
+    validateAndExecuteHttpApiRoute(
+      req,
+      res,
+      pureRequestParams,
+      validRequestParams,
+      executeRouteCore,
+      true,
+      storeMember((req) => req.params.storeId)
+    );
+  });
+}
 
 function pureRequestParams(req: Request): boolean {
   return isUlid(req.params.storeId) && isUlid(req.params.categoryId);
 }
 
-/*
- * Ensure request params are valid
- */
 function validRequestParams(req: Request): boolean {
-  return req.params.imageType === 'png' || req.params.imageType === 'jpg' || req.params.imageType === 'jpeg';
+  return parseImageType(req.params.imageType) !== null;
 }
 
-/*
- * Route controller logic
- */
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
-    // Extract params
-    const storeId = req.params.storeId;
-    const categoryId = req.params.categoryId;
-    const imageType = req.params.imageType;
-
-    // Create upload signed url
-    const imageAsset = {
-      key: `store/${storeId}/category/${categoryId}/images/${ULID.ulid()}.${imageType}`,
-      url: "",
-    };
-    imageAsset.url = await getUploadSignedUrl(
-      S3_STORAGE_BUCKET_NAME,
-      imageAsset.key,
-      `image/${imageType}`
-    );
-
-    // Respond to user
-    res.send(imageAsset);
+    const { storeId, categoryId } = req.params;
+    if (!(await storeChildExists(storeId, "Category", categoryId))) {
+      res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: "Category not found" });
+      return;
+    }
+    const imageType = parseImageType(req.params.imageType)!;
+    res.send(await createImageUpload(`store/${storeId}/category/${categoryId}/images/`, imageType));
   } catch (e) {
     if (IN_DEV) {
       console.error(e);

@@ -1,109 +1,54 @@
 // Imports
 import { Request, Response, Router } from "express";
-import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
-import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
+import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
-import { getUploadSignedUrl } from "../../../../../layers/aws/s3";
-dotenv.config();
-const ULID = require("ulid");
+import { MAX_COUNT } from "../../../../../constants/input-limits";
+import { createImageUploads, parseUploadCount } from "../../../../../layers/aws/s3/image-upload";
+import { storeChildExists } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { isUlid } from "../../../../../layers/core/utils";
 
 /*
- * Request/Response interfaces
- */
-interface ReqBody {}
-
-interface ResBody {}
-
-/*
- * Module Route
+ * Upload slots for an existing item's images: 1–10 in total (MAX_COUNT.itemImages); 404 if the
+ * item isn't in this store (it is always created before its images are uploaded).
+ * Returns a presigned POST (`{key, url, fields}`): ≤ 5 MB, fixed content type, tagged pending
+ * until the record that uses it is saved (progress.md 2.3).
  */
 export default function registerRoute(router: Router): void {
-  router.get(
-    "/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount",
-    (req: Request, res: Response): void => {
-      validateAndExecuteHttpApiRoute(
-        req,
-        res,
-        pureRequestParams,
-        validRequestParams,
-        executeRouteCore,
-        true,
-        storeMember((req) => req.params.storeId)
-      );
-    }
-  );
-};
+  router.get("/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount", (req: Request, res: Response): void => {
+    validateAndExecuteHttpApiRoute(
+      req,
+      res,
+      pureRequestParams,
+      validRequestParams,
+      executeRouteCore,
+      true,
+      storeMember((req) => req.params.storeId)
+    );
+  });
+}
 
 function pureRequestParams(req: Request): boolean {
   return isUlid(req.params.storeId) && isUlid(req.params.itemId);
 }
 
-/*
- * Ensure request params are valid
- */
 function validRequestParams(req: Request): boolean {
-  return true;
+  const png = parseUploadCount(req.params.pngCount);
+  const jpg = parseUploadCount(req.params.jpgCount);
+  return png !== null && jpg !== null && png + jpg >= 1 && png + jpg <= MAX_COUNT.itemImages;
 }
 
-/*
- * Route controller logic
- */
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
-    // Extract params
-    const storeId = req.params.storeId;
+    const { storeId } = req.params;
     const itemId = req.params.itemId;
-    const pngCount = Number(req.params.pngCount);
-    const jpgCount = Number(req.params.jpgCount);
-
-    const parseCount = (count: number): number => {
-      if (!Number.isFinite(count) || count <= 0) {
-        return 0;
-      }
-      return Math.floor(count);
-    };
-
-    const createSignedUpload = async (
-      imageType: "png" | "jpg"
-    ): Promise<{ key: string; url: string; imageType: "png" | "jpg" }> => {
-      const key = `store/${storeId}/item/${itemId}/images/${ULID.ulid()}.${imageType}`;
-      const url = await getUploadSignedUrl(
-        S3_STORAGE_BUCKET_NAME,
-        key,
-        `image/${imageType}`
-      );
-      return { key, url, imageType };
-    };
-
-    const uploadPromises = [
-      ...Array.from({ length: parseCount(pngCount) }, () =>
-        createSignedUpload("png")
-      ),
-      ...Array.from({ length: parseCount(jpgCount) }, () =>
-        createSignedUpload("jpg")
-      ),
-    ];
-    const imageAssets = await Promise.all(uploadPromises);
-
-    const groupedUploads = imageAssets.reduce(
-      (
-        acc: {
-          png: Array<{ key: string; url: string }>;
-          jpg: Array<{ key: string; url: string }>;
-        },
-        asset
-      ) => {
-        const { imageType, ...upload } = asset;
-        acc[imageType].push(upload);
-        return acc;
-      },
-      { png: [], jpg: [] }
-    );
-
-    // Respond to user
-    res.send(groupedUploads);
+    if (!(await storeChildExists(storeId, "Item", itemId))) {
+      res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: "Item not found" });
+      return;
+    }
+    const png = parseUploadCount(req.params.pngCount)!;
+    const jpg = parseUploadCount(req.params.jpgCount)!;
+    res.send(await createImageUploads(`store/${storeId}/item/${itemId}/images/`, png, jpg));
   } catch (e) {
     if (IN_DEV) {
       console.error(e);

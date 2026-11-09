@@ -11,6 +11,7 @@ import {
 import { StoreRecordNotFoundError, updateStoreItem } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import { cleanUpS3Folder, isUlid, isUlidOrEmpty } from "../../../../../layers/core/utils";
+import { markImagesKept } from "../../../../../layers/aws/s3/image-upload";
 dotenv.config();
 
 /*
@@ -60,6 +61,9 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeItem = req.body.storeItem;
     const storeItemId = req.body.storeItemId;
     const isUpdate = req.body.isUpdate;
+
+    // Keep the images this save uses (clear their pending tag, 2.3d) before saving them
+    await markImagesKept(storeItem?.storeItemImageUris ?? []);
 
     // Create item
     // On create the client's ID is ignored and a new one is generated.

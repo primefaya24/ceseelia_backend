@@ -121,8 +121,11 @@ export default function registerRoute(router: Router): void {
   | (planned) Order | `STORE#<storeId>` | `ORDER#<createdAt>#<orderId>` (see `StoreOrder` interface) |
   GSIs used by user code: `CognitoIdentifierGSI`, `UserEmailGSI`.
 - S3 keys: `store/<storeId>/images/{logo,header,promo}/<ulid>.<ext>`,
-  `store/<storeId>/category/<categoryId>/…`, `store/<storeId>/item/<itemId>/…`. Uploads use
-  presigned PUT URLs; on save, `cleanUpS3Folder(prefix, keepUris)` deletes orphaned files.
+  `store/<storeId>/category/<categoryId>/…`, `store/<storeId>/item/<itemId>/…`. Uploads are
+  presigned POSTs from `layers/aws/s3/image-upload.ts` (png/jpg, ≤ 5 MB, key and type pinned,
+  tagged `ceseelia-upload=pending`; the bucket expires pending objects after a day). Any route
+  that saves image keys must call `markImagesKept(keys)` **before** its DB write; after the
+  write, `cleanUpS3Folder(prefix, keepUris)` deletes files the record no longer uses.
 - IDs are ULIDs. Field names are prefixed (`storeItem…`, `storeCategory…`). Note the existing
   typo `storeCategoriy…` (Id, Priority, Hashtags) — it is persisted data, keep it consistent
   unless doing a deliberate migration.
@@ -136,17 +139,17 @@ export default function registerRoute(router: Router): void {
 | Store | `POST /store/create` (admin) | ✅ creates overview + default settings + slug reservation in one transaction; 409 if the slug is taken |
 | Store | `DELETE /store/delete/:storeId` (admin) | ✅ deletes SETTINGS first (blocks writes), then the `STORE#id` partition and the members'/invites' reverse rows, `store/<id>/` in S3, the slug reservation, and the overview last; safe to retry; 404 when nothing is left |
 | Store | `PUT /store/update-settings` | ✅ validates, saves (awaited), then cleans logo/header/promo S3 leaks (never writes the `admin` block) |
-| Store | `GET /store/get-logo-upload-url/:storeId/:imageType` | ✅ |
+| Store | `GET /store/get-logo-upload-url/:storeId/:imageType` | ✅ `{key, url, fields}` presigned POST (all upload routes: png/jpg/jpeg, ≤ 5 MB) |
 | Store | `GET /store/get-header-strip-image-upload-url/:storeId/:imageType` | ✅ |
-| Store | `GET /store/get-promo-image-upload-urls/:storeId/:pngCount/:jpgCount` | ✅ |
+| Store | `GET /store/get-promo-image-upload-urls/:storeId/:pngCount/:jpgCount` | ✅ `{png: [...], jpg: [...]}`, 1–10 in total |
 | Category | `POST /store/category/create` (create + update via `isUpdate`) | ✅ |
 | Category | `DELETE /store/category/delete/:storeId/:storeCategoryId` | ✅ only when the category has no items, else 409 `CATEGORY_NOT_EMPTY` `{message, itemCount}`; then deletes its banner |
-| Category | `GET /store/category/get-banner-upload-url/:storeId/:categoryId/:imageType` | ✅ |
+| Category | `GET /store/category/get-banner-upload-url/:storeId/:categoryId/:imageType` | ✅ 404 unless the category exists |
 | Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing |
 | Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ −1 on its category, then deletes its images |
 | Inventory | `GET /store/inventory/get-data/:storeId` (auth) | ✅ categories + items + settings |
 | Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ + geo-IP default currency |
-| Inventory | `GET /store/inventory/get-item-image-upload-urls/...` | ✅ |
+| Inventory | `GET /store/inventory/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount` | ✅ 1–10 in total; 404 unless the item exists |
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug; 409 if the slug is taken) | ✅ |
 | Public | `GET /store/public/resolve-slug/:slug` → `{storeId}` (404 if unknown) | ✅ |
@@ -175,12 +178,11 @@ Open:
    been rotated (S.2).
 4. `isStoreLive` is saved but nothing acts on it yet: a suspended store's public page still
    loads. → Stage 2.4
-5. Upload-URL routes don't cap the requested image counts or file sizes. → Stage 2.3
-6. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
+5. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
    saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3
-7. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
-8. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
-9. No structured logging, rate limiting or CI yet. → Stage 9
+6. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
+7. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
+8. No structured logging, rate limiting or CI yet. → Stage 9
 
 Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
 `api.ceseelia.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);
@@ -239,8 +241,8 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 2.1 Maintain `storeCategoryItemCount` (atomic `ADD` on item create/move/delete); stop resetting it
     on category update.
 2.2 ✅ Category delete: blocked (409) while it has items — no "uncategorized" bucket.
-2.3 Validate upload endpoints: allowed image types, max counts (e.g. ≤ 10), file-size limits via
-    presigned POST conditions.
+2.3 ✅ Validate upload endpoints: allowed image types, max counts (≤ 10), file-size limits via
+    presigned POST conditions; unsaved uploads expire (pending tag + lifecycle rule).
 2.4 Public data endpoint: return only `storeItemIsActive` items in active categories, strip admin
     settings and any private fields, and 404 when `isStoreLive === false` or store not found.
 2.5 Price model: store prices as integer minor units (cents) per base currency; decide how

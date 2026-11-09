@@ -27,6 +27,7 @@
     "@aws-sdk/client-secrets-manager": "^3.830.0",
     "@aws-sdk/client-ses": "^3.830.0",
     "@aws-sdk/lib-dynamodb": "^3.830.0",
+    "@aws-sdk/s3-presigned-post": "^3.1164.0",
     "@aws-sdk/s3-request-presigner": "^3.832.0",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",

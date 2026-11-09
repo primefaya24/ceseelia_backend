@@ -11,6 +11,7 @@ import {
 import { StoreRecordNotFoundError, updateStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import { cleanUpS3Folder, isUlid, isUlidOrEmpty } from "../../../../../layers/core/utils";
+import { markImagesKept } from "../../../../../layers/aws/s3/image-upload";
 dotenv.config();
 
 /*
@@ -69,6 +70,9 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeCategory = req.body.storeCategory;
     const storeCategoryId = req.body.categoryId;
     const isUpdate = req.body.isUpdate;
+
+    // Keep the banner this save uses (clear its pending tag, 2.3d) before saving it
+    await markImagesKept([storeCategory?.storeCategoryBannerUri]);
 
     // Create category
     // On create the client's ID is ignored and a new one is generated.

@@ -22,8 +22,9 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
 > are done, as are WA 1.1–1.5.
 > WA 1.6a–c (profile pages) done too; 1.6d waits on a real `delete-user` (501 since S.11).
-> Stage 2.1 (item counts) and 2.2 (category delete rule) are done, and WA 2.1 uses them.
-> **Next: BE 2.3 upload limits** (then WA 2.4 to match).
+> Stage 2.1–2.3 are done (item counts, category delete rule, upload limits; WA uses all three).
+> **Next: BE 2.4 public data endpoint** (only active items, 404 for unknown or suspended stores).
+> WA 2.4 (size/type checks before upload) can be done any time.
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -44,10 +45,10 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Merchant / customer APIs | ❌ Missing | `/merchant/path` stub (1.5 deferred) |
 | Cart, checkout, orders, payments | ❌ Not started | Stripe webhook returns 501 |
 | Admin stats, join requests, tickets | ❌ Not started | |
-| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser` and `ses:SendEmail` |
+| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging` |
 
-**Health check (2026-11-09):** `npm test` 380/380 passing · `npm run typecheck` clean ·
-`npm run lint` 0 errors, 92 warnings · `npm audit --omit=dev` 0 vulnerabilities.
+**Health check (2026-11-09):** `npm test` 417/417 passing · `npm run typecheck` clean ·
+`npm run lint` 0 errors, 80 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
 
@@ -363,13 +364,26 @@ match the backend and webapp._
     is a 200. The route deletes the row **before** its banner image. Tests in
     `tests/category-delete.test.ts`; checked live on dev with a throwaway row (refused at 2,
     deleted at 0, raw `{N}` count in the error handled)._
-- [ ] 🟡 **2.3 Upload limits:**
-  - [ ] a. Validate `imageType` and cap counts (≤ 10 total) on promo and item upload routes.
+- [x] 🟡 **2.3 Upload limits:**
+  - [x] a. Validate `imageType` and cap counts (≤ 10 total) on promo and item upload routes.
         Today `pngCount=100000` mints 100k URLs.
-  - [ ] b. Switch to **presigned POST** with `content-length-range` (e.g. ≤ 5 MB) and a fixed
+  - [x] b. Switch to **presigned POST** with `content-length-range` (e.g. ≤ 5 MB) and a fixed
         `Content-Type`. A presigned PUT can't cap file size.
-  - [ ] c. Item upload: check the item belongs to the store (or is being created).
-  - [ ] d. S3 lifecycle rule to expire uploads that never get referenced. (WA 2.3)
+  - [x] c. Item upload: check the item belongs to the store (or is being created).
+  - [x] d. S3 lifecycle rule to expire uploads that never get referenced. (WA 2.3)
+  - _Done 2026-11-09. All five upload routes go through `layers/aws/s3/image-upload.ts`:
+    png / jpg / jpeg only (400 otherwise); promo and item counts are digits only and 1–10 in
+    total (`MAX_COUNT`); each slot is a presigned POST `{key, url, fields}` (15 min) whose policy
+    pins the key, `Content-Type` (`image/png` / `image/jpeg`; jpg used to be signed as the
+    invalid `image/jpg`), 1 B–5 MB and a `ceseelia-upload=pending` tag. Item and category banner
+    slots 404 unless that record exists in the store (both are created before their images).
+    The bucket (`ceseelia_cloudformation`, deployed to dev) allows POST and expires `pending`
+    objects after 1 day; update-settings, category save and item save clear the tag on the
+    images they reference (`markImagesKept`) **before** the DB write and fail the save if they
+    can't. Older images have no tag and are never expired. The webapp posts the form
+    (`uploadImage`). Tests in `tests/image-upload.test.ts`; checked live on the dev bucket
+    (1 KB upload → tagged; 6 MB → `EntityTooLarge`; tag cleared on keep; CORS preflight POST
+    allowed). **Prod: the EC2 role needs `s3:DeleteObjectTagging` on the bucket.**_
 - [ ] 🟠 **2.4 Public data endpoint:**
   - [ ] a. Strip `settings.admin` and any other private fields. Commission is currently public.
   - [ ] b. Return only active items in active categories.
@@ -496,6 +510,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 2.3 done: image uploads are presigned POSTs (png/jpg, ≤ 5 MB, 1–10 per request, item/category must exist), tagged pending until saved; bucket allows POST and expires unsaved uploads after a day. |
 | 2026-11-09 | 2.2 done: category delete refused with 409 `CATEGORY_NOT_EMPTY` while it has items (conditional delete on the count); banner deleted after the row. |
 | 2026-11-09 | 2.1 done: category item counts kept by item create/move/delete transactions (no more reset on save); delete-item removes the row before its images; recount script (dev fixed). |
 | 2026-11-09 | WA 1.6 support: `update-profile` trims names and caps them at 50 (`MAX_LENGTH.personName`, same in the webapp). |

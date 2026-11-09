@@ -17,6 +17,7 @@ import {
   extractStorePromoImageUris,
   isUlid,
 } from "../../../../layers/core/utils";
+import { markImagesKept } from "../../../../layers/aws/s3/image-upload";
 dotenv.config();
 
 /*
@@ -70,6 +71,13 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Extract params
     const storeId = req.body.storeId;
     const storeSettings: StoreSettings = req.body.storeSettings;
+
+    // Keep the images these settings use (clear their pending tag, 2.3d) before saving them
+    await markImagesKept([
+      storeSettings.storeInfo.logoUri,
+      extractStoreHeaderStripImageUri(storeSettings),
+      ...extractStorePromoImageUris(storeSettings),
+    ]);
 
     // Persist first, so a failed write never deletes images the stored settings still reference
     await updateStoreSettings(storeId, storeSettings);
