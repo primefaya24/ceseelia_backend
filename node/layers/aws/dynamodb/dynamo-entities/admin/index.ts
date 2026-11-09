@@ -5,7 +5,8 @@ import {
   GetCommand,
   QueryCommand,
   PutCommand,
-  UpdateCommand,
+  TransactWriteCommand,
+  TransactWriteCommandInput,
 } from "@aws-sdk/lib-dynamodb";
 import * as ULID from "ulid";
 import { appConstants } from "../../../../../constants";
@@ -18,6 +19,14 @@ import {
   StoreSettings,
 } from "../../../../core/interfaces/store";
 import { formatEpochToFullReadableDate } from "../../../../core/utils";
+import { StoreRecordNotFoundError } from "../store";
+import {
+  getSlugOwner,
+  releaseSlugDelete,
+  reserveSlugPut,
+  SlugTakenError,
+  transactionFailedAt,
+} from "../slug";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient =
@@ -80,54 +89,73 @@ export async function getAllStores() {
   }
 }
 
+/*
+ * Rename a store and/or change its slug (1.8). In one transaction: update the overview row (only
+ * if its slug is still the one we read), reserve the new slug, and release the old one when it
+ * was ours. Throws StoreRecordNotFoundError (404) or SlugTakenError (409).
+ */
 export async function updateStoreInfo(
   storeId: string,
   storeName: string,
   storeSlug: string
 ): Promise<StoreOverview> {
+  const overviewKey = {
+    pk: appConstants.DYNAMO_ENTITY_APP_STORE,
+    sk: `${appConstants.DYNAMO_ENTITY_STORE}#${storeId}#${appConstants.DYNAMO_ENTITY_OVERVIEW}`,
+  };
   try {
-    const command = new UpdateCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      Key: {
-        pk: appConstants.DYNAMO_ENTITY_APP_STORE,
-        sk:
-          appConstants.DYNAMO_ENTITY_STORE +
-          "#" +
-          storeId +
-          "#" +
-          appConstants.DYNAMO_ENTITY_OVERVIEW,
-      },
-      ConditionExpression: "attribute_exists(pk) and attribute_exists(sk)",
-      UpdateExpression: "set #storeName = :storeName, #storeSlug = :storeSlug",
-      ExpressionAttributeNames: {
-        "#storeName": "storeName",
-        "#storeSlug": "storeSlug",
-      },
-      ExpressionAttributeValues: {
-        ":storeName": storeName,
-        ":storeSlug": storeSlug,
-      },
-      ReturnValues: "ALL_NEW",
-    });
-    const response = await dynamoDbDocumentClient.send(command);
-    const record = response.Attributes;
-    if (record) {
-      delete record.pk;
-      delete record.sk;
+    // Retry only when someone else changed this store's slug between our read and our write.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const current = await dynamoDbDocumentClient.send(
+        new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: overviewKey, ConsistentRead: true })
+      );
+      if (!current.Item) throw new StoreRecordNotFoundError("Store");
+      const oldSlug: string = typeof current.Item.storeSlug === "string" ? current.Item.storeSlug : "";
 
+      const transactItems: NonNullable<TransactWriteCommandInput["TransactItems"]> = [
+        {
+          Update: {
+            TableName: DEFAULT_TABLE_NAME,
+            Key: overviewKey,
+            ConditionExpression: "attribute_exists(pk) AND #storeSlug = :oldSlug",
+            UpdateExpression: "SET #storeName = :storeName, #storeSlug = :storeSlug",
+            ExpressionAttributeNames: { "#storeName": "storeName", "#storeSlug": "storeSlug" },
+            ExpressionAttributeValues: {
+              ":storeName": storeName,
+              ":storeSlug": storeSlug,
+              ":oldSlug": oldSlug,
+            },
+          },
+        },
+        reserveSlugPut(storeSlug, storeId),
+      ];
+      // Release the old slug only if it's ours (before the backfill, or for stores that shared a
+      // slug, it may be unreserved or held by another store).
+      if (oldSlug && oldSlug !== storeSlug && (await getSlugOwner(oldSlug)) === storeId) {
+        transactItems.push(releaseSlugDelete(oldSlug, storeId));
+      }
+
+      try {
+        await dynamoDbDocumentClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
+      } catch (e) {
+        if (transactionFailedAt(e, 1)) throw new SlugTakenError(storeSlug);
+        if (transactionFailedAt(e, 0) || transactionFailedAt(e, 2)) continue; // changed under us
+        throw e;
+      }
+
+      const { pk: _pk, sk: _sk, ...rest } = current.Item;
+      const record = { ...rest, storeName, storeSlug } as StoreOverview;
       record.storeOrderLastCompletedDateStr =
         record.storeOrderLastCompletedTimestamp <= 0
           ? appConstants.NA
-          : formatEpochToFullReadableDate(
-              record.storeOrderLastCompletedTimestamp,
-              true
-            );
+          : formatEpochToFullReadableDate(record.storeOrderLastCompletedTimestamp, true);
+      return { ...initStore(storeId, storeName, storeSlug), ...record };
     }
-    return (
-      (record as StoreOverview) ?? initStore(storeId, storeName, storeSlug)
-    );
+    throw new Error("Store info changed while saving; gave up after 3 tries");
   } catch (e) {
-    console.error("In updateStoreInfo", e);
+    if (!(e instanceof SlugTakenError) && !(e instanceof StoreRecordNotFoundError)) {
+      console.error("In updateStoreInfo", e);
+    }
     throw e;
   }
 }

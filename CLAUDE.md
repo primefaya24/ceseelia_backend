@@ -33,13 +33,14 @@ ceseelia_backend/
     ├── middleware.ts      # host-based router + request logger (only ALLOWED_API_HOSTS reach the API)
     ├── tests/             # vitest specs
     ├── config/index.ts    # env-driven config (STAGE, hosts, CORS, Cognito, table/bucket)
-    ├── constants/index.ts # appConstants (entity names, HTTP codes, limits, etc.)
+    ├── constants/index.ts # appConstants (entity names, HTTP codes, limits, etc.); input-limits.ts, slug.ts
+    ├── scripts/           # one-off maintenance scripts (e.g. backfill-slug-reservations.mjs)
     ├── api/v1/<area>/<route>/index.ts   # one file per endpoint
     └── layers/
         ├── core/http      # validateAndExecuteHttpApiRoute (auth + validation wrapper)
         ├── core/interfaces/store   # StoreOverview, StoreSettings, StoreCategory, StoreItem, StoreOrder…
         ├── core/utils     # misc helpers, S3 cleanup, geo-IP currency, PDF invoice, DQS
-        ├── aws/dynamodb/dynamo-entities/{store,admin,user,membership}   # data access
+        ├── aws/dynamodb/dynamo-entities/{store,admin,user,membership,slug}   # data access
         ├── aws/dynamodb/{dynamo-batch-ops,dynamo-query}   # batch read/write with retries; paged queries
         ├── aws/{cognito,s3,ses,sqs,route53,secret-manager}
         └── stripe         # generateStripeCheckoutLink (legacy, from a previous project)
@@ -115,6 +116,7 @@ export default function registerRoute(router: Router): void {
   | Store member | `STORE#<storeId>` | `MEMBER#<userId>` (role `ADMIN`/`MERCHANT`) |
   | User's store (reverse) | `USER#<userId>` | `STORE#<storeId>` (same role; written with the member row in one transaction) |
   | Store invite | `STORE#<storeId>` | `INVITE#<email>` (pending, for an email with no account) |
+  | Slug reservation | `SLUG#<slug>` | `STORE` (`storeId`; written/freed only in the store create, rename and delete paths; format rule in `constants/slug.ts`) |
   | Invite by email (reverse) | `INVITE#<email>` | `STORE#<storeId>` (found and claimed on that user's first `get-my-profile`) |
   | (planned) Order | `STORE#<storeId>` | `ORDER#<createdAt>#<orderId>` (see `StoreOrder` interface) |
   GSIs used by user code: `CognitoIdentifierGSI`, `UserEmailGSI`.
@@ -131,8 +133,8 @@ export default function registerRoute(router: Router): void {
 
 | Area | Endpoint | Status |
 |---|---|---|
-| Store | `POST /store/create` (admin) | ✅ creates overview + default settings |
-| Store | `DELETE /store/delete/:storeId` (admin) | ✅ deletes SETTINGS first (blocks writes), then the `STORE#id` partition and the members'/invites' reverse rows, `store/<id>/` in S3, and the overview last; safe to retry; 404 when nothing is left |
+| Store | `POST /store/create` (admin) | ✅ creates overview + default settings + slug reservation in one transaction; 409 if the slug is taken |
+| Store | `DELETE /store/delete/:storeId` (admin) | ✅ deletes SETTINGS first (blocks writes), then the `STORE#id` partition and the members'/invites' reverse rows, `store/<id>/` in S3, the slug reservation, and the overview last; safe to retry; 404 when nothing is left |
 | Store | `PUT /store/update-settings` | ✅ validates, saves (awaited), then cleans logo/header/promo S3 leaks (never writes the `admin` block) |
 | Store | `GET /store/get-logo-upload-url/:storeId/:imageType` | ✅ |
 | Store | `GET /store/get-header-strip-image-upload-url/:storeId/:imageType` | ✅ |
@@ -146,7 +148,8 @@ export default function registerRoute(router: Router): void {
 | Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ + geo-IP default currency |
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/...` | ✅ |
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
-| Admin | `POST /admin/update-store-info` (name/slug) | ✅ |
+| Admin | `POST /admin/update-store-info` (name/slug; 409 if the slug is taken) | ✅ |
+| Public | `GET /store/public/resolve-slug/:slug` → `{storeId}` (404 if unknown) | ✅ |
 | Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
 | Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, salesCommission, isStoreLive}` | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
 | Admin | `POST /admin/assign-store-member` `{storeId, email, role?}` | ✅ existing account → member now (`ADDED`); no account → pending invite + SES email (`INVITED`, `emailSent`); 409 `ALREADY_MEMBER` |
@@ -174,8 +177,7 @@ Open:
 4. `isStoreLive` is saved but nothing acts on it yet: a suspended store's public page still
    loads. → Stage 2.4
 5. `updateStoreCategory` resets `storeCategoryItemCount` to 0 on every save. → Stage 2.1
-6. Deleting a category leaves its items orphaned. → 2.2. (Store delete won't free the slug until
-   slugs are reserved in 1.8; it will need to delete `SLUG#<slug>` then.)
+6. Deleting a category leaves its items orphaned. → 2.2.
 7. Upload-URL routes don't cap the requested image counts or file sizes. → Stage 2.3
 8. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
    saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3
@@ -233,7 +235,7 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     (commission, isStoreLive); keep it out of the merchant `update-settings`.
 1.7 Implement `DELETE /store/delete/:storeId` (admin): delete all `STORE#id` items, the
     `APP_STORE` overview, memberships and the `store/<id>/` S3 prefix (batch ops exist).
-1.8 Slug uniqueness: reserve `SLUG#<slug>` → storeId on create/update (conditional put), and add
+1.8 ✅ Slug uniqueness: reserve `SLUG#<slug>` → storeId on create/update (conditional put), and add
     `GET /store/public/resolve-slug/:slug` for the storefront.
 
 ### Stage 2 — Inventory hardening

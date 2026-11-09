@@ -8,6 +8,8 @@ import { MAX_LENGTH } from "../../../../constants/input-limits";
 import { createStore } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { StoreOverview } from "../../../../layers/core/interfaces/store";
 import { listPrefixFiles } from "../../../../layers/aws/s3";
+import { isValidSlug } from "../../../../constants/slug";
+import { SlugTakenError } from "../../../../layers/aws/dynamodb/dynamo-entities/slug";
 dotenv.config();
 
 /*
@@ -45,13 +47,11 @@ function pureRequestParams(req: Request): boolean {
  * Ensure request params are valid
  */
 function validRequestParams(req: Request): boolean {
-  // Slug format rules come with progress.md 1.8; only the length is checked here.
   const { storeName, storeSlug } = req.body;
   return (
-    storeName.length > 0 &&
+    storeName.trim().length > 0 &&
     storeName.length <= MAX_LENGTH.storeName &&
-    storeSlug.length > 0 &&
-    storeSlug.length <= MAX_LENGTH.storeSlug
+    isValidSlug(storeSlug)
   );
 }
 
@@ -73,6 +73,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Respond to user
     res.send(storeOverview);
   } catch (e) {
+    if (e instanceof SlugTakenError) {
+      res.status(appConstants.HTTP_STATUS_CODE_CONFLICT).send({ message: e.message });
+      return;
+    }
     if (IN_DEV) {
       console.error(e);
     }

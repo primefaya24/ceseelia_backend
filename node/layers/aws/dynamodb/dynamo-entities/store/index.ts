@@ -26,6 +26,7 @@ import {
   StoreSettings,
 } from "../../../../core/interfaces/store";
 import { getStorageImageUrl } from "../../../../core/utils";
+import { reserveSlugPut, SlugTakenError, slugKey, transactionFailedAt } from "../slug";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient =
@@ -116,48 +117,55 @@ async function writeStoreChild(
   return id;
 }
 
+/*
+ * Create a store: overview row, settings row and the slug reservation, all or nothing.
+ * Throws SlugTakenError when another store holds the slug (1.8).
+ */
 export async function createStore(
   storeName: string,
   storeSlug: string
 ): Promise<StoreOverview> {
   try {
     const storeId: string = ULID.ulid();
-    const storeOverview: StoreOverview = initStore(
-      storeId,
-      storeName,
-      storeSlug
-    );
+    const storeOverview: StoreOverview = initStore(storeId, storeName, storeSlug);
     const storeSettings: StoreSettings = initStoreSettings();
-    await dynamoWriteManyItems(DEFAULT_TABLE_NAME, [
-      // Store overview
-      {
-        PutRequest: {
-          Item: {
-            pk: appConstants.DYNAMO_ENTITY_APP_STORE,
-            sk:
-              appConstants.DYNAMO_ENTITY_STORE +
-              "#" +
-              storeId +
-              "#" +
-              appConstants.DYNAMO_ENTITY_OVERVIEW,
-            ...storeOverview,
-          },
-        },
-      },
-      // Store settings
-      {
-        PutRequest: {
-          Item: {
-            pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
-            sk: appConstants.DYNAMO_ENTITY_SETTINGS,
-            ...storeSettings,
-          },
-        },
-      },
-    ]);
+    try {
+      await dynamoDbDocumentClient.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              Put: {
+                TableName: DEFAULT_TABLE_NAME,
+                Item: {
+                  pk: appConstants.DYNAMO_ENTITY_APP_STORE,
+                  sk: `${appConstants.DYNAMO_ENTITY_STORE}#${storeId}#${appConstants.DYNAMO_ENTITY_OVERVIEW}`,
+                  ...storeOverview,
+                },
+                ConditionExpression: "attribute_not_exists(pk)",
+              },
+            },
+            {
+              Put: {
+                TableName: DEFAULT_TABLE_NAME,
+                Item: {
+                  pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+                  sk: appConstants.DYNAMO_ENTITY_SETTINGS,
+                  ...storeSettings,
+                },
+                ConditionExpression: "attribute_not_exists(pk)",
+              },
+            },
+            reserveSlugPut(storeSlug, storeId),
+          ],
+        })
+      );
+    } catch (e) {
+      if (transactionFailedAt(e, 2)) throw new SlugTakenError(storeSlug);
+      throw e;
+    }
     return storeOverview;
   } catch (e) {
-    console.error("In createStore", e);
+    if (!(e instanceof SlugTakenError)) console.error("In createStore", e);
     throw e;
   }
 }
@@ -469,7 +477,23 @@ export async function deleteStore(storeId: string): Promise<boolean> {
   // 3. Files (the trailing slash keeps other stores' prefixes out)
   await deleteS3FilesPrefixed(S3_STORAGE_BUCKET_NAME, `store/${storeId}/`);
 
-  // 4. The admin list entry
+  // 4. The slug reservation (1.8), only while it's still this store's, then the admin list entry.
+  //    The slug is read from the overview row, so it goes first: a retry can still find it.
+  const storeSlug = overview.Item?.storeSlug;
+  if (typeof storeSlug === "string" && storeSlug) {
+    try {
+      await dynamoDbDocumentClient.send(
+        new DeleteCommand({
+          TableName: DEFAULT_TABLE_NAME,
+          Key: slugKey(storeSlug),
+          ConditionExpression: "storeId = :storeId",
+          ExpressionAttributeValues: { ":storeId": storeId },
+        })
+      );
+    } catch (e) {
+      if (!isConditionalCheckFailure(e)) throw e; // not ours, or already gone
+    }
+  }
   if (overview.Item) {
     await dynamoDbDocumentClient.send(new DeleteCommand({ TableName: DEFAULT_TABLE_NAME, Key: overviewKey }));
   }

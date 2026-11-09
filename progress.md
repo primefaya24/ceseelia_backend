@@ -19,10 +19,10 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 ## 1. Where things stand
 
-> **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6, 1.7
+> **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
 > are done, as are WA 1.1–1.5.
-> **Next: BE 1.8 Slugs** (format rule, `SLUG#<slug>` reservation with 409 on conflict, public
-> `resolve-slug`; store delete must then also free the slug). Then WA 1.6 Profile pages.
+> **Next: WA 1.6 Profile pages** (1.6d delete account waits on `delete-user`, 501 since S.11).
+> Then Stage 2 (inventory hardening).
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -36,8 +36,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Users / registration | ✅ Works | CloudFormation `OnUserRegister` Lambda creates users; `get-my-profile` fills in missing rows (1.1) |
 | Store membership + access | ✅ Works | Members/invites (1.2, 1.4); every `/store/**` route checks membership, admins bypass (1.3) |
 | Store create / settings / images | ✅ Works | Admin-only settings via `/admin/*-store-admin-settings` (1.6) |
-| Store delete | ✅ Works | Whole store incl. members, invites, S3; retry-safe (1.7). Slug not freed yet (no reservations until 1.8) |
-| Slugs | ⚠️ Not unique | Two stores can share a slug; no format rule (1.8) |
+| Store delete | ✅ Works | Whole store incl. members, invites, slug, S3; retry-safe (1.7, 1.8) |
+| Slugs | ✅ Works | Format rule, unique via `SLUG#<slug>` reservations (409 on clash), public `resolve-slug` (1.8) |
 | Categories & items CRUD | ✅ Works | Item counts are wrong; deleting a category orphans its items (Stage 2) |
 | Public storefront data | ⚠️ Partial | Admin block no longer leaked (1.6); still returns inactive items and ignores `isStoreLive` (2.4) |
 | Merchant / customer APIs | ❌ Missing | `/merchant/path` stub (1.5 deferred) |
@@ -45,8 +45,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser` and `ses:SendEmail` |
 
-**Health check (2026-11-09):** `npm test` 309/309 passing · `npm run typecheck` clean ·
-`npm run lint` 0 errors, 93 warnings · `npm audit --omit=dev` 0 vulnerabilities.
+**Health check (2026-11-09):** `npm test` 354/354 passing · `npm run typecheck` clean ·
+`npm run lint` 0 errors, 92 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
 
@@ -317,10 +317,24 @@ match the backend and webapp._
     (member, invite, S3 file): everything gone, Northern Hoop untouched._
 
 ### 1.8 Slugs
-- [ ] a. Slug format rule (lowercase `a-z0-9-`, 3–40 chars, reserved words blocked).
-- [ ] b. Reserve `SLUG#<slug>` → storeId with a conditional put, in a transaction with
+- [x] a. Slug format rule (lowercase `a-z0-9-`, 3–40 chars, reserved words blocked).
+- [x] b. Reserve `SLUG#<slug>` → storeId with a conditional put, in a transaction with
       create / `update-store-info`. Release the old slug on rename. Return 409 on conflict.
-- [ ] c. `GET /store/public/resolve-slug/:slug`. (WA 3.1)
+- [x] c. `GET /store/public/resolve-slug/:slug`. (WA 3.1)
+  - _Done 2026-11-09, tested by hand. Rule in `constants/slug.ts` (`isValidSlug`, `RESERVED_SLUGS`; the webapp
+    mirrors it in `slug.constants.ts`). Reservation row: pk `SLUG#<slug>`, sk `STORE`,
+    `storeId`; helpers in `dynamo-entities/slug`. `createStore` is now one transaction (overview +
+    settings + slug, instead of a batch). `updateStoreInfo` reads the overview, then in one
+    transaction updates it (only if the slug is unchanged since the read, else retries up to 3×),
+    reserves the new slug (free or already ours) and releases the old one if we hold it; 409
+    `{message: "That slug is already taken."}`, 404 for a missing store. `deleteStore` frees the
+    slug (only while ours) just before the overview row. `resolve-slug` is public, lowercases the
+    slug, returns `{storeId}` or 404, and doesn't check `isStoreLive` (2.4). Tests in
+    `tests/store-slugs.test.ts`. Existing stores: `node scripts/backfill-slug-reservations.mjs`
+    (dry run; `--write` applies; run `npm run build` first). **Run it on prod with
+    `DB_TABLE_NAME=ceseelia_prod` when prod exists.** Backfilled on dev (Northern Hoop →
+    `northern-hoop`) and `resolve-slug` checked live against dev. Admin › Stores create/rename/
+    delete tested by hand._
 
 ---
 
@@ -464,6 +478,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 1.8 done: slug format rule, `SLUG#<slug>` reservations (create/rename in one transaction, 409 on clash, freed on delete), public `resolve-slug`, backfill script (dev backfilled). |
 | 2026-11-09 | §1 status table and health check refreshed; "Pick up here" note added (next: BE 1.8, WA 1.6). |
 | 2026-11-09 | 1.7 done: `DELETE /store/delete/:storeId` deletes the whole store, retry-safe; S3 batch delete fixed (1000-key limit, partial failures). |
 | 2026-11-09 | 1.6 done: admin-only store settings routes; `admin` block hidden from merchants and the public storefront (it was public). |

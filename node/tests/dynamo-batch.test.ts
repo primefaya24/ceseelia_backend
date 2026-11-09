@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
-import { BatchGetCommand, BatchWriteCommand, DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
+import { BatchGetCommand, BatchWriteCommand, DynamoDBDocumentClient, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 
 vi.mock("../layers/aws/cognito", () => ({
   verifyCognitoAccessToken: vi.fn(),
@@ -116,14 +116,14 @@ describe("batch gets", () => {
 
 describe("callers no longer report false success", () => {
   it("createStore rejects when its write fails", async () => {
-    // DynamoDB hands every item back as unprocessed, every time.
-    ddb.on(BatchWriteCommand).callsFake((input) => ({ UnprocessedItems: input.RequestItems }));
-    await expect(createStore("Shop", "shop")).rejects.toThrow(DynamoBatchError);
+    // createStore writes in one transaction since 1.8 (no batch to half-apply).
+    ddb.on(TransactWriteCommand).rejects(new Error("boom"));
+    await expect(createStore("Shop", "shop")).rejects.toThrow("boom");
   });
 
   it("POST /store/create returns 500 instead of a store that wasn't saved", async () => {
     vi.mocked(verifyCognitoAccessToken).mockResolvedValue({ sub: "admin-1", "cognito:groups": ["Admins"] });
-    ddb.on(BatchWriteCommand).rejects(new Error("boom"));
+    ddb.on(TransactWriteCommand).rejects(new Error("boom"));
     const res = await request(createApp())
       .post("/api/v1/store/create")
       .set("Host", "localhost")
