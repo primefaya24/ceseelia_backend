@@ -1,6 +1,6 @@
 import express, { Express } from 'express';
 import cors, { CorsOptions } from 'cors';
-import { CORS_ORIGINS, IN_DEV } from './config';
+import { CORS_ORIGINS, IN_DEV, TRUST_PROXY_HOPS } from './config';
 import { appConstants } from './constants';
 import { domainRouterWithLogger } from './middleware';
 
@@ -25,7 +25,7 @@ export function buildCorsOptions(allowedOrigins: string[] = CORS_ORIGINS, inDev:
 
 export function createApp(): Express {
     const app: Express = express();
-    app.set('trust proxy', true);
+    app.set('trust proxy', TRUST_PROXY_HOPS);
     app.disable('x-powered-by');
 
     app.use(cors(buildCorsOptions()));

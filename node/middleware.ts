@@ -11,7 +11,7 @@ export function domainRouterWithLogger(req: Request, res: Response, next: NextFu
     const now = new Date();
     const datetime = now.toLocaleDateString('en-CA', { timeZone: 'America/Edmonton' }) + ' ' +
         now.toLocaleTimeString('en-CA', { hour12: false, timeZone: 'America/Edmonton' });
-    const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'unknown';
+    const ip = req.ip || 'unknown'; // see TRUST_PROXY_HOPS; raw X-Forwarded-For can be spoofed
     const path = req.path;
     const host: string = req.hostname.toLowerCase();
 

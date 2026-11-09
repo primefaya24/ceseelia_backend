@@ -170,9 +170,13 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
     token isn't stored. The old keys are stripped from every request body. Updated
     `get-my-profile`, `update-profile`, `update-fcm-token` and the admin gate. Tests in
     `tests/http.test.ts`._
-- [ ] 🟡 **S.13 Make the client IP trustworthy.** Change `app.set('trust proxy', true)` to `1`
+- [x] 🟡 **S.13 Make the client IP trustworthy.** Change `app.set('trust proxy', true)` to `1`
       (one nginx hop), and have `getClientIp` use `req.ip` instead of the raw `cf-connecting-ip` /
       `x-forwarded-for` headers, which clients can spoof. Rate limiting (9.2) depends on this.
+  - _Done 2026-11-08, tested by hand. `trust proxy` is `TRUST_PROXY_HOPS` (env, default
+    1 = nginx). `getClientIp` and the request logger use `req.ip`; `cf-connecting-ip` is no longer
+    read (no Cloudflare in front). **When CloudFront goes in front (3.2), set
+    `TRUST_PROXY_HOPS=2`.** Tests in `tests/client-ip.test.ts`._
 - [ ] 🟡 **S.14 Security headers:** add `helmet`. In nginx, add `server_tokens off`, HSTS,
       `ssl_protocols TLSv1.2 TLSv1.3`, and pin `nginx:<version>` in compose.
 - [ ] 🟡 **S.15 Harden the Docker image:** `npm ci --omit=dev`, run as the non-root `node` user,

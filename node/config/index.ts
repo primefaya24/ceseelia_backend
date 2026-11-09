@@ -44,6 +44,9 @@ export const ALLOWED_API_HOSTS: string[] = envList("ALLOWED_API_HOSTS", ["api.ce
     .map((h) => h.toLowerCase());
 // Browser origins allowed by CORS. Empty in dev = reflect any origin. Required in prod.
 export const CORS_ORIGINS: string[] = envList("CORS_ORIGINS");
+// Proxies in front of the API (nginx = 1). Express then derives req.ip from X-Forwarded-For
+// counting only that many trusted hops, so a client-sent header can't fake the IP.
+export const TRUST_PROXY_HOPS: number = envNumber("TRUST_PROXY_HOPS", 1);
 
 /*
 * DynamoDB

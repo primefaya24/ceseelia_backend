@@ -574,61 +574,21 @@ export function extractStorePromoImageUris(
   return promoUris;
 }
 
-export function getClientIp(req: Request | ExpressRequest): string | undefined {
+/*
+ * The client's IP, as Express derives it from the trusted proxy hops (TRUST_PROXY_HOPS in
+ * config). Raw headers like X-Forwarded-For or CF-Connecting-IP are never read directly: a client
+ * can set them to anything. In dev, returns a fixed test IP so geo lookups have something real.
+ */
+export function getClientIp(req: ExpressRequest): string | undefined {
   if (IN_DEV) {
     return appConstants.TEST_IPS_AU[2];
   }
-  const getHeaderValue = (headerName: string): string | undefined => {
-    const domHeaders = (req as Request).headers;
-    if (domHeaders && typeof (domHeaders as any).get === "function") {
-      const domValue = (domHeaders as Headers).get(headerName);
-      if (domValue) {
-        return domValue;
-      }
-    }
-
-    const expressReq = req as ExpressRequest;
-    if (typeof expressReq?.header === "function") {
-      const expressValue = expressReq.header(headerName);
-      if (expressValue) {
-        return expressValue;
-      }
-    }
-
-    const expressHeaders = expressReq?.headers;
-    if (expressHeaders) {
-      const loweredName = headerName.toLowerCase();
-      const rawHeader =
-        expressHeaders[loweredName] ?? expressHeaders[headerName];
-      if (Array.isArray(rawHeader)) {
-        return rawHeader[0];
-      }
-      if (typeof rawHeader === "string") {
-        return rawHeader;
-      }
-    }
-
+  const ip = req.ip;
+  if (!ip) {
     return undefined;
-  };
-
-  const cfConnectingIp = getHeaderValue("cf-connecting-ip");
-  if (cfConnectingIp) {
-    return cfConnectingIp;
   }
-
-  const forwardedFor = getHeaderValue("x-forwarded-for");
-  if (forwardedFor) {
-    const forwardedIp = forwardedFor.split(",")[0]?.trim();
-    if (forwardedIp) {
-      return forwardedIp;
-    }
-  }
-
-  const requestWithSocket = req as ExpressRequest & {
-    socket?: { remoteAddress?: string };
-  };
-
-  return requestWithSocket.socket?.remoteAddress;
+  // IPv4 clients on a dual-stack socket show up as "::ffff:1.2.3.4".
+  return ip.startsWith("::ffff:") ? ip.slice("::ffff:".length) : ip;
 }
 
 export function resolveCurrencyFromGeo(geo: geoip.Lookup | null): string {
