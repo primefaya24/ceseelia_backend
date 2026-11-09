@@ -27,8 +27,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > done too (WA 2.6 has a price box per currency), and 2.6 (stock rule: `-1` unlimited, `0`
 > sold out). **Stage 2 is done** in both repos (WA 2.7–2.8 too). **Next: Stage 3**
 > (3.1–3.4 done except 3.2b CloudFront; WA 3.3b uses contact-store). 4.1 (`priceLines`) is
-> done: biggest discount wins. **Next: 4.3** `POST /customer/quote` (WA 4.4 waits on it), or
-> 4.2 (tax and delivery settings) first so the quote has them.
+> done: biggest discount wins, and 4.3 `POST /customer/quote` uses it. **Next: WA 4.4** (cart
+> totals from the quote), or 4.2 (tax and delivery settings, then add them to the quote).
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -51,7 +51,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging`; SES production access for contact-store; contact-store's in-memory rate limits need a shared store with >1 instance |
 
-**Health check (2026-11-09):** `npm test` 523/523 passing · `npm run typecheck` clean ·
+**Health check (2026-11-09):** `npm test` 536/536 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 79 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -498,8 +498,17 @@ match the backend and webapp._
     delivery are 4.2)._
 - [ ] 4.2 Tax and delivery settings: extend `StoreSettings.general` (`taxRate`, pickup/delivery
       flags, delivery fee/zones), `initStoreSettings` and the validators. (WA 4.4)
-- [ ] 4.3 `POST /customer/quote` (public, rate-limited) returns validated lines, totals and errors
+- [x] 4.3 `POST /customer/quote` (public, rate-limited) returns validated lines, totals and errors
       per line. (WA 4.3)
+  - _Done 2026-11-09, tested by hand. Body `{storeId, currency, lines: [{itemId,
+    quantity, params?: [{label, values}]}]}`; runs `priceLines` (4.1) on the store's public data
+    (`getPublicStoreInventoryData`), so hidden items and categories and currencies the store
+    doesn't offer are never priced. Always 200 with the quote (line problems in `lines[i].error`,
+    `error: CURRENCY_NOT_OFFERED`, `ok`); the currency is upper-cased. 400 for a malformed body:
+    over 50 lines (`MAX_COUNT.cartLines`), over 10 params or 30 values, labels/values over 40
+    characters, wrong types. The store's 404s; `Cache-Control: no-store`; 60 per IP per minute →
+    429 `RATE_LIMITED` + `Retry-After` (in memory, like contact-store). Checked live on dev
+    (2 × Pink Slay = 13000, unknown item → `ITEM_NOT_FOUND`). No tax or delivery yet (4.2)._
 
 ---
 
@@ -592,6 +601,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 4.3 done: `POST /customer/quote` (public, 60/IP/min, ≤ 50 lines) prices a cart with `priceLines` on the store's public data. |
 | 2026-11-09 | 4.1 done: pure `priceLines` (biggest discount wins, per-line half-up rounding, param/stock/currency checks with per-line errors). |
 | 2026-11-09 | 3.2a/3.3/3.4 done: cache headers (+ immutable images), `GET /store/public/item/:storeId/:itemId`, `POST /customer/contact-store` (honeypot, rate limits, Reply-To). |
 | 2026-11-09 | 3.1 done: `GET /store/public/storefront/:slug` (slug lookup + public data, with `storeId`); the shopper's currency is the default only if the store offers it. |

@@ -56,6 +56,8 @@ export const MAX_COUNT = {
   categoryHashtags: 30,
   promoImages: 10,
   currencies: 3,
+  // A quote's lines (4.3); the webapp's cart holds at most the same 50
+  cartLines: 50,
 } as const;
 
 /* Currencies a store may use. Matches STORE_CURRENCY_CODE in both repos. */
