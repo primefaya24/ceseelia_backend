@@ -62,9 +62,16 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
         Credentials. It stays readable in git history, so it must be revoked, not just deleted.
 - [ ] 🔴 **S.2 Rotate the old password** that used to be in `node/README.md`. It's still in git
       history (manual step, carried over from Stage 0).
-- [ ] 🟠 **S.3 Patch dependencies:** `npm audit fix`, re-run tests. Remove unused deps
+- [x] 🟠 **S.3 Patch dependencies:** `npm audit fix`, re-run tests. Remove unused deps
       (`axios`, `jwt-decode`, `mustache-express`, `nodemailer`, `https`, `cookie-parser` if
       unused). Fewer deps means less attack surface.
+  - _Done 2026-11-08, tested by hand. Removed `axios`, `cookie-parser` (+ types),
+    `https`, `mustache-express`, `nodemailer` (and the unused Diner's Xpress
+    `sendWooInvoiceEmail` + template that was its only user). `npm audit fix`, then
+    `geoip-lite` 1 → 2 (fixes the high `ip-address` advisory; needs Node ≥ 24), so the Docker
+    image moves from `node:20-alpine` (end of life) to `node:24-alpine`. Audit: 53 (3 critical,
+    10 high) → 10 moderate, all `minimatch` in dev tooling (eslint, typescript-eslint, nodemon).
+    `jwt-decode` stays: the legacy Cognito helpers in S.16a still use it; drop it with them._
 
 ### S.B — Request validation & data integrity
 - [ ] 🟠 **S.4 ID validation helper.** Add `isUlid(id)` and use it in `pureRequestParams` for every

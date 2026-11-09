@@ -10,7 +10,7 @@ stage usually touches both repos.
 
 ## 1. Stack & layout
 
-- Node 20, TypeScript (CommonJS, `strict`), Express 5
+- Node 24, TypeScript (CommonJS, `strict`), Express 5
 - AWS: DynamoDB (single table), Cognito (auth), S3 (images via presigned URLs), SES (email),
   Secrets Manager, Route53; Stripe SDK installed but not wired up
 - Deployed as Docker containers on EC2: `node` (port 3100) behind `nginx` (TLS via certbot)

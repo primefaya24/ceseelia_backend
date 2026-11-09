@@ -1,5 +1,4 @@
 import express, { Express } from 'express';
-import cookieParser from 'cookie-parser';
 import cors, { CorsOptions } from 'cors';
 import { CORS_ORIGINS, IN_DEV } from './config';
 import { appConstants } from './constants';
@@ -29,7 +28,6 @@ export function createApp(): Express {
     app.set('trust proxy', true);
     app.disable('x-powered-by');
 
-    app.use(cookieParser());
     app.use(cors(buildCorsOptions()));
 
     // Stripe webhook (needs the raw body, so it must be registered before express.json()).
