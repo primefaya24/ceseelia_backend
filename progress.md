@@ -266,7 +266,7 @@ match the backend and webapp._
 - [x] c. Turn a pending invite into a membership on registration (1.1)
 - [x] d. `DELETE /admin/remove-store-member/:storeId/:userId`
 - [x] e. Tests. (WA 1.4)
-  - _Done 2026-11-09; checked against the dev table, to be tested by hand through WA 1.4. Invites are two rows (`STORE#…/INVITE#<email>` and
+  - _Done 2026-11-09, tested by hand through WA 1.4 (invite → sign-up → lands on the store). Invites are two rows (`STORE#…/INVITE#<email>` and
     `INVITE#<email>/STORE#…`); re-inviting replaces the invite, so it doubles as "resend". c is
     done in `get-my-profile` (owner's choice; the CloudFormation Lambda is untouched): every
     pending invite for the profile's verified email becomes a membership, one transaction per
