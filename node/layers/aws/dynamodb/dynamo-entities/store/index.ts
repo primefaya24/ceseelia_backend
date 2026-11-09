@@ -360,3 +360,55 @@ export async function updateStoreSettings(
     throw e;
   }
 }
+
+////////////////////////////////////////
+// Admin-only settings (progress.md 1.6)
+////////////////////////////////////////
+export type StoreAdminSettings = StoreSettings["admin"];
+
+const defaultAdminSettings = (): StoreAdminSettings => ({ ...initStoreSettings().admin });
+
+/* The store's admin block (platform commission, store live), or null if there's no such store. */
+export async function getStoreAdminSettings(storeId: string): Promise<StoreAdminSettings | null> {
+  const res = await dynamoDbDocumentClient.send(
+    new GetCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: { pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId, sk: appConstants.DYNAMO_ENTITY_SETTINGS },
+      ProjectionExpression: "#pk, #admin",
+      ExpressionAttributeNames: { "#pk": "pk", "#admin": "admin" },
+    })
+  );
+  if (!res.Item) return null;
+  return { ...defaultAdminSettings(), ...(res.Item.admin ?? {}) };
+}
+
+/* Replace the admin block. Only the admin route calls this; merchants' update-settings never does. */
+export async function updateStoreAdminSettings(
+  storeId: string,
+  admin: StoreAdminSettings
+): Promise<StoreAdminSettings> {
+  const value: StoreAdminSettings = { salesCommission: admin.salesCommission, isStoreLive: admin.isStoreLive };
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        Key: { pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId, sk: appConstants.DYNAMO_ENTITY_SETTINGS },
+        UpdateExpression: "SET #admin = :admin",
+        ExpressionAttributeNames: { "#admin": "admin" },
+        ExpressionAttributeValues: { ":admin": value },
+        ConditionExpression: "attribute_exists(pk)",
+      })
+    );
+  } catch (e) {
+    if (isConditionalCheckFailure(e)) throw new StoreRecordNotFoundError("Store");
+    throw e;
+  }
+  return value;
+}
+
+/* The same data without the admin block, for merchants and the public storefront. */
+export function withoutAdminSettings(data: StoreInventoryData): StoreInventoryData {
+  const { admin: _admin, ...settings } = data.settings;
+  return { ...data, settings: settings as StoreSettings };
+}
+

@@ -1,10 +1,10 @@
 // Imports
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
-import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
+import { getAuth, validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
-import { getStoreInventoryData } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { getStoreInventoryData, withoutAdminSettings } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { isUlid } from "../../../../../layers/core/utils";
 dotenv.config();
 
@@ -44,11 +44,12 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Fetch data
     const storeId = req.params["storeId"];
 
-    // Fetch store inventory data
+    // Fetch store inventory data. The admin block (commission, store live) is for admins only
+    // (progress.md 1.6); they edit it in Admin › Stores.
     const storeInventoryData = await getStoreInventoryData(storeId);
 
     // Respond to user
-    res.send(storeInventoryData);
+    res.send(getAuth(res).isAdmin ? storeInventoryData : withoutAdminSettings(storeInventoryData));
   } catch (e) {
     if (IN_DEV) {
       console.error(e);

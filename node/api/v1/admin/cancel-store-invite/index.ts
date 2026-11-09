@@ -4,7 +4,7 @@ import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { isUlid } from "../../../../layers/core/utils";
 import { isEmailOrEmpty } from "../../../../layers/core/utils/validation";
 import { cancelStoreInvite } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
-import { sendMembershipError, sendServerError } from "../membership-errors";
+import { sendMembershipError, sendServerError } from "../route-errors";
 
 /*
  * DELETE /admin/cancel-store-invite/:storeId/:email (admin, progress.md 1.4). Email URL-encoded.

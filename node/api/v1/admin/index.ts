@@ -8,6 +8,8 @@ import route_get_store_members from './get-store-members/index';
 import route_assign_store_member from './assign-store-member/index';
 import route_remove_store_member from './remove-store-member/index';
 import route_cancel_store_invite from './cancel-store-invite/index';
+import route_get_store_admin_settings from './get-store-admin-settings/index';
+import route_update_store_admin_settings from './update-store-admin-settings/index';
 dotenv.config();
 
 // User Router
@@ -21,5 +23,7 @@ route_get_store_members(adminRouter);
 route_assign_store_member(adminRouter);
 route_remove_store_member(adminRouter);
 route_cancel_store_invite(adminRouter);
+route_get_store_admin_settings(adminRouter);
+route_update_store_admin_settings(adminRouter);
 // Export Router
 export default adminRouter;

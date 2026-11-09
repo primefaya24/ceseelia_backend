@@ -2,7 +2,7 @@ import { Request, Response, Router } from "express";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { isUlid } from "../../../../layers/core/utils";
 import { removeStoreMember } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
-import { sendMembershipError, sendServerError } from "../membership-errors";
+import { sendMembershipError, sendServerError } from "../route-errors";
 
 /*
  * DELETE /admin/remove-store-member/:storeId/:userId (admin, progress.md 1.4d)

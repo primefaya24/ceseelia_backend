@@ -4,7 +4,7 @@ import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
 import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
-import { getStoreInventoryData } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { getStoreInventoryData, withoutAdminSettings } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import geoip from "geoip-lite";
 import {
   getClientIp,
@@ -68,8 +68,8 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         }));
     }
 
-    // Respond to user
-    res.send(storeInventoryData);
+    // Respond to user, without the admin block (platform commission is not public; 1.6)
+    res.send(withoutAdminSettings(storeInventoryData));
   } catch (e) {
     if (IN_DEV) {
       console.error(e);

@@ -7,7 +7,7 @@ import {
   listStoreInvites,
   listStoreMembers,
 } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
-import { sendServerError } from "../membership-errors";
+import { sendServerError } from "../route-errors";
 
 /*
  * GET /admin/get-store-members/:storeId (admin, progress.md 1.4a)

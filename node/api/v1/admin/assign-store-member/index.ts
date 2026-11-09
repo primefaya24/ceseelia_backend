@@ -15,7 +15,7 @@ import {
   STORE_ROLES,
   StoreRole,
 } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
-import { sendMembershipError, sendServerError } from "../membership-errors";
+import { sendMembershipError, sendServerError } from "../route-errors";
 
 /*
  * POST /admin/assign-store-member (admin, progress.md 1.4b)

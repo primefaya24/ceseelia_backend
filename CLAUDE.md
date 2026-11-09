@@ -133,7 +133,7 @@ export default function registerRoute(router: Router): void {
 |---|---|---|
 | Store | `POST /store/create` (admin) | ✅ creates overview + default settings |
 | Store | `DELETE /store/delete/:storeId` | ❌ stub — does nothing |
-| Store | `PUT /store/update-settings` | ✅ validates, saves (awaited), then cleans logo/header/promo S3 leaks (`admin` block **not** persisted) |
+| Store | `PUT /store/update-settings` | ✅ validates, saves (awaited), then cleans logo/header/promo S3 leaks (never writes the `admin` block) |
 | Store | `GET /store/get-logo-upload-url/:storeId/:imageType` | ✅ |
 | Store | `GET /store/get-header-strip-image-upload-url/:storeId/:imageType` | ✅ |
 | Store | `GET /store/get-promo-image-upload-urls/:storeId/:pngCount/:jpgCount` | ✅ |
@@ -148,6 +148,7 @@ export default function registerRoute(router: Router): void {
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug) | ✅ |
 | Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
+| Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, salesCommission, isStoreLive}` | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
 | Admin | `POST /admin/assign-store-member` `{storeId, email, role?}` | ✅ existing account → member now (`ADDED`); no account → pending invite + SES email (`INVITED`, `emailSent`); 409 `ALREADY_MEMBER` |
 | Admin | `DELETE /admin/remove-store-member/:storeId/:userId`, `DELETE /admin/cancel-store-invite/:storeId/:email` | ✅ 404 `NOT_A_MEMBER` / `NOT_INVITED` |
 | User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |
@@ -170,8 +171,8 @@ Open:
    Fine for now; cache or put the user id in a token claim if it shows up in latency.
 3. The password that used to be in `node/README.md` is still in **git history** — make sure it has
    been rotated (S.2).
-4. `updateStoreSettings` ignores `storeSettings.admin`, so the admin's commission/“store live”
-   toggles in the UI never save. → Stage 1.6
+4. `isStoreLive` is saved but nothing acts on it yet: a suspended store's public page still
+   loads. → Stage 2.4
 5. `updateStoreCategory` resets `storeCategoryItemCount` to 0 on every save. → Stage 2.1
 6. Deleting a category leaves its items orphaned; deleting a store is unimplemented. → 2.2 / 1.7
 7. Upload-URL routes don't cap the requested image counts or file sizes. → Stage 2.3

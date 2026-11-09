@@ -281,9 +281,14 @@ match the backend and webapp._
       stores plus headline counters from `StoreOverview`. (WA 1.2)
 
 ### 1.6 Admin-only store settings
-- [ ] a. `PUT /admin/update-store-admin-settings` (`salesCommission` ≥ 0, `isStoreLive`).
-- [ ] b. Keep `admin` out of the merchant `update-settings` (already ignored) and the merchant
+- [x] a. `PUT /admin/update-store-admin-settings` (`salesCommission` ≥ 0, `isStoreLive`).
+- [x] b. Keep `admin` out of the merchant `update-settings` (already ignored) and the merchant
       `get-data` response. (WA 1.5)
+  - _Done 2026-11-09, tested by hand. Also `GET /admin/get-store-admin-settings/:storeId`
+    (the admin UI needs the current values; defaults for stores saved without the block).
+    `withoutAdminSettings` strips the block from merchant `get-data` **and from
+    `get-data-public`, which was sending the platform commission to anyone**. Tests in
+    `tests/admin-store-settings.test.ts`._
 
 ### 1.7 Store delete (admin)
 - [ ] a. Query and batch-delete every `STORE#<id>` item (settings, categories, items, members,
@@ -441,6 +446,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 1.6 done: admin-only store settings routes; `admin` block hidden from merchants and the public storefront (it was public). |
 | 2026-11-09 | 1.4 done: admin member routes (list, assign by email or invite, remove, cancel invite); invites claimed on first profile load. |
 | 2026-11-08 | 1.3 done: store-member check on every `/store/**` route (admin bypass); S.0 lockdown removed. |
 | 2026-11-08 | 1.2 done: membership rows (`STORE#…/MEMBER#…` + `USER#…/STORE#…`) and helpers; `get-my-profile` returns `stores`. |
