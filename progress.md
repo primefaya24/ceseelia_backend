@@ -115,8 +115,11 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
     mutated. `createStore` / `registerUser` already pass errors on, so a failed write is now a
     500 instead of a false success. Batches aren't atomic: ones written before a failure stay.
     Tests in `tests/dynamo-batch.test.ts`._
-- [ ] 🟠 **S.8 Paginate `getStoreInventoryData`.** Queries stop at 1 MB, so a large store silently
+- [x] 🟠 **S.8 Paginate `getStoreInventoryData`.** Queries stop at 1 MB, so a large store silently
       loses categories and items. Loop on `LastEvaluatedKey`, as `getAllStores` already does.
+  - _Done 2026-11-08, tested by hand. New `queryAllWithPrefix` in the store entity
+    follows `LastEvaluatedKey`; categories and items both use it. Tests in
+    `tests/store-inventory.test.ts`._
 - [ ] 🟡 **S.9 Tighten the validators** (`layers/core/interfaces/store`):
   - _Use the same limits as the webapp (WA S.15, 2026-11-08):
     `ceseelia_webapp/src/app/core/constants/input-limits.constants.ts` for lengths and ranges,

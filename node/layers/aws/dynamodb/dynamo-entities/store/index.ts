@@ -262,29 +262,37 @@ export async function deleteStoreCategory(
   }
 }
 
+/*
+ * Every row under `pk` whose sort key starts with `skPrefix`. A query returns at most 1 MB, so
+ * keep following LastEvaluatedKey until there are no more pages.
+ */
+async function queryAllWithPrefix(
+  pk: string,
+  skPrefix: string
+): Promise<Record<string, any>[]> {
+  const records: Record<string, any>[] = [];
+  let ExclusiveStartKey: Record<string, any> | undefined;
+  do {
+    const result = await dynamoDbDocumentClient.send(
+      new QueryCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        KeyConditionExpression: "#pk = :pk and begins_with(#sk, :sk_prefix)",
+        ExpressionAttributeNames: { "#pk": "pk", "#sk": "sk" },
+        ExpressionAttributeValues: { ":pk": pk, ":sk_prefix": skPrefix },
+        ExclusiveStartKey,
+      })
+    );
+    records.push(...(result.Items ?? []));
+    ExclusiveStartKey = result.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return records;
+}
+
 export async function getStoreInventoryData(
   storeId: string
 ): Promise<StoreInventoryData> {
   try {
     const storePk = appConstants.DYNAMO_ENTITY_STORE + "#" + storeId;
-    const categoriesCommand = new QueryCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      KeyConditionExpression: "#pk = :pk and begins_with(#sk, :sk_prefix)",
-      ExpressionAttributeNames: { "#pk": "pk", "#sk": "sk" },
-      ExpressionAttributeValues: {
-        ":pk": storePk,
-        ":sk_prefix": appConstants.DYNAMO_ENTITY_CATEGORY + "#",
-      },
-    });
-    const itemsCommand = new QueryCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      KeyConditionExpression: "#pk = :pk and begins_with(#sk, :sk_prefix)",
-      ExpressionAttributeNames: { "#pk": "pk", "#sk": "sk" },
-      ExpressionAttributeValues: {
-        ":pk": storePk,
-        ":sk_prefix": "ITEM#",
-      },
-    });
     const settingsCommand = new GetCommand({
       TableName: DEFAULT_TABLE_NAME,
       Key: {
@@ -293,19 +301,19 @@ export async function getStoreInventoryData(
       },
     });
 
-    const [categoriesResult, itemsResult, settingsResult] = await Promise.all([
-      dynamoDbDocumentClient.send(categoriesCommand),
-      dynamoDbDocumentClient.send(itemsCommand),
+    const [categoryRecords, itemRecords, settingsResult] = await Promise.all([
+      queryAllWithPrefix(storePk, appConstants.DYNAMO_ENTITY_CATEGORY + "#"),
+      queryAllWithPrefix(storePk, appConstants.DYNAMO_ENTITY_ITEM + "#"),
       dynamoDbDocumentClient.send(settingsCommand),
     ]);
 
-    const categories: StoreCategory[] = (categoriesResult.Items ?? []).map(
+    const categories: StoreCategory[] = categoryRecords.map(
       (record) => {
         const { pk: _pk, sk: _sk, ...rest } = record;
         return rest as StoreCategory;
       }
     );
-    const items: StoreItem[] = (itemsResult.Items ?? []).map((record) => {
+    const items: StoreItem[] = itemRecords.map((record) => {
       const { pk: _pk, sk: _sk, ...rest } = record;
       return rest as StoreItem;
     });
