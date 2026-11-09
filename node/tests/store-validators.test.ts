@@ -10,6 +10,7 @@ import {
   isStoreItemValid,
   isStoreSettingsPure,
   isStoreSettingsValid,
+  fulfilmentSettings,
   isUnlimitedStock,
   StoreCategory,
   StoreItem,
@@ -279,5 +280,44 @@ describe("stock rule (2.6)", () => {
     expect(hasStockFor(5, 1.5)).toBe(false);
     expect(hasStockFor(-2, 1)).toBe(false);
     expect(hasStockFor(2.5, 1)).toBe(false);
+  });
+});
+
+describe("f. tax and fulfilment (4.2)", () => {
+  it("settings saved before 4.2 (no new fields) still pass, with the defaults", () => {
+    const old = settings((s) => {
+      s.general = { pickupAddress: "", discountPercent: 0, isOnline: false };
+    });
+    expect(settingsOk(old)).toBe(true);
+    expect(fulfilmentSettings(old.general)).toEqual({
+      taxPercent: 0,
+      pricesIncludeTax: false,
+      pickupEnabled: true,
+      deliveryEnabled: false,
+      deliveryFees: {},
+    });
+  });
+
+  it("accepts tax 0–30% (decimals too) and delivery with a fee for every offered currency", () => {
+    expect(settingsOk(settings((s) => Object.assign(s.general, { taxPercent: 8.875, pricesIncludeTax: false })))).toBe(true);
+    expect(settingsOk(settings((s) => Object.assign(s.general, { taxPercent: 30 })))).toBe(true);
+    expect(settingsOk(settings((s) => Object.assign(s.general, { deliveryEnabled: true, deliveryFees: { USD: 0 } })))).toBe(true);
+    // Delivery only, with a fee also kept for a currency not offered right now
+    expect(settingsOk(settings((s) => Object.assign(s.general, { pickupEnabled: false, deliveryEnabled: true, deliveryFees: { USD: 500, AUD: 700 } })))).toBe(true);
+  });
+
+  it.each([
+    ["tax over 30%", { taxPercent: 31 }],
+    ["negative tax", { taxPercent: -1 }],
+    ["tax as text", { taxPercent: "8" }],
+    ["neither pickup nor delivery", { pickupEnabled: false, deliveryEnabled: false }],
+    ["delivery without a fee for USD", { deliveryEnabled: true, deliveryFees: {} }],
+    ["a fractional fee", { deliveryEnabled: true, deliveryFees: { USD: 4.5 } }],
+    ["a negative fee", { deliveryFees: { USD: -1 } }],
+    ["an unknown currency's fee", { deliveryFees: { EUR: 100 } }],
+    ["fees that aren't an object", { deliveryFees: [100] }],
+    ["a non-boolean flag", { pricesIncludeTax: "yes" }],
+  ])("refuses %s", (_n, patch) => {
+    expect(settingsOk(settings((s) => Object.assign(s.general, patch)))).toBe(false);
   });
 });

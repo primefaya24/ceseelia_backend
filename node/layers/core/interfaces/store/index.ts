@@ -125,6 +125,18 @@ export interface StoreSettings {
     pickupAddress: string;
     discountPercent: number;
     isOnline: boolean;
+    /*
+     * Tax and fulfilment (4.2). Optional: settings saved before 4.2 don't have them, so read
+     * them through `fulfilmentSettings`, which fills in the defaults.
+     */
+    /** 0–30; 0 = no tax line. */
+    taxPercent?: number;
+    /** Prices already include the tax (e.g. GST in Australia): the quote shows it, adds nothing. */
+    pricesIncludeTax?: boolean;
+    pickupEnabled?: boolean;
+    deliveryEnabled?: boolean;
+    /** Flat delivery fee per currency, minor units, like item prices (0 = free). */
+    deliveryFees?: StoreItemPrices;
   };
 
   // Admin
@@ -174,6 +186,11 @@ export function initStoreSettings(): StoreSettings {
       pickupAddress: "",
       discountPercent: 0,
       isOnline: false,
+      taxPercent: 0,
+      pricesIncludeTax: false,
+      pickupEnabled: true,
+      deliveryEnabled: false,
+      deliveryFees: {},
     },
 
     // Admin
@@ -228,7 +245,12 @@ export function isStoreSettingsPure(storeSettings: StoreSettings): boolean {
     !isObject(g) ||
     typeof g.pickupAddress !== "string" ||
     !isFiniteNumber(g.discountPercent) ||
-    typeof g.isOnline !== "boolean"
+    typeof g.isOnline !== "boolean" ||
+    (g.taxPercent !== undefined && !isFiniteNumber(g.taxPercent)) ||
+    (g.pricesIncludeTax !== undefined && typeof g.pricesIncludeTax !== "boolean") ||
+    (g.pickupEnabled !== undefined && typeof g.pickupEnabled !== "boolean") ||
+    (g.deliveryEnabled !== undefined && typeof g.deliveryEnabled !== "boolean") ||
+    (g.deliveryFees !== undefined && !isObject(g.deliveryFees))
   ) return false;
 
   if (s.customize !== undefined && !isObject(s.customize)) return false;
@@ -304,8 +326,42 @@ export function isStoreSettingsValid(storeSettings: StoreSettings, storeId: stri
   // General
   if (!isMaxLength(s.general.pickupAddress, MAX_LENGTH.pickupAddress)) return false;
   if (!isInRange(s.general.discountPercent, NUMBER_RANGE.percent)) return false;
+  if (!isFulfilmentValid(s)) return false;
 
   return isStoreCustomizeValid(s, storeId);
+}
+
+/*
+ * Tax and fulfilment, with 4.2's defaults filled in for settings saved before 4.2. Read these
+ * fields through here, never straight off `general`.
+ */
+export function fulfilmentSettings(general: Partial<StoreSettings["general"]> | undefined) {
+  return {
+    taxPercent: general?.taxPercent ?? 0,
+    pricesIncludeTax: general?.pricesIncludeTax ?? false,
+    pickupEnabled: general?.pickupEnabled ?? true,
+    deliveryEnabled: general?.deliveryEnabled ?? false,
+    deliveryFees: (general?.deliveryFees ?? {}) as StoreItemPrices,
+  };
+}
+
+/*
+ * 4.2: tax 0–30%; pickup or delivery (at least one); with delivery on, a whole, in-range fee for
+ * every currency the store offers. Fees for other known currencies are allowed (a currency can
+ * be removed and added back).
+ */
+function isFulfilmentValid(s: StoreSettings): boolean {
+  const f = fulfilmentSettings(s.general);
+  if (!isInRange(f.taxPercent, NUMBER_RANGE.taxPercent)) return false;
+  if (!f.pickupEnabled && !f.deliveryEnabled) return false;
+  for (const [code, fee] of Object.entries(f.deliveryFees)) {
+    if (!(CURRENCY_CODES as readonly string[]).includes(code)) return false;
+    if (!Number.isInteger(fee) || !isInRange(fee as number, NUMBER_RANGE.priceMinor)) return false;
+  }
+  if (f.deliveryEnabled && !s.currencies.every((c) => Number.isInteger(f.deliveryFees[c.currencyCode as keyof StoreItemPrices]))) {
+    return false;
+  }
+  return true;
 }
 
 /*

@@ -155,7 +155,7 @@ export default function registerRoute(router: Router): void {
 | Public | `GET /store/public/resolve-slug/:slug` → `{storeId}` (404 if unknown) | ✅ |
 | Public | `GET /store/public/storefront/:slug` → `{storeId, settings, categories, items}` (no auth) | ✅ same body as `get-data-public` (`sendPublicStorefront`); 400 bad slug, 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (3.1); `Cache-Control: private, max-age=30` (3.2) |
 | Public | `GET /store/public/item/:storeId/:itemId` → `{storeId, item, category, currencies}` (no auth) | ✅ storefront rules; 404 `ITEM_NOT_FOUND` for missing or hidden (3.3) |
-| Customer | `POST /customer/quote` `{storeId, currency, lines:[{itemId, quantity, params?}]}` (no auth) | ✅ always 200 with `priceLines`' quote (per-line errors, `ok`); 400 malformed / > 50 lines; 60/IP/min → 429 (4.3) |
+| Customer | `POST /customer/quote` `{storeId, currency, fulfilment?, lines:[{itemId, quantity, params?}]}` (no auth) | ✅ always 200 with `priceLines`' quote (per-line errors, delivery, tax, `ok`); 400 malformed / > 50 lines; 60/IP/min → 429 (4.3, 4.2) |
 | Customer | `POST /customer/contact-store` `{storeId, name, email, message, website}` (no auth) | ✅ SES to the store, customer as Reply-To; honeypot; 5/IP/10 min + 30/store/h → 429; 409 `CONTACT_UNAVAILABLE` (3.4) |
 | Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
 | Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, salesCommission, isStoreLive}` | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
@@ -266,8 +266,10 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     and errors (out of stock, inactive item, invalid mandatory params).
 4.2 ✅ Single shared pricing function used by both `quote` and order creation (unit-tested):
     `priceLines` in `layers/core/pricing`. Biggest of item/category/store discount wins (no
-    stacking); line discount rounded half up per line.
-4.3 Tax & delivery configuration in store settings (`general.taxRate`, pickup/delivery options,
+    stacking); line discount rounded half up per line. Tax and delivery settings (4.2) are
+    optional on `general`: always read them through `fulfilmentSettings` (defaults for old
+    settings).
+4.3 ✅ Tax & delivery configuration in store settings (`general.taxRate`, pickup/delivery options,
     delivery fee/zones) — extend `StoreSettings` + `initStoreSettings` + validators.
 
 ### Stage 5 — Checkout, orders & payments

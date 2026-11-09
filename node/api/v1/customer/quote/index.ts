@@ -6,12 +6,14 @@ import { getPublicStoreInventoryData } from "../../../../layers/aws/dynamodb/dyn
 import { sendPublicError } from "../../../../layers/core/http/public-storefront";
 import { createRateLimiter } from "../../../../layers/core/http/rate-limit";
 import { CACHE_CONTROL, setCacheControl } from "../../../../layers/core/http/cache";
-import { priceLines, QuoteLineInput } from "../../../../layers/core/pricing";
+import { Fulfilment, priceLines, QuoteLineInput } from "../../../../layers/core/pricing";
 import { getClientIp, isUlid } from "../../../../layers/core/utils";
 
 /*
  * POST /customer/quote (public, no auth; progress.md 4.3 / WA 4.4)
- * Body { storeId, currency, lines: [{ itemId, quantity, params: [{ label, values }] }] }.
+ * Body { storeId, currency, fulfilment?: "PICKUP" | "DELIVERY",
+ *        lines: [{ itemId, quantity, params: [{ label, values }] }] }.
+ * Without `fulfilment` the store's first option (pickup, else delivery) is priced (4.2).
  * Prices the cart with `priceLines` (4.1) against the store's public data, so hidden items,
  * hidden categories and currencies the store doesn't offer are never priced. Always 200 with
  * the quote: line problems are in `lines[i].error`, a currency the store doesn't offer is
@@ -52,7 +54,13 @@ function isLinePure(l: unknown): boolean {
 
 function pureRequestParams(req: Request): boolean {
   const b = req.body;
-  return isString(b?.storeId) && isString(b?.currency) && Array.isArray(b?.lines) && b.lines.every(isLinePure);
+  return (
+    isString(b?.storeId) &&
+    isString(b?.currency) &&
+    (b.fulfilment === undefined || b.fulfilment === "PICKUP" || b.fulfilment === "DELIVERY") &&
+    Array.isArray(b?.lines) &&
+    b.lines.every(isLinePure)
+  );
 }
 
 /* Sizes only; what the items allow is priceLines' job (it answers per line). */
@@ -95,7 +103,11 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       quantity: l.quantity,
       params: l.params ?? [],
     }));
-    res.send(priceLines(store, lines, String(req.body.currency).toUpperCase()));
+    res.send(
+      priceLines(store, lines, String(req.body.currency).toUpperCase(), {
+        fulfilment: req.body.fulfilment as Fulfilment | undefined,
+      })
+    );
   } catch (e) {
     sendPublicError(res, e);
   }

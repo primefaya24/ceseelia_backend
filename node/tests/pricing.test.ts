@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   bestDiscount,
   checkParams,
+  includedTaxOf,
   percentOf,
   priceLines,
   PricingStore,
@@ -35,7 +36,9 @@ function item(id: string, patch: Partial<StoreItem> = {}): StoreItem {
   } as StoreItem;
 }
 
-function store(opts: { items?: StoreItem[]; categoryPercent?: number; storePercent?: number; categoryActive?: boolean } = {}): PricingStore {
+function store(
+  opts: { items?: StoreItem[]; categoryPercent?: number; storePercent?: number; categoryActive?: boolean; general?: object } = {}
+): PricingStore {
   const settings = initStoreSettings();
   return {
     settings: {
@@ -43,7 +46,7 @@ function store(opts: { items?: StoreItem[]; categoryPercent?: number; storePerce
         { currencyCode: "USD", currencySign: "$", currencyIsDefault: true },
         { currencyCode: "AUD", currencySign: "A$", currencyIsDefault: false },
       ] as never,
-      general: { ...settings.general, discountPercent: opts.storePercent ?? 0 },
+      general: { ...settings.general, discountPercent: opts.storePercent ?? 0, ...opts.general },
     },
     categories: [
       { ...initStoreCategory("CAT", "Drinks"), storeCategoryIsActive: opts.categoryActive ?? true, storeCategoryDiscountPercent: opts.categoryPercent ?? 0 },
@@ -181,5 +184,76 @@ describe("checkParams (4.1)", () => {
   it("a mandatory param with no real options can't block the line", () => {
     const empty: StoreParameter = { ...size, storeParamLabel: "Engraving", storeParamOptions: ["", " "] };
     expect(err([], [empty])).toBeNull();
+  });
+});
+
+describe("tax and fulfilment (4.2)", () => {
+  const deliver = { deliveryEnabled: true, deliveryFees: { USD: 500, AUD: 900 } };
+
+  it("defaults: pickup only, no tax; total is goods after discount", () => {
+    const q = priceLines(store(), [line("TEA", 2)], "USD");
+    expect(q).toMatchObject({
+      fulfilmentOptions: [{ method: "PICKUP", feeMinor: 0 }],
+      fulfilment: "PICKUP",
+      deliveryMinor: 0,
+      taxPercent: 0,
+      taxMinor: 0,
+      totalMinor: 2000,
+      ok: true,
+      error: null,
+    });
+  });
+
+  it("settings saved before 4.2 price as pickup with no tax", () => {
+    const s = store();
+    s.settings.general = { pickupAddress: "", discountPercent: 0, isOnline: false };
+    expect(priceLines(s, [line("TEA")], "USD")).toMatchObject({ fulfilment: "PICKUP", taxMinor: 0, totalMinor: 1000, ok: true });
+  });
+
+  it("delivery adds its fee in the quote's currency; pickup stays the default", () => {
+    const s = store({ general: deliver });
+    expect(priceLines(s, [line("TEA")], "USD").fulfilmentOptions).toEqual([
+      { method: "PICKUP", feeMinor: 0 },
+      { method: "DELIVERY", feeMinor: 500 },
+    ]);
+    expect(priceLines(s, [line("TEA")], "USD")).toMatchObject({ fulfilment: "PICKUP", totalMinor: 1000 });
+    expect(priceLines(s, [line("TEA")], "USD", { fulfilment: "DELIVERY" })).toMatchObject({ deliveryMinor: 500, totalMinor: 1500, ok: true });
+    expect(priceLines(s, [line("TEA")], "AUD", { fulfilment: "DELIVERY" })).toMatchObject({ deliveryMinor: 900, totalMinor: 2400 });
+  });
+
+  it("delivery-only stores default to delivery", () => {
+    const q = priceLines(store({ general: { ...deliver, pickupEnabled: false } }), [line("TEA")], "USD");
+    expect(q).toMatchObject({ fulfilmentOptions: [{ method: "DELIVERY", feeMinor: 500 }], fulfilment: "DELIVERY", totalMinor: 1500 });
+  });
+
+  it("no delivery fee when nothing in the cart can be bought", () => {
+    const q = priceLines(store({ general: deliver }), [line("NOPE")], "USD", { fulfilment: "DELIVERY" });
+    expect(q).toMatchObject({ deliveryMinor: 0, totalMinor: 0, ok: false });
+  });
+
+  it("a method the store doesn't offer: lines priced, quote not ok", () => {
+    const q = priceLines(store(), [line("TEA")], "USD", { fulfilment: "DELIVERY" });
+    expect(q).toMatchObject({ fulfilment: null, deliveryMinor: 0, totalMinor: 1000, ok: false, error: { code: "FULFILMENT_UNAVAILABLE" } });
+    expect(q.lines[0].error).toBeNull();
+    // Delivery is on but has no fee in this currency
+    const noAud = priceLines(store({ general: { deliveryEnabled: true, deliveryFees: { USD: 500 } } }), [line("TEA")], "AUD", { fulfilment: "DELIVERY" });
+    expect(noAud.error?.code).toBe("FULFILMENT_UNAVAILABLE");
+    expect(noAud.fulfilmentOptions).toEqual([{ method: "PICKUP", feeMinor: 0 }]);
+  });
+
+  it("tax on top: percent of goods after discount plus delivery, rounded once", () => {
+    const tea = item("TEA", { storeItemPrices: { USD: 999 }, storeItemDiscountPercent: 10 });
+    const q = priceLines(store({ items: [tea], general: { ...deliver, taxPercent: 8.875 } }), [line("TEA", 3)], "USD", { fulfilment: "DELIVERY" });
+    // goods 2997 − 300 discount = 2697, + 500 delivery = 3197; 8.875% = 283.73 → 284
+    expect(q).toMatchObject({ subtotalMinor: 2997, discountMinor: 300, deliveryMinor: 500, taxMinor: 284, totalMinor: 3481, pricesIncludeTax: false });
+  });
+
+  it("tax included: shows the tax inside the total and adds nothing", () => {
+    const q = priceLines(store({ general: { taxPercent: 10, pricesIncludeTax: true } }), [line("TEA", 11)], "USD");
+    // 11000 includes 10% GST: 11000 × 10 / 110 = 1000
+    expect(q).toMatchObject({ taxMinor: 1000, totalMinor: 11000, pricesIncludeTax: true });
+    expect(includedTaxOf(1000, 10)).toBe(91); // 90.909 → 91
+    expect(includedTaxOf(1001, 15)).toBe(131); // 130.565 → 131
+    expect(includedTaxOf(1000, 0)).toBe(0);
   });
 });

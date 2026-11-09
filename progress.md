@@ -27,8 +27,9 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > done too (WA 2.6 has a price box per currency), and 2.6 (stock rule: `-1` unlimited, `0`
 > sold out). **Stage 2 is done** in both repos (WA 2.7–2.8 too). **Next: Stage 3**
 > (3.1–3.4 done except 3.2b CloudFront; WA 3.3b uses contact-store). 4.1 (`priceLines`) is
-> done: biggest discount wins, and 4.3 `POST /customer/quote` uses it. **Next: WA 4.4** (cart
-> totals from the quote), or 4.2 (tax and delivery settings, then add them to the quote).
+> done: biggest discount wins, and 4.3 `POST /customer/quote` uses it, with 4.2's tax and
+> delivery. BE Stage 4 is complete (WA 4.4 shows the quote). **Next: Stage 5** (checkout,
+> starting with the 5.1 Stripe Connect decision).
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -51,7 +52,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging`; SES production access for contact-store; contact-store's in-memory rate limits need a shared store with >1 instance |
 
-**Health check (2026-11-09):** `npm test` 536/536 passing · `npm run typecheck` clean ·
+**Health check (2026-11-09):** `npm test` 557/557 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 79 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -496,8 +497,22 @@ match the backend and webapp._
     fails the whole quote (`CURRENCY_NOT_OFFERED`). Picks come back in the item's order. `ok`
     only when there are lines and all are fine. Totals: subtotal, discount, total (tax and
     delivery are 4.2)._
-- [ ] 4.2 Tax and delivery settings: extend `StoreSettings.general` (`taxRate`, pickup/delivery
+- [x] 4.2 Tax and delivery settings: extend `StoreSettings.general` (`taxRate`, pickup/delivery
       flags, delivery fee/zones), `initStoreSettings` and the validators. (WA 4.4)
+  - _Done 2026-11-09, tested by hand. `general` gains optional `taxPercent` (0–30,
+    decimals allowed), `pricesIncludeTax`, `pickupEnabled`, `deliveryEnabled` and `deliveryFees`
+    (a flat fee per currency in minor units, like item prices; 0 = free). Optional so settings
+    saved before 4.2 still pass; read them through `fulfilmentSettings` (defaults: no tax,
+    pickup on, delivery off). Validation: tax in range, pickup or delivery on, fees whole and in
+    range for known currencies, and with delivery on a fee for every offered currency.
+    `priceLines` and the quote now return `fulfilmentOptions`, `fulfilment` (the body's
+    `fulfilment: "PICKUP" | "DELIVERY"`, else the first option), `deliveryMinor`, `taxPercent`,
+    `pricesIncludeTax`, `taxMinor`; `error: FULFILMENT_UNAVAILABLE` (lines still priced) when the
+    chosen method isn't offered. Tax is on goods after discount plus delivery, rounded half up
+    once; when prices include tax it's the part inside (amount × r / (100 + r)) and adds
+    nothing. Delivery is charged only when some line can be bought. Delivery zones and
+    free-delivery thresholds are not done (a later step if merchants need them). Checked live:
+    the dev store (saved before 4.2) quotes as pickup with no tax._
 - [x] 4.3 `POST /customer/quote` (public, rate-limited) returns validated lines, totals and errors
       per line. (WA 4.3)
   - _Done 2026-11-09, tested by hand. Body `{storeId, currency, lines: [{itemId,
@@ -601,6 +616,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 4.2 done: tax rate (added or included), pickup/delivery with a flat fee per currency, in settings and in the quote. |
 | 2026-11-09 | 4.3 done: `POST /customer/quote` (public, 60/IP/min, ≤ 50 lines) prices a cart with `priceLines` on the store's public data. |
 | 2026-11-09 | 4.1 done: pure `priceLines` (biggest discount wins, per-line half-up rounding, param/stock/currency checks with per-line errors). |
 | 2026-11-09 | 3.2a/3.3/3.4 done: cache headers (+ immutable images), `GET /store/public/item/:storeId/:itemId`, `POST /customer/contact-store` (honeypot, rate limits, Reply-To). |

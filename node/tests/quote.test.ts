@@ -140,4 +140,16 @@ describe("POST /customer/quote (4.3)", () => {
     expect(res.body.code).toBe("RATE_LIMITED");
     expect(Number(res.headers["retry-after"])).toBeGreaterThan(0);
   });
+
+  it("prices delivery and tax from the store's settings, and accepts a fulfilment choice (4.2)", async () => {
+    const s = initStoreSettings();
+    liveStore({ general: { ...s.general, discountPercent: 0, taxPercent: 10, deliveryEnabled: true, deliveryFees: { USD: 500 } } });
+    const cake = { itemId: CAKE, quantity: 3 };
+    const pickup = await quote(body([cake]));
+    expect(pickup.body).toMatchObject({ fulfilment: "PICKUP", deliveryMinor: 0, taxMinor: 75, totalMinor: 824 });
+    const delivery = await quote(body([cake], { fulfilment: "DELIVERY" }));
+    expect(delivery.body).toMatchObject({ fulfilment: "DELIVERY", deliveryMinor: 500, taxMinor: 125, totalMinor: 1374, ok: true });
+    expect((await quote(body([cake], { fulfilment: "COURIER" }))).status).toBe(400);
+  });
 });
+

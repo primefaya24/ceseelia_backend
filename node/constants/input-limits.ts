@@ -38,6 +38,8 @@ export const MAX_QUANTITY_PER_LINE = 99;
 /* Numeric ranges (inclusive). */
 export const NUMBER_RANGE = {
   percent: { min: 0, max: 100 },
+  // Sales tax / GST / VAT rate a store charges (4.2)
+  taxPercent: { min: 0, max: 30 },
   price: { min: 0, max: 1_000_000 },
   // Item prices in minor units (cents), per currency (progress.md 2.5): up to 1,000,000.00
   priceMinor: { min: 0, max: 100_000_000 },

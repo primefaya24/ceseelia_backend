@@ -1,5 +1,6 @@
 import { MAX_QUANTITY_PER_LINE } from "../../../constants/input-limits";
 import {
+  fulfilmentSettings,
   isUnlimitedStock,
   StoreCategory,
   StoreItem,
@@ -21,7 +22,11 @@ import {
  *     so the cart can show what to fix. `ok` is true only when every line is fine.
  *   - Stock is shared: two lines of one item (different options) draw on the same stock, in
  *     line order.
- *   - Tax and delivery are 4.2; `totalMinor` is subtotal minus discount until then.
+ *   - Fulfilment (4.2): PICKUP or DELIVERY, whichever the store offers (pickup first by
+ *     default). Delivery is a flat fee per currency, charged only when some line can be bought.
+ *   - Tax (4.2): `taxPercent` of the goods after discount plus delivery, rounded half up once on
+ *     the whole cart. With `pricesIncludeTax` it is the part of that amount that is tax
+ *     (amount × r / (100 + r)) and adds nothing; otherwise it is added to the total.
  */
 
 export interface QuoteLineInput {
@@ -66,19 +71,33 @@ export interface PricedLine {
   error: LineError | null;
 }
 
+export type Fulfilment = "PICKUP" | "DELIVERY";
+
 export interface Quote {
   currency: string;
   lines: PricedLine[];
   subtotalMinor: number;
   discountMinor: number;
+  /** What the shopper can choose, with the fee in this currency. */
+  fulfilmentOptions: { method: Fulfilment; feeMinor: number }[];
+  /** The one priced (the shopper's choice, else the first option); null if none is available. */
+  fulfilment: Fulfilment | null;
+  deliveryMinor: number;
+  taxPercent: number;
+  pricesIncludeTax: boolean;
+  taxMinor: number;
+  /** Goods after discount + delivery, + tax unless prices include it. */
   totalMinor: number;
   ok: boolean;
-  /** Whole-quote problem (the lines are then empty). */
-  error: { code: "CURRENCY_NOT_OFFERED"; message: string } | null;
+  /**
+   * Whole-quote problem. CURRENCY_NOT_OFFERED: nothing is priced (lines empty).
+   * FULFILMENT_UNAVAILABLE: the lines are priced, but the chosen method isn't offered.
+   */
+  error: { code: "CURRENCY_NOT_OFFERED" | "FULFILMENT_UNAVAILABLE"; message: string } | null;
 }
 
 export interface PricingStore {
-  settings: Pick<StoreSettings, "currencies" | "general">;
+  settings: { currencies: StoreSettings["currencies"]; general?: Partial<StoreSettings["general"]> };
   categories: StoreCategory[];
   items: StoreItem[];
 }
@@ -103,6 +122,14 @@ export function bestDiscount(
     if (percent > best.percent) best = { percent, source };
   }
   return best;
+}
+
+/** The tax inside an amount that already includes it: amount × r / (100 + r), half up. */
+export function includedTaxOf(amountMinor: number, percent: number): number {
+  const bp = Math.round(percent * 100);
+  if (bp <= 0) return 0;
+  const denominator = 10000 + bp;
+  return Math.floor((2 * amountMinor * bp + denominator) / (2 * denominator));
 }
 
 /** `amount × percent / 100`, rounded half up to a whole cent. */
@@ -163,10 +190,35 @@ export function checkParams(
   return { params };
 }
 
-export function priceLines(store: PricingStore, lines: QuoteLineInput[], currency: string): Quote {
-  const empty = { currency, lines: [], subtotalMinor: 0, discountMinor: 0, totalMinor: 0 };
+export function priceLines(
+  store: PricingStore,
+  lines: QuoteLineInput[],
+  currency: string,
+  opts: { fulfilment?: Fulfilment } = {}
+): Quote {
+  const f = fulfilmentSettings(store.settings.general);
   if (!store.settings.currencies.some((c) => c.currencyCode === currency)) {
-    return { ...empty, ok: false, error: { code: "CURRENCY_NOT_OFFERED", message: `This store doesn't sell in ${currency}.` } };
+    return {
+      currency,
+      lines: [],
+      subtotalMinor: 0,
+      discountMinor: 0,
+      fulfilmentOptions: [],
+      fulfilment: null,
+      deliveryMinor: 0,
+      taxPercent: f.taxPercent,
+      pricesIncludeTax: f.pricesIncludeTax,
+      taxMinor: 0,
+      totalMinor: 0,
+      ok: false,
+      error: { code: "CURRENCY_NOT_OFFERED", message: `This store doesn't sell in ${currency}.` },
+    };
+  }
+  const deliveryFee = f.deliveryFees[currency as keyof typeof f.deliveryFees];
+  const fulfilmentOptions: Quote["fulfilmentOptions"] = [];
+  if (f.pickupEnabled) fulfilmentOptions.push({ method: "PICKUP", feeMinor: 0 });
+  if (f.deliveryEnabled && Number.isInteger(deliveryFee)) {
+    fulfilmentOptions.push({ method: "DELIVERY", feeMinor: deliveryFee as number });
   }
   const items = new Map(store.items.map((i) => [i.storeItemId, i]));
   const categories = new Map(store.categories.map((c) => [c.storeCategoriyId, c]));
@@ -234,13 +286,31 @@ export function priceLines(store: PricingStore, lines: QuoteLineInput[], currenc
   const valid = priced.filter((l) => !l.error);
   const subtotalMinor = valid.reduce((n, l) => n + l.subtotalMinor, 0);
   const discountMinor = valid.reduce((n, l) => n + l.discountMinor, 0);
+
+  const wanted = opts.fulfilment ?? fulfilmentOptions[0]?.method;
+  const chosen = fulfilmentOptions.find((o) => o.method === wanted) ?? null;
+  const deliveryMinor = chosen && valid.length > 0 ? chosen.feeMinor : 0;
+  const taxable = subtotalMinor - discountMinor + deliveryMinor;
+  const taxMinor = f.pricesIncludeTax ? includedTaxOf(taxable, f.taxPercent) : percentOf(taxable, f.taxPercent);
+  const error: Quote["error"] = chosen
+    ? null
+    : {
+        code: "FULFILMENT_UNAVAILABLE",
+        message: wanted === "DELIVERY" ? `This store doesn't deliver in ${currency}.` : "This store doesn't offer pickup.",
+      };
   return {
     currency,
     lines: priced,
     subtotalMinor,
     discountMinor,
-    totalMinor: subtotalMinor - discountMinor,
-    ok: lines.length > 0 && valid.length === lines.length,
-    error: null,
+    fulfilmentOptions,
+    fulfilment: chosen?.method ?? null,
+    deliveryMinor,
+    taxPercent: f.taxPercent,
+    pricesIncludeTax: f.pricesIncludeTax,
+    taxMinor,
+    totalMinor: taxable + (f.pricesIncludeTax ? 0 : taxMinor),
+    ok: lines.length > 0 && valid.length === lines.length && !!chosen,
+    error,
   };
 }
