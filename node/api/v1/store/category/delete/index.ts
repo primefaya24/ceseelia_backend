@@ -5,7 +5,7 @@ import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../laye
 import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
-import { deleteStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { CategoryNotEmptyError, deleteStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { isUlid } from "../../../../../layers/core/utils";
 dotenv.config();
 
@@ -53,12 +53,11 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeId = req.params.storeId;
     const storeCategoryId = req.params.storeCategoryId;
 
-    // Delete category photos if any
+    // The category first (refused while it has items, 2.2); its banner only once it's gone.
+    await deleteStoreCategory(storeId, storeCategoryId);
+
     const currentS3Uris: string[] = (
-      await listPrefixFiles(
-        S3_STORAGE_BUCKET_NAME,
-        `store/${storeId}/category/${storeCategoryId}/`
-      )
+      await listPrefixFiles(S3_STORAGE_BUCKET_NAME, `store/${storeId}/category/${storeCategoryId}/`)
     )
       .map((o) => o.Key)
       .filter((key): key is string => typeof key === "string");
@@ -66,12 +65,17 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       await deleteS3Keys(S3_STORAGE_BUCKET_NAME, currentS3Uris);
     }
 
-    // Delete category
-    await deleteStoreCategory(storeId, storeCategoryId);
-
     // Respond to user
     res.send({});
   } catch (e) {
+    if (e instanceof CategoryNotEmptyError) {
+      res.status(appConstants.HTTP_STATUS_CODE_CONFLICT).send({
+        code: "CATEGORY_NOT_EMPTY",
+        message: e.message,
+        itemCount: e.itemCount,
+      });
+      return;
+    }
     if (IN_DEV) {
       console.error(e);
     }

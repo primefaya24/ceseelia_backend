@@ -22,8 +22,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
 > are done, as are WA 1.1–1.5.
 > WA 1.6a–c (profile pages) done too; 1.6d waits on a real `delete-user` (501 since S.11).
-> Stage 2.1 (item counts) is done. **Next: 2.2 category delete rule** (409 when the category
-> still has items; WA 2.1 needs both).
+> Stage 2.1 (item counts) and 2.2 (category delete rule) are done. **Next: WA 2.1** (show the
+> server's counts, handle the 409), then **BE 2.3 upload limits**.
 > Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
 > (before going live); S.2 password rotation (manual, owner).
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
@@ -39,14 +39,14 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Store create / settings / images | ✅ Works | Admin-only settings via `/admin/*-store-admin-settings` (1.6) |
 | Store delete | ✅ Works | Whole store incl. members, invites, slug, S3; retry-safe (1.7, 1.8) |
 | Slugs | ✅ Works | Format rule, unique via `SLUG#<slug>` reservations (409 on clash), public `resolve-slug` (1.8) |
-| Categories & items CRUD | ✅ Works | Item counts kept in step by item writes (2.1); deleting a category still orphans its items (2.2) |
+| Categories & items CRUD | ✅ Works | Item counts kept by item writes (2.1); a category with items can't be deleted (409, 2.2) |
 | Public storefront data | ⚠️ Partial | Admin block no longer leaked (1.6); still returns inactive items and ignores `isStoreLive` (2.4) |
 | Merchant / customer APIs | ❌ Missing | `/merchant/path` stub (1.5 deferred) |
 | Cart, checkout, orders, payments | ❌ Not started | Stripe webhook returns 501 |
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser` and `ses:SendEmail` |
 
-**Health check (2026-11-09):** `npm test` 372/372 passing · `npm run typecheck` clean ·
+**Health check (2026-11-09):** `npm test` 380/380 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 92 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -354,8 +354,15 @@ match the backend and webapp._
     `tests/category-counts.test.ts`. Existing data: `node scripts/recompute-category-item-counts.mjs`
     (dry run; `--write` applies; lists orphaned items). Dev fixed (Hoodies 0 → 1). **Run it on
     prod when prod exists.**_
-- [ ] 🟠 **2.2 Category delete rule.** Reject with 409 when the category still has items (enforced
+- [x] 🟠 **2.2 Category delete rule.** Reject with 409 when the category still has items (enforced
       server-side; today only the UI checks). Document the rule. (WA 2.1)
+  - _Done 2026-11-09, tested by hand. **Rule: a category can only be deleted when it has no items** (move or
+    delete them first; no "uncategorized" bucket). The check is the delete's own condition on
+    `storeCategoryItemCount` (≤ 0, kept by 2.1), so it can't race an item being added. 409
+    `{code: "CATEGORY_NOT_EMPTY", message, itemCount}`; deleting a category that's already gone
+    is a 200. The route deletes the row **before** its banner image. Tests in
+    `tests/category-delete.test.ts`; checked live on dev with a throwaway row (refused at 2,
+    deleted at 0, raw `{N}` count in the error handled)._
 - [ ] 🟡 **2.3 Upload limits:**
   - [ ] a. Validate `imageType` and cap counts (≤ 10 total) on promo and item upload routes.
         Today `pngCount=100000` mints 100k URLs.
@@ -489,6 +496,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 2.2 done: category delete refused with 409 `CATEGORY_NOT_EMPTY` while it has items (conditional delete on the count); banner deleted after the row. |
 | 2026-11-09 | 2.1 done: category item counts kept by item create/move/delete transactions (no more reset on save); delete-item removes the row before its images; recount script (dev fixed). |
 | 2026-11-09 | WA 1.6 support: `update-profile` trims names and caps them at 50 (`MAX_LENGTH.personName`, same in the webapp). |
 | 2026-11-09 | 1.8 done: slug format rule, `SLUG#<slug>` reservations (create/rename in one transaction, 409 on clash, freed on delete), public `resolve-slug`, backfill script (dev backfilled). |

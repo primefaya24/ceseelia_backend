@@ -140,7 +140,7 @@ export default function registerRoute(router: Router): void {
 | Store | `GET /store/get-header-strip-image-upload-url/:storeId/:imageType` | ✅ |
 | Store | `GET /store/get-promo-image-upload-urls/:storeId/:pngCount/:jpgCount` | ✅ |
 | Category | `POST /store/category/create` (create + update via `isUpdate`) | ✅ |
-| Category | `DELETE /store/category/delete/:storeId/:storeCategoryId` | ✅ (items in it are not handled) |
+| Category | `DELETE /store/category/delete/:storeId/:storeCategoryId` | ✅ only when the category has no items, else 409 `CATEGORY_NOT_EMPTY` `{message, itemCount}`; then deletes its banner |
 | Category | `GET /store/category/get-banner-upload-url/:storeId/:categoryId/:imageType` | ✅ |
 | Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing |
 | Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ −1 on its category, then deletes its images |
@@ -168,21 +168,19 @@ in-process DQS queue.
 ## 5. Known issues & risks
 
 Open:
-1. Admins can assign members through the API (1.4), but there's no admin UI for it yet (WA 1.4).
-   Adding an existing account sends no email; only invites to new emails do.
+1. Adding an existing account to a store (1.4) sends no email; only invites to new emails do.
 2. The store check costs two reads per request (user id by Cognito id, then the membership).
    Fine for now; cache or put the user id in a token claim if it shows up in latency.
 3. The password that used to be in `node/README.md` is still in **git history** — make sure it has
    been rotated (S.2).
 4. `isStoreLive` is saved but nothing acts on it yet: a suspended store's public page still
    loads. → Stage 2.4
-5. Deleting a category leaves its items orphaned. → 2.2.
-6. Upload-URL routes don't cap the requested image counts or file sizes. → Stage 2.3
-7. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
+5. Upload-URL routes don't cap the requested image counts or file sizes. → Stage 2.3
+6. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
    saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3
-8. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
-9. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
-10. No structured logging, rate limiting or CI yet. → Stage 9
+7. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
+8. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
+9. No structured logging, rate limiting or CI yet. → Stage 9
 
 Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
 `api.ceseelia.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);
@@ -240,7 +238,7 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 ### Stage 2 — Inventory hardening
 2.1 Maintain `storeCategoryItemCount` (atomic `ADD` on item create/move/delete); stop resetting it
     on category update.
-2.2 Category delete: block if it has items, or move items to "uncategorized" (pick one; document it).
+2.2 ✅ Category delete: blocked (409) while it has items — no "uncategorized" bucket.
 2.3 Validate upload endpoints: allowed image types, max counts (e.g. ≤ 10), file-size limits via
     presigned POST conditions.
 2.4 Public data endpoint: return only `storeItemIsActive` items in active categories, strip admin

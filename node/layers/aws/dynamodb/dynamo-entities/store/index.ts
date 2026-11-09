@@ -400,20 +400,46 @@ export async function updateStoreCategory(
   }
 }
 
+/* Thrown when deleting a category that still has items (2.2). Routes map it to 409. */
+export class CategoryNotEmptyError extends Error {
+  constructor(public readonly itemCount: number) {
+    super(
+      `This category still has ${itemCount} item${itemCount === 1 ? "" : "s"}. Move or delete ${
+        itemCount === 1 ? "it" : "them"
+      } first.`
+    );
+    this.name = "CategoryNotEmptyError";
+  }
+}
+
+/*
+ * Delete a category, only while it has no items (2.2). The check rides on the delete itself
+ * (`storeCategoryItemCount`, kept by the item writes since 2.1), so it can't race an item being
+ * added: item creates and moves need the category to exist. Deleting a category that's already
+ * gone is a no-op. Throws CategoryNotEmptyError.
+ */
 export async function deleteStoreCategory(
   storeId: string,
   storeCategoryId: string
 ): Promise<void> {
   try {
-    const command = new DeleteCommand({
-      TableName: DEFAULT_TABLE_NAME,
-      Key: {
-        pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
-        sk: appConstants.DYNAMO_ENTITY_CATEGORY + "#" + storeCategoryId,
-      },
-    });
-    await dynamoDbDocumentClient.send(command);
+    await dynamoDbDocumentClient.send(
+      new DeleteCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        Key: categoryKey(storeId, storeCategoryId),
+        ConditionExpression:
+          "attribute_not_exists(pk) OR attribute_not_exists(storeCategoryItemCount) OR storeCategoryItemCount <= :zero",
+        ExpressionAttributeValues: { ":zero": 0 },
+        ReturnValuesOnConditionCheckFailure: "ALL_OLD",
+      })
+    );
   } catch (e) {
+    if (isConditionalCheckFailure(e)) {
+      // The failed item comes back raw ({ N: "3" }); the document client doesn't unmarshall errors.
+      const raw = (e as { Item?: Record<string, unknown> }).Item?.storeCategoryItemCount;
+      const count = Number(typeof raw === "object" && raw !== null ? (raw as { N?: string }).N : raw);
+      throw new CategoryNotEmptyError(Number.isFinite(count) && count > 0 ? count : 1);
+    }
     console.error("In deleteStoreCategory", e);
     throw e;
   }
