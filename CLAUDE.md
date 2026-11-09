@@ -132,7 +132,7 @@ export default function registerRoute(router: Router): void {
 | Area | Endpoint | Status |
 |---|---|---|
 | Store | `POST /store/create` (admin) | ✅ creates overview + default settings |
-| Store | `DELETE /store/delete/:storeId` | ❌ stub — does nothing |
+| Store | `DELETE /store/delete/:storeId` (admin) | ✅ deletes SETTINGS first (blocks writes), then the `STORE#id` partition and the members'/invites' reverse rows, `store/<id>/` in S3, and the overview last; safe to retry; 404 when nothing is left |
 | Store | `PUT /store/update-settings` | ✅ validates, saves (awaited), then cleans logo/header/promo S3 leaks (never writes the `admin` block) |
 | Store | `GET /store/get-logo-upload-url/:storeId/:imageType` | ✅ |
 | Store | `GET /store/get-header-strip-image-upload-url/:storeId/:imageType` | ✅ |
@@ -174,7 +174,8 @@ Open:
 4. `isStoreLive` is saved but nothing acts on it yet: a suspended store's public page still
    loads. → Stage 2.4
 5. `updateStoreCategory` resets `storeCategoryItemCount` to 0 on every save. → Stage 2.1
-6. Deleting a category leaves its items orphaned; deleting a store is unimplemented. → 2.2 / 1.7
+6. Deleting a category leaves its items orphaned. → 2.2. (Store delete won't free the slug until
+   slugs are reserved in 1.8; it will need to delete `SLUG#<slug>` then.)
 7. Upload-URL routes don't cap the requested image counts or file sizes. → Stage 2.3
 8. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
    saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3

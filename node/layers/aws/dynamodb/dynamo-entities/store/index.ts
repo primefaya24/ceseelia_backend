@@ -11,7 +11,9 @@ import {
 import * as ULID from "ulid";
 import { appConstants } from "../../../../../constants";
 import { dynamoWriteManyItems } from "../../dynamo-batch-ops";
-import { queryAllWithPrefix } from "../../dynamo-query";
+import { queryAllInPartition, queryAllWithPrefix } from "../../dynamo-query";
+import { deleteS3FilesPrefixed } from "../../../s3";
+import { S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { DB_TABLE_NAME } from "../../../../../config";
 import {
   initStore,
@@ -410,5 +412,67 @@ export async function updateStoreAdminSettings(
 export function withoutAdminSettings(data: StoreInventoryData): StoreInventoryData {
   const { admin: _admin, ...settings } = data.settings;
   return { ...data, settings: settings as StoreSettings };
+}
+
+////////////////////////////////////////
+// Delete a store (progress.md 1.7)
+////////////////////////////////////////
+/*
+ * Delete everything that belongs to a store, in an order that is safe to retry after a failure:
+ *   1. SETTINGS first. Every store write is conditional on it, so nothing new can be added
+ *      while the rest is deleted.
+ *   2. The rest of STORE#<id> (categories, items, members, invites, later orders), plus the
+ *      reverse rows other partitions keep: USER#<member>/STORE#<id> and INVITE#<email>/STORE#<id>.
+ *   3. The store's files under store/<id>/ in S3.
+ *   4. The APP_STORE overview row last, so a store whose delete failed stays in the admin list
+ *      and can be deleted again.
+ * Returns false if there was nothing left to delete (no rows and no overview).
+ */
+export async function deleteStore(storeId: string): Promise<boolean> {
+  const storePk = appConstants.DYNAMO_ENTITY_STORE + "#" + storeId;
+  const userStoreSk = appConstants.DYNAMO_ENTITY_STORE + "#" + storeId;
+  const overviewKey = {
+    pk: appConstants.DYNAMO_ENTITY_APP_STORE,
+    sk: `${appConstants.DYNAMO_ENTITY_STORE}#${storeId}#${appConstants.DYNAMO_ENTITY_OVERVIEW}`,
+  };
+
+  const [rows, overview] = await Promise.all([
+    queryAllInPartition(storePk, DEFAULT_TABLE_NAME),
+    dynamoDbDocumentClient.send(new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: overviewKey })),
+  ]);
+  if (rows.length === 0 && !overview.Item) {
+    return false;
+  }
+
+  // 1. Stop new writes
+  if (rows.some((r) => r.sk === appConstants.DYNAMO_ENTITY_SETTINGS)) {
+    await dynamoDbDocumentClient.send(
+      new DeleteCommand({ TableName: DEFAULT_TABLE_NAME, Key: { pk: storePk, sk: appConstants.DYNAMO_ENTITY_SETTINGS } })
+    );
+  }
+
+  // 2. The partition and the reverse rows that point at it
+  const keys: { pk: string; sk: string }[] = [];
+  for (const r of rows) {
+    if (r.sk === appConstants.DYNAMO_ENTITY_SETTINGS) continue;
+    keys.push({ pk: r.pk, sk: r.sk });
+    if (r.sk.startsWith(appConstants.DYNAMO_ENTITY_MEMBER + "#")) {
+      keys.push({ pk: appConstants.DYNAMO_ENTITY_USER + "#" + r.sk.slice(appConstants.DYNAMO_ENTITY_MEMBER.length + 1), sk: userStoreSk });
+    } else if (r.sk.startsWith(appConstants.DYNAMO_ENTITY_INVITE + "#")) {
+      keys.push({ pk: r.sk, sk: userStoreSk }); // INVITE#<email> / STORE#<id>
+    }
+  }
+  if (keys.length > 0) {
+    await dynamoWriteManyItems(DEFAULT_TABLE_NAME, keys.map((Key) => ({ DeleteRequest: { Key } })));
+  }
+
+  // 3. Files (the trailing slash keeps other stores' prefixes out)
+  await deleteS3FilesPrefixed(S3_STORAGE_BUCKET_NAME, `store/${storeId}/`);
+
+  // 4. The admin list entry
+  if (overview.Item) {
+    await dynamoDbDocumentClient.send(new DeleteCommand({ TableName: DEFAULT_TABLE_NAME, Key: overviewKey }));
+  }
+  return true;
 }
 

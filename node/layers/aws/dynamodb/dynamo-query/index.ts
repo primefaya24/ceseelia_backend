@@ -7,6 +7,29 @@ const dynamoDbDocumentClient = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: appConstants.DEFAULT_REGION })
 );
 
+/* Every row in the `pk` partition, following every page. */
+export async function queryAllInPartition(
+  pk: string,
+  tableName: string | undefined = DB_TABLE_NAME
+): Promise<Record<string, any>[]> {
+  const records: Record<string, any>[] = [];
+  let ExclusiveStartKey: Record<string, any> | undefined;
+  do {
+    const result = await dynamoDbDocumentClient.send(
+      new QueryCommand({
+        TableName: tableName,
+        KeyConditionExpression: "#pk = :pk",
+        ExpressionAttributeNames: { "#pk": "pk" },
+        ExpressionAttributeValues: { ":pk": pk },
+        ExclusiveStartKey,
+      })
+    );
+    records.push(...(result.Items ?? []));
+    ExclusiveStartKey = result.LastEvaluatedKey;
+  } while (ExclusiveStartKey);
+  return records;
+}
+
 /*
  * Every row under `pk` whose sort key starts with `skPrefix`. A query returns at most 1 MB, so
  * keep following LastEvaluatedKey until there are no more pages.

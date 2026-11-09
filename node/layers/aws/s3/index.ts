@@ -105,14 +105,28 @@ export async function deleteObject(bucket: string, key: string): Promise<void> {
     await s3Client.send(new DeleteObjectCommand({ Bucket: bucket, Key: key }));
 }
 
+/* S3's DeleteObjects takes at most 1000 keys per call. */
+export const S3_DELETE_BATCH_SIZE = 1000;
+
+/*
+ * Delete these objects, 1000 per request. S3 reports per-object failures in the response
+ * instead of throwing, so check `Errors` and throw if any object wasn't deleted.
+ */
 export async function deleteS3Files(bucket: string, files: ObjectIdentifier[]): Promise<void> {
-    const params: DeleteObjectsCommandInput = {
-        Bucket: bucket,
-        Delete: {
-            Objects: files,
-        },
-    };
-    await s3Client.send(new DeleteObjectsCommand(params));
+    for (let i = 0; i < files.length; i += S3_DELETE_BATCH_SIZE) {
+        const params: DeleteObjectsCommandInput = {
+            Bucket: bucket,
+            Delete: {
+                Objects: files.slice(i, i + S3_DELETE_BATCH_SIZE),
+                Quiet: true,
+            },
+        };
+        const res = await s3Client.send(new DeleteObjectsCommand(params));
+        if (res.Errors && res.Errors.length > 0) {
+            const first = res.Errors[0];
+            throw new Error(`S3 could not delete ${res.Errors.length} object(s), e.g. ${first.Key}: ${first.Code} ${first.Message ?? ""}`.trim());
+        }
+    }
 }
 
 export async function deleteS3Keys(bucket: string, keys: string[]): Promise<void> {

@@ -291,12 +291,19 @@ match the backend and webapp._
     `tests/admin-store-settings.test.ts`._
 
 ### 1.7 Store delete (admin)
-- [ ] a. Query and batch-delete every `STORE#<id>` item (settings, categories, items, members,
+- [x] a. Query and batch-delete every `STORE#<id>` item (settings, categories, items, members,
       and later orders).
-- [ ] b. Delete the `APP_STORE` overview row, the reverse `USER#…/STORE#…` rows and the slug
+- [x] b. Delete the `APP_STORE` overview row, the reverse `USER#…/STORE#…` rows and the slug
       reservation (1.8).
-- [ ] c. `deleteS3FilesPrefixed('store/<id>/')`.
-- [ ] d. Make it idempotent (safe to retry) and admin-only. Tests. (WA 1.4)
+- [x] c. `deleteS3FilesPrefixed('store/<id>/')`.
+- [x] d. Make it idempotent (safe to retry) and admin-only. Tests. (WA 1.4)
+  - _Done 2026-11-09. `deleteStore` in the store entity; order is
+    SETTINGS (stops new writes) → partition + `USER#…/STORE#id` + `INVITE#…/STORE#id` → S3
+    `store/<id>/` → overview last, so a failed delete stays in the admin list and can be run
+    again. The slug reservation in b doesn't exist yet (1.8 must add it to the delete).
+    `deleteS3Files` now sends at most 1000 keys per request and throws on per-object errors
+    (it used to fail over 1000 and ignore partial failures). Tested on a throwaway dev store
+    (member, invite, S3 file): everything gone, Northern Hoop untouched._
 
 ### 1.8 Slugs
 - [ ] a. Slug format rule (lowercase `a-z0-9-`, 3–40 chars, reserved words blocked).
@@ -446,6 +453,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 1.7 done: `DELETE /store/delete/:storeId` deletes the whole store, retry-safe; S3 batch delete fixed (1000-key limit, partial failures). |
 | 2026-11-09 | 1.6 done: admin-only store settings routes; `admin` block hidden from merchants and the public storefront (it was public). |
 | 2026-11-09 | 1.4 done: admin member routes (list, assign by email or invite, remove, cancel invite); invites claimed on first profile load. |
 | 2026-11-08 | 1.3 done: store-member check on every `/store/**` route (admin bypass); S.0 lockdown removed. |

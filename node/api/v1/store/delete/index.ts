@@ -2,9 +2,9 @@
 import {Request, Response, Router} from 'express';
 import dotenv from 'dotenv';
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
-import {IN_DEV} from "../../../../config";
 import {appConstants} from "../../../../constants";
 import { isUlid } from "../../../../layers/core/utils";
+import { deleteStore } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
 dotenv.config();
 
 /*
@@ -40,19 +40,20 @@ function validRequestParams(req: Request): boolean {
 }
 
 /*
-* Route controller logic
+* Route controller logic: delete the store and everything in it (progress.md 1.7).
+* → { deleted: true } · 404 STORE_NOT_FOUND when there's nothing left. Safe to call again
+* after a failure: each run deletes whatever is still there.
 */
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
     try {
-        // Prepare response body
-        const resBody: ResBody = {} as ResBody;
-
-        // Respond to user
-        res.send();
-    } catch (e) {
-        if (IN_DEV) {
-            console.error(e);
+        const found = await deleteStore(req.params.storeId as string);
+        if (!found) {
+            res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({message: "Store not found", code: "STORE_NOT_FOUND"});
+            return;
         }
+        res.send({deleted: true});
+    } catch (e) {
+        console.error("In store/delete", e);
         res.status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR).send({message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR});
     }
 }
