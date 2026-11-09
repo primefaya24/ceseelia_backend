@@ -1,6 +1,6 @@
 # Ceseelia Backend — Progress Tracker
 
-_Last reviewed: 2026-11-08 (full codebase read-through)_
+_Last reviewed: 2026-11-08 (full codebase read-through) · Last updated: 2026-11-09_
 
 This file tracks **what's left to do**. Design notes and conventions are in `CLAUDE.md`. The
 webapp has a matching file at `../ceseelia_webapp/progress.md`.
@@ -19,23 +19,34 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 ## 1. Where things stand
 
+> **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6, 1.7
+> are done, as are WA 1.1–1.5.
+> **Next: BE 1.8 Slugs** (format rule, `SLUG#<slug>` reservation with 409 on conflict, public
+> `resolve-slug`; store delete must then also free the slug). Then WA 1.6 Profile pages.
+> Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
+> (before going live); S.2 password rotation (manual, owner).
+> Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
+> its MERCHANT; `shukybadeer+ms1@gmail.com` is the non-member tester; admin is
+> `shukybadeer@gmail.com`.
+
 | Area | Status | Notes |
 |---|---|---|
 | Foundations (config, token verification, CORS, tests, lint) | ✅ Done | Stage 0, 2026-11-02 |
-| Store create / settings / images | ✅ Works | Admin-only for now (S.0) until store membership (1.3) |
-| Categories & items CRUD | ✅ Works | Item counts are wrong; deleting a category orphans its items |
-| Public storefront data | ⚠️ Partial | Leaks admin settings and inactive items |
-| Store delete | ❌ Stub | Returns 200 and does nothing |
-| Users / registration | ❌ Broken | No user record is ever created, so `get-my-profile` fails for new sign-ups |
-| Store membership (user ↔ store) | ❌ Missing | |
-| Merchant / customer APIs | ❌ Missing | Only template stubs exist |
+| Security & bug fixes (Stage S) | ✅ Mostly | S.0–S.13 done; S.2 manual; S.14–S.17 deferred to before launch |
+| Users / registration | ✅ Works | CloudFormation `OnUserRegister` Lambda creates users; `get-my-profile` fills in missing rows (1.1) |
+| Store membership + access | ✅ Works | Members/invites (1.2, 1.4); every `/store/**` route checks membership, admins bypass (1.3) |
+| Store create / settings / images | ✅ Works | Admin-only settings via `/admin/*-store-admin-settings` (1.6) |
+| Store delete | ✅ Works | Whole store incl. members, invites, S3; retry-safe (1.7). Slug not freed yet (no reservations until 1.8) |
+| Slugs | ⚠️ Not unique | Two stores can share a slug; no format rule (1.8) |
+| Categories & items CRUD | ✅ Works | Item counts are wrong; deleting a category orphans its items (Stage 2) |
+| Public storefront data | ⚠️ Partial | Admin block no longer leaked (1.6); still returns inactive items and ignores `isStoreLive` (2.4) |
+| Merchant / customer APIs | ❌ Missing | `/merchant/path` stub (1.5 deferred) |
 | Cart, checkout, orders, payments | ❌ Not started | Stripe webhook returns 501 |
 | Admin stats, join requests, tickets | ❌ Not started | |
-| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | |
+| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser` and `ses:SendEmail` |
 
-**Health check (2026-11-08):** `npm test` 27/27 passing · `npm run typecheck` clean ·
-`npm run lint` 0 errors, 109 warnings · `npm audit --omit=dev` reports **high** advisories
-(axios, body-parser, brace-expansion, fast-xml-parser, @smithy/*), all fixable.
+**Health check (2026-11-09):** `npm test` 309/309 passing · `npm run typecheck` clean ·
+`npm run lint` 0 errors, 93 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
 
@@ -453,6 +464,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | §1 status table and health check refreshed; "Pick up here" note added (next: BE 1.8, WA 1.6). |
 | 2026-11-09 | 1.7 done: `DELETE /store/delete/:storeId` deletes the whole store, retry-safe; S3 batch delete fixed (1000-key limit, partial failures). |
 | 2026-11-09 | 1.6 done: admin-only store settings routes; `admin` block hidden from merchants and the public storefront (it was public). |
 | 2026-11-09 | 1.4 done: admin member routes (list, assign by email or invite, remove, cancel invite); invites claimed on first profile load. |
