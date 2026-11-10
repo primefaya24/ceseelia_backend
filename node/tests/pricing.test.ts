@@ -257,3 +257,63 @@ describe("tax and fulfilment (4.2)", () => {
     expect(includedTaxOf(1000, 0)).toBe(0);
   });
 });
+
+describe("priceLines Canadian tax (4.4)", () => {
+  const canada = (patch: object = {}) =>
+    store({
+      general: {
+        taxMode: "CANADA",
+        pickupEnabled: true,
+        deliveryEnabled: true,
+        deliveryFees: { USD: 500, AUD: 500 },
+        canadaTax: { homeProvince: "ON", gstRegistered: true, provincialRegistrations: ["BC", "QC"], ...patch },
+      },
+    });
+
+  it("pickup is taxed in the store's province", () => {
+    const q = priceLines(canada(), [line("TEA", 2)], "USD", { fulfilment: "PICKUP" });
+    expect(q.taxRegion).toEqual({ province: "ON", name: "Ontario" });
+    expect(q.taxLines).toEqual([{ code: "HST", label: "HST", percent: 13, minor: 260 }]);
+    expect(q).toMatchObject({ taxMinor: 260, taxPercent: 13, totalMinor: 2260, ok: true, error: null });
+  });
+
+  it("delivery is taxed in the shopper's province, with each part rounded on its own", () => {
+    // 2000 goods + 500 delivery = 2500 taxable
+    const bc = priceLines(canada(), [line("TEA", 2)], "USD", { fulfilment: "DELIVERY", postalCode: "v6b 1a1" });
+    expect(bc.taxLines.map((l) => [l.label, l.minor])).toEqual([["GST", 125], ["PST", 175]]);
+    expect(bc).toMatchObject({ taxMinor: 300, totalMinor: 2800, ok: true });
+    const qc = priceLines(canada(), [line("TEA", 2)], "USD", { fulfilment: "DELIVERY", postalCode: "H2X1Y4" });
+    expect(qc.taxLines.map((l) => [l.label, l.minor])).toEqual([["GST", 125], ["QST", 249]]); // 249.375
+    expect(qc.taxPercent).toBe(14.975);
+    // Not registered for Saskatchewan's PST: GST only
+    const sk = priceLines(canada(), [line("TEA", 2)], "USD", { fulfilment: "DELIVERY", postalCode: "S4P 3Y2" });
+    expect(sk.taxLines.map((l) => l.label)).toEqual(["GST"]);
+  });
+
+  it("a delivery needs a valid Canadian postal code before tax is known", () => {
+    const missing = priceLines(canada(), [line("TEA")], "USD", { fulfilment: "DELIVERY" });
+    expect(missing).toMatchObject({ taxMinor: 0, taxLines: [], ok: false, error: { code: "POSTAL_CODE_REQUIRED" } });
+    expect(missing.lines[0].error).toBeNull();
+    const bad = priceLines(canada(), [line("TEA")], "USD", { fulfilment: "DELIVERY", postalCode: "90210" });
+    expect(bad).toMatchObject({ ok: false, error: { code: "INVALID_POSTAL_CODE" } });
+  });
+
+  it("a store that charges no tax needs no postal code", () => {
+    const q = priceLines(canada({ gstRegistered: false, provincialRegistrations: [] }), [line("TEA")], "USD", { fulfilment: "DELIVERY" });
+    expect(q).toMatchObject({ taxMinor: 0, taxLines: [], ok: true, error: null });
+  });
+
+  it("ignores the flat rate and 'prices include tax' in Canada mode, and keeps flat mode as before", () => {
+    const s = canada();
+    s.settings.general = { ...s.settings.general, taxPercent: 20 };
+    expect(priceLines(s, [line("TEA")], "USD", { fulfilment: "PICKUP" }).taxMinor).toBe(130);
+    const flat = priceLines(store({ general: { taxPercent: 10 } }), [line("TEA")], "USD");
+    expect(flat.taxLines).toEqual([{ code: "TAX", label: "Tax", percent: 10, minor: 100 }]);
+    expect(flat.taxRegion).toBeNull();
+  });
+
+  it("percentOf keeps thousandths of a percent and big carts exact", () => {
+    expect(percentOf(10000, 9.975)).toBe(998); // 997.5 rounds half up
+    expect(percentOf(100_000_000 * 99 * 50, 30)).toBe(148_500_000_000);
+  });
+});

@@ -7,6 +7,14 @@ import {
   StoreParameter,
   StoreSettings,
 } from "../interfaces/store";
+import {
+  CA_PROVINCE_NAMES,
+  canadaTaxComponents,
+  CaProvince,
+  CaTaxCode,
+  chargesAnyCanadaTax,
+  provinceFromPostalCode,
+} from "../tax/canada";
 
 /*
  * The one pricing function (progress.md 4.1). `POST /customer/quote` (4.3) and order creation
@@ -27,6 +35,13 @@ import {
  *   - Tax (4.2): `taxPercent` of the goods after discount plus delivery, rounded half up once on
  *     the whole cart. With `pricesIncludeTax` it is the part of that amount that is tax
  *     (amount × r / (100 + r)) and adds nothing; otherwise it is added to the total.
+ *   - Canadian tax (4.4, `taxMode: "CANADA"`): the parts (GST/HST, PST/RST/QST) for the province
+ *     the goods end up in: the store's home province for pickup, the one from the shopper's
+ *     postal code for delivery (`opts.postalCode`). Each part is its own percent of the same
+ *     taxable amount, rounded on its own, and added to the total. A delivery with no valid
+ *     postal code gets no tax and `error: POSTAL_CODE_REQUIRED` / `INVALID_POSTAL_CODE`.
+ *     The rates and rules are in `layers/core/tax/canada.ts`; nothing about tax comes from the
+ *     client except the postal code.
  */
 
 export interface QuoteLineInput {
@@ -73,6 +88,20 @@ export interface PricedLine {
 
 export type Fulfilment = "PICKUP" | "DELIVERY";
 
+/** One tax part on the quote, e.g. HST 13%. FLAT stores have one "TAX" part. */
+export interface TaxLine {
+  code: CaTaxCode | "TAX";
+  label: string;
+  percent: number;
+  minor: number;
+}
+
+export type QuoteErrorCode =
+  | "CURRENCY_NOT_OFFERED"
+  | "FULFILMENT_UNAVAILABLE"
+  | "POSTAL_CODE_REQUIRED"
+  | "INVALID_POSTAL_CODE";
+
 export interface Quote {
   currency: string;
   lines: PricedLine[];
@@ -83,8 +112,13 @@ export interface Quote {
   /** The one priced (the shopper's choice, else the first option); null if none is available. */
   fulfilment: Fulfilment | null;
   deliveryMinor: number;
+  /** The sum of the tax parts' percents. */
   taxPercent: number;
   pricesIncludeTax: boolean;
+  /** The tax parts (4.4); empty when no tax is charged. Their `minor`s add up to `taxMinor`. */
+  taxLines: TaxLine[];
+  /** Canada mode: the province taxed (null in FLAT mode, or when it isn't known yet). */
+  taxRegion: { province: CaProvince; name: string } | null;
   taxMinor: number;
   /** Goods after discount + delivery, + tax unless prices include it. */
   totalMinor: number;
@@ -92,8 +126,10 @@ export interface Quote {
   /**
    * Whole-quote problem. CURRENCY_NOT_OFFERED: nothing is priced (lines empty).
    * FULFILMENT_UNAVAILABLE: the lines are priced, but the chosen method isn't offered.
+   * POSTAL_CODE_REQUIRED / INVALID_POSTAL_CODE (4.4): a Canada-mode delivery needs a valid
+   * Canadian postal code to know the tax; everything else is priced, tax is 0 until then.
    */
-  error: { code: "CURRENCY_NOT_OFFERED" | "FULFILMENT_UNAVAILABLE"; message: string } | null;
+  error: { code: QuoteErrorCode; message: string } | null;
 }
 
 export interface PricingStore {
@@ -134,9 +170,11 @@ export function includedTaxOf(amountMinor: number, percent: number): number {
 
 /** `amount × percent / 100`, rounded half up to a whole cent. */
 export function percentOf(amountMinor: number, percent: number): number {
-  // Work in hundredths of a percent as integers, so 12.5% of 2 cents isn't lost to float error.
-  const bp = Math.round(percent * 100);
-  return Math.floor((amountMinor * bp + 5000) / 10000);
+  // Thousandths of a percent as integers (Quebec's QST is 9.975%), in BigInt so a large cart
+  // can't lose precision, and so 12.5% of 2 cents isn't lost to float error either.
+  const milli = BigInt(Math.round(percent * 1000));
+  if (milli <= BigInt(0)) return 0;
+  return Number((BigInt(amountMinor) * milli + BigInt(50_000)) / BigInt(100_000));
 }
 
 /**
@@ -194,7 +232,7 @@ export function priceLines(
   store: PricingStore,
   lines: QuoteLineInput[],
   currency: string,
-  opts: { fulfilment?: Fulfilment } = {}
+  opts: { fulfilment?: Fulfilment; postalCode?: string } = {}
 ): Quote {
   const f = fulfilmentSettings(store.settings.general);
   if (!store.settings.currencies.some((c) => c.currencyCode === currency)) {
@@ -206,8 +244,10 @@ export function priceLines(
       fulfilmentOptions: [],
       fulfilment: null,
       deliveryMinor: 0,
-      taxPercent: f.taxPercent,
-      pricesIncludeTax: f.pricesIncludeTax,
+      taxPercent: f.taxMode === "CANADA" ? 0 : f.taxPercent,
+      pricesIncludeTax: f.taxMode === "CANADA" ? false : f.pricesIncludeTax,
+      taxLines: [],
+      taxRegion: null,
       taxMinor: 0,
       totalMinor: 0,
       ok: false,
@@ -291,9 +331,9 @@ export function priceLines(
   const chosen = fulfilmentOptions.find((o) => o.method === wanted) ?? null;
   const deliveryMinor = chosen && valid.length > 0 ? chosen.feeMinor : 0;
   const taxable = subtotalMinor - discountMinor + deliveryMinor;
-  const taxMinor = f.pricesIncludeTax ? includedTaxOf(taxable, f.taxPercent) : percentOf(taxable, f.taxPercent);
+  const tax = taxFor(f, chosen?.method ?? null, taxable, opts.postalCode);
   const error: Quote["error"] = chosen
-    ? null
+    ? tax.error
     : {
         code: "FULFILMENT_UNAVAILABLE",
         message: wanted === "DELIVERY" ? `This store doesn't deliver in ${currency}.` : "This store doesn't offer pickup.",
@@ -306,11 +346,64 @@ export function priceLines(
     fulfilmentOptions,
     fulfilment: chosen?.method ?? null,
     deliveryMinor,
-    taxPercent: f.taxPercent,
-    pricesIncludeTax: f.pricesIncludeTax,
-    taxMinor,
-    totalMinor: taxable + (f.pricesIncludeTax ? 0 : taxMinor),
-    ok: lines.length > 0 && valid.length === lines.length && !!chosen,
+    taxPercent: tax.percent,
+    pricesIncludeTax: tax.included,
+    taxLines: tax.lines,
+    taxRegion: tax.region,
+    taxMinor: tax.minor,
+    totalMinor: taxable + (tax.included ? 0 : tax.minor),
+    ok: lines.length > 0 && valid.length === lines.length && !!chosen && !error,
     error,
+  };
+}
+
+/** The tax on `taxable` for this store and fulfilment (4.2 flat rate, or 4.4 Canada). */
+function taxFor(
+  f: ReturnType<typeof fulfilmentSettings>,
+  method: Fulfilment | null,
+  taxable: number,
+  postalCode: string | undefined
+): {
+  lines: TaxLine[];
+  minor: number;
+  percent: number;
+  included: boolean;
+  region: Quote["taxRegion"];
+  error: Quote["error"];
+} {
+  const none = { lines: [], minor: 0, percent: 0, included: false, region: null, error: null };
+  if (f.taxMode !== "CANADA") {
+    const minor = f.pricesIncludeTax ? includedTaxOf(taxable, f.taxPercent) : percentOf(taxable, f.taxPercent);
+    const lines: TaxLine[] = f.taxPercent > 0 ? [{ code: "TAX", label: "Tax", percent: f.taxPercent, minor }] : [];
+    return { ...none, lines, minor, percent: f.taxPercent, included: f.pricesIncludeTax };
+  }
+  const settings = f.canadaTax;
+  // Saved settings are validated, but don't trust a half-written record: no settings, no tax.
+  if (!settings || !method || !chargesAnyCanadaTax(settings)) return none;
+  let province: CaProvince | null = settings.homeProvince;
+  if (method === "DELIVERY") {
+    if (!postalCode) {
+      return { ...none, error: { code: "POSTAL_CODE_REQUIRED", message: "Enter your postal code to see the tax." } };
+    }
+    province = provinceFromPostalCode(postalCode);
+    if (!province) {
+      return {
+        ...none,
+        error: { code: "INVALID_POSTAL_CODE", message: "Enter a Canadian postal code, like K1A 0B1." },
+      };
+    }
+  }
+  const lines: TaxLine[] = canadaTaxComponents(province, settings).map((c) => ({
+    ...c,
+    minor: percentOf(taxable, c.percent),
+  }));
+  return {
+    lines,
+    minor: lines.reduce((n, l) => n + l.minor, 0),
+    // Round away float noise (5 + 9.975)
+    percent: Math.round(lines.reduce((n, l) => n + l.percent, 0) * 1000) / 1000,
+    included: false,
+    region: { province, name: CA_PROVINCE_NAMES[province] },
+    error: null,
   };
 }

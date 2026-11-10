@@ -295,6 +295,8 @@ describe("f. tax and fulfilment (4.2)", () => {
       pickupEnabled: true,
       deliveryEnabled: false,
       deliveryFees: {},
+      taxMode: "FLAT",
+      canadaTax: null,
     });
   });
 
@@ -317,6 +319,36 @@ describe("f. tax and fulfilment (4.2)", () => {
     ["an unknown currency's fee", { deliveryFees: { EUR: 100 } }],
     ["fees that aren't an object", { deliveryFees: [100] }],
     ["a non-boolean flag", { pricesIncludeTax: "yes" }],
+  ])("refuses %s", (_n, patch) => {
+    expect(settingsOk(settings((s) => Object.assign(s.general, patch)))).toBe(false);
+  });
+});
+
+describe("g. Canadian tax settings (4.4)", () => {
+  const canada = (patch: object = {}) =>
+    settings((s) =>
+      Object.assign(s.general, {
+        taxMode: "CANADA",
+        canadaTax: { homeProvince: "ON", gstRegistered: true, provincialRegistrations: [], ...patch },
+      })
+    );
+
+  it("accepts a home province, GST/HST registration and PST/QST registrations", () => {
+    expect(settingsOk(canada())).toBe(true);
+    expect(settingsOk(canada({ homeProvince: "QC", provincialRegistrations: ["QC", "BC"] }))).toBe(true);
+    expect(settingsOk(canada({ gstRegistered: false }))).toBe(true);
+    expect(settingsOk(settings((s) => Object.assign(s.general, { taxMode: "FLAT", taxPercent: 13 })))).toBe(true);
+  });
+
+  it.each([
+    ["an unknown mode", { taxMode: "US" }],
+    ["Canada mode with no settings", { taxMode: "CANADA" }],
+    ["Canada mode with prices including tax", { taxMode: "CANADA", pricesIncludeTax: true, canadaTax: { homeProvince: "ON", gstRegistered: true, provincialRegistrations: [] } }],
+    ["an unknown province", { taxMode: "CANADA", canadaTax: { homeProvince: "XX", gstRegistered: true, provincialRegistrations: [] } }],
+    ["a PST registration in an HST province", { taxMode: "CANADA", canadaTax: { homeProvince: "ON", gstRegistered: true, provincialRegistrations: ["ON"] } }],
+    ["a repeated registration", { taxMode: "CANADA", canadaTax: { homeProvince: "BC", gstRegistered: true, provincialRegistrations: ["BC", "BC"] } }],
+    ["a registration flag as text", { taxMode: "CANADA", canadaTax: { homeProvince: "BC", gstRegistered: "yes", provincialRegistrations: [] } }],
+    ["settings that aren't an object", { taxMode: "CANADA", canadaTax: "ON" }],
   ])("refuses %s", (_n, patch) => {
     expect(settingsOk(settings((s) => Object.assign(s.general, patch)))).toBe(false);
   });

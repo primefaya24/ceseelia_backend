@@ -4,6 +4,8 @@
 /* Max string lengths, in characters. */
 export const MAX_LENGTH = {
   storeName: 60,
+  // A Canadian postal code with a space or dash ("K1A 0B1"); a little slack for stray spaces (4.4)
+  postalCode: 10,
   personName: 50,
   storeSlug: 40,
   storeSlogan: 120,

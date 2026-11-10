@@ -530,6 +530,27 @@ match the backend and webapp._
     characters, wrong types. The store's 404s; `Cache-Control: no-store`; 60 per IP per minute →
     429 `RATE_LIMITED` + `Retry-After` (in memory, like contact-store). Checked live on dev
     (2 × Pink Slay = 13000, unknown item → `ITEM_NOT_FOUND`). No tax or delivery yet (4.2)._
+- [x] 4.4 Canadian sales tax by province (WA 4.6). Owner's decision 2026-11-09: tax isn't
+      left to a payment processor (Stripe, Square and PayPal are all planned); Canada is done in
+      the platform, other countries later via the processor active at checkout.
+  - _Done 2026-11-09. `layers/core/tax/canada.ts` (pure): provinces, rates as of 2025-04-01
+    (HST ON 13, NS 14, NB/NL/PE 15; GST 5; PST BC 7, SK 6; RST MB 7; QST QC 9.975), Canada Post
+    postal code check (`normalizePostalCode`) and first letter → province. `general.taxMode`
+    (`FLAT` default | `CANADA`) and `general.canadaTax` (`homeProvince`, `gstRegistered`,
+    `provincialRegistrations` in BC/MB/QC/SK only); Canada mode refuses `pricesIncludeTax`.
+    `priceLines` takes `postalCode`: pickup is taxed in the home province, delivery in the postal
+    code's; each part is its own percent of goods-after-discount + delivery, rounded half up on its
+    own; no GST/HST unless registered (small supplier), PST/RST/QST only where registered. Quote
+    adds `taxLines` and `taxRegion`; a Canada delivery without a valid code gets 0 tax and
+    `error: POSTAL_CODE_REQUIRED` / `INVALID_POSTAL_CODE` (`ok: false`), unless the store charges
+    no tax at all. `percentOf` now works in thousandths of a percent with BigInt (QST, big carts).
+    The quote route takes `postalCode` (string ≤ 10, else 400); it's never stored or logged (the
+    request log has only IP/host/path). Rates come only from the server._
+  - [ ] **Follow-ups:** order creation (5.4) must re-quote with the **delivery address's** postal
+    code, not one typed in the cart; have an accountant confirm the rules (delivery charges are
+    taxed like the goods here, which is a simplification for some provinces); update
+    `CA_TAX_RATES` + `CA_TAX_RATES_AS_OF` when a rate changes; non-Canadian delivery in Canada mode
+    isn't supported (the postal code must be Canadian) until overseas tax via the processor.
 
 ---
 
@@ -622,6 +643,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-09 | 4.4 done: Canadian sales tax by province (`taxMode: CANADA`): pickup in the store's province, delivery by the shopper's postal code; GST/HST/PST/RST/QST lines in the quote. |
 | 2026-11-09 | 4.2 done: tax rate (added or included), pickup/delivery with a flat fee per currency, in settings and in the quote. |
 | 2026-11-09 | 4.3 done: `POST /customer/quote` (public, 60/IP/min, ≤ 50 lines) prices a cart with `priceLines` on the store's public data. |
 | 2026-11-09 | 4.1 done: pure `priceLines` (biggest discount wins, per-line half-up rounding, param/stock/currency checks with per-line errors). |

@@ -11,8 +11,10 @@ import { getClientIp, isUlid } from "../../../../layers/core/utils";
 
 /*
  * POST /customer/quote (public, no auth; progress.md 4.3 / WA 4.4)
- * Body { storeId, currency, fulfilment?: "PICKUP" | "DELIVERY",
+ * Body { storeId, currency, fulfilment?: "PICKUP" | "DELIVERY", postalCode?: string,
  *        lines: [{ itemId, quantity, params: [{ label, values }] }] }.
+ * `postalCode` (4.4) is only used to find the province for Canadian tax on a delivery. It is
+ * checked against the Canada Post format inside `priceLines` and never stored or logged.
  * Without `fulfilment` the store's first option (pickup, else delivery) is priced (4.2).
  * Prices the cart with `priceLines` (4.1) against the store's public data, so hidden items,
  * hidden categories and currencies the store doesn't offer are never priced. Always 200 with
@@ -58,6 +60,7 @@ function pureRequestParams(req: Request): boolean {
     isString(b?.storeId) &&
     isString(b?.currency) &&
     (b.fulfilment === undefined || b.fulfilment === "PICKUP" || b.fulfilment === "DELIVERY") &&
+    (b.postalCode === undefined || isString(b.postalCode)) &&
     Array.isArray(b?.lines) &&
     b.lines.every(isLinePure)
   );
@@ -69,6 +72,7 @@ function validRequestParams(req: Request): boolean {
   return (
     isUlid(req.body.storeId) &&
     req.body.currency.length <= 3 &&
+    (req.body.postalCode === undefined || req.body.postalCode.length <= MAX_LENGTH.postalCode) &&
     lines.length <= MAX_COUNT.cartLines &&
     lines.every(
       (l) =>
@@ -106,6 +110,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     res.send(
       priceLines(store, lines, String(req.body.currency).toUpperCase(), {
         fulfilment: req.body.fulfilment as Fulfilment | undefined,
+        postalCode: req.body.postalCode as string | undefined,
       })
     );
   } catch (e) {

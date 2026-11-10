@@ -151,5 +151,25 @@ describe("POST /customer/quote (4.3)", () => {
     expect(delivery.body).toMatchObject({ fulfilment: "DELIVERY", deliveryMinor: 500, taxMinor: 125, totalMinor: 1374, ok: true });
     expect((await quote(body([cake], { fulfilment: "COURIER" }))).status).toBe(400);
   });
-});
 
+  it("taxes a Canadian delivery by the postal code's province, and refuses an oversized one (4.4)", async () => {
+    const s = initStoreSettings();
+    liveStore({
+      general: {
+        ...s.general,
+        discountPercent: 0,
+        taxMode: "CANADA",
+        deliveryEnabled: true,
+        deliveryFees: { USD: 0 },
+        canadaTax: { homeProvince: "ON", gstRegistered: true, provincialRegistrations: [] },
+      },
+    });
+    const cake = { itemId: CAKE, quantity: 3 }; // 999 - 25% = 749
+    const ab = await quote(body([cake], { fulfilment: "DELIVERY", postalCode: "T2P 1J9" }));
+    expect(ab.body).toMatchObject({ taxRegion: { province: "AB" }, taxMinor: 37, ok: true });
+    const none = await quote(body([cake], { fulfilment: "DELIVERY" }));
+    expect(none.body).toMatchObject({ ok: false, error: { code: "POSTAL_CODE_REQUIRED" } });
+    expect((await quote(body([cake], { fulfilment: "DELIVERY", postalCode: "K1A 0B1 K1A 0B1" }))).status).toBe(400);
+    expect((await quote(body([cake], { fulfilment: "DELIVERY", postalCode: 12345 }))).status).toBe(400);
+  });
+});

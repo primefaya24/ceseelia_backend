@@ -2,6 +2,7 @@
  * Merchant Join Requests
  */
 
+import { CanadaTaxSettings, isCanadaTaxSettings } from "../../tax/canada";
 import {
   appConstants,
   PRIORITY,
@@ -137,6 +138,13 @@ export interface StoreSettings {
     deliveryEnabled?: boolean;
     /** Flat delivery fee per currency, minor units, like item prices (0 = free). */
     deliveryFees?: StoreItemPrices;
+    /**
+     * Tax mode (4.4). FLAT (default): `taxPercent` on every order. CANADA: GST/HST/PST/QST by
+     * province from `canadaTax` and the rates in `layers/core/tax/canada.ts`; `taxPercent` and
+     * `pricesIncludeTax` don't apply (Canadian prices are shown before tax).
+     */
+    taxMode?: TaxMode;
+    canadaTax?: CanadaTaxSettings;
   };
 
   // Admin
@@ -147,6 +155,10 @@ export interface StoreSettings {
 
   customize: any;
 }
+
+/** How a store charges tax (4.4). */
+export const TAX_MODES = ["FLAT", "CANADA"] as const;
+export type TaxMode = (typeof TAX_MODES)[number];
 
 export function initStoreSettings(): StoreSettings {
   return {
@@ -250,7 +262,9 @@ export function isStoreSettingsPure(storeSettings: StoreSettings): boolean {
     (g.pricesIncludeTax !== undefined && typeof g.pricesIncludeTax !== "boolean") ||
     (g.pickupEnabled !== undefined && typeof g.pickupEnabled !== "boolean") ||
     (g.deliveryEnabled !== undefined && typeof g.deliveryEnabled !== "boolean") ||
-    (g.deliveryFees !== undefined && !isObject(g.deliveryFees))
+    (g.deliveryFees !== undefined && !isObject(g.deliveryFees)) ||
+    (g.taxMode !== undefined && typeof g.taxMode !== "string") ||
+    (g.canadaTax !== undefined && !isObject(g.canadaTax))
   ) return false;
 
   if (s.customize !== undefined && !isObject(s.customize)) return false;
@@ -342,6 +356,8 @@ export function fulfilmentSettings(general: Partial<StoreSettings["general"]> | 
     pickupEnabled: general?.pickupEnabled ?? true,
     deliveryEnabled: general?.deliveryEnabled ?? false,
     deliveryFees: (general?.deliveryFees ?? {}) as StoreItemPrices,
+    taxMode: (general?.taxMode ?? "FLAT") as TaxMode,
+    canadaTax: general?.canadaTax ?? null,
   };
 }
 
@@ -353,6 +369,10 @@ export function fulfilmentSettings(general: Partial<StoreSettings["general"]> | 
 function isFulfilmentValid(s: StoreSettings): boolean {
   const f = fulfilmentSettings(s.general);
   if (!isInRange(f.taxPercent, NUMBER_RANGE.taxPercent)) return false;
+  if (!(TAX_MODES as readonly string[]).includes(f.taxMode)) return false;
+  // Canada mode (4.4): a known home province, registrations only in provinces that have their
+  // own sales tax, and prices shown before tax.
+  if (f.taxMode === "CANADA" && (!isCanadaTaxSettings(f.canadaTax) || f.pricesIncludeTax)) return false;
   if (!f.pickupEnabled && !f.deliveryEnabled) return false;
   for (const [code, fee] of Object.entries(f.deliveryFees)) {
     if (!(CURRENCY_CODES as readonly string[]).includes(code)) return false;
