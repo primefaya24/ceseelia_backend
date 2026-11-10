@@ -77,6 +77,20 @@ describe("defaults pass", () => {
   });
 });
 
+describe("showEmail / showPhone", () => {
+  it("is optional, and must be true or false", () => {
+    const base = initStoreSettings();
+    const withShow = (v: unknown) => ({ ...base, storeInfo: { ...base.storeInfo, showEmail: v } }) as StoreSettings;
+    expect(settingsOk(base)).toBe(true);
+    expect(settingsOk(withShow(false))).toBe(true);
+    expect(settingsOk(withShow(true))).toBe(true);
+    expect(isStoreSettingsPure(withShow("no"))).toBe(false);
+    const withPhone = (v: unknown) => ({ ...base, storeInfo: { ...base.storeInfo, showPhone: v } }) as StoreSettings;
+    expect(settingsOk(withPhone(false))).toBe(true);
+    expect(isStoreSettingsPure(withPhone(1))).toBe(false);
+  });
+});
+
 describe("a. max lengths", () => {
   it.each<[string, (s: any) => void]>([
     ["store name", (s) => (s.storeInfo.storeName = x(MAX_LENGTH.storeName + 1))],

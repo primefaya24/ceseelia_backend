@@ -5,7 +5,7 @@ import { DynamoDBDocumentClient, GetCommand, QueryCommand } from "@aws-sdk/lib-d
 import { ulid } from "ulid";
 
 import { createApp } from "../app";
-import { toPublicInventory } from "../layers/aws/dynamodb/dynamo-entities/store";
+import { toPublicInventory, toPublicSettings } from "../layers/aws/dynamodb/dynamo-entities/store";
 import { initStoreCategory, initStoreSettings, StoreItem } from "../layers/core/interfaces/store";
 
 const ddb = mockClient(DynamoDBDocumentClient);
@@ -75,6 +75,50 @@ describe("toPublicInventory (2.4b)", () => {
     const data = inventory();
     data.items = [];
     expect(toPublicInventory(data).categories[0].storeCategoryItemCount).toBe(0);
+  });
+});
+
+describe("store email on the storefront (showEmail)", () => {
+  const withEmail = (showEmail?: boolean) => {
+    const base = initStoreSettings();
+    return { ...base, storeInfo: { ...base.storeInfo, emailaddress: "hi@hoop.test", ...(showEmail === undefined ? {} : { showEmail }) } };
+  };
+
+  it("is shown by default (settings saved before the toggle) and when on", () => {
+    expect(toPublicSettings(withEmail()).storeInfo).toMatchObject({ emailaddress: "hi@hoop.test", contactFormAvailable: true });
+    expect(toPublicSettings(withEmail(true)).storeInfo.emailaddress).toBe("hi@hoop.test");
+  });
+
+  it("is left out of the public data when hidden, but Contact us stays available", () => {
+    const info = toPublicInventory({ ...inventory(), settings: withEmail(false) }).settings.storeInfo;
+    expect(info.emailaddress).toBe("");
+    expect(JSON.stringify(info)).not.toContain("hi@hoop.test");
+    expect(info.contactFormAvailable).toBe(true);
+  });
+
+  it("no email: no Contact us; a contactFormAvailable sent in is not trusted", () => {
+    const base = initStoreSettings();
+    const forged = { ...base, storeInfo: { ...base.storeInfo, contactFormAvailable: true } };
+    expect(toPublicSettings(forged).storeInfo.contactFormAvailable).toBe(false);
+  });
+
+  it("the phone number can be hidden on its own, or both together", () => {
+    const base = initStoreSettings();
+    const info = (extra: object) =>
+      toPublicSettings({ ...base, storeInfo: { ...base.storeInfo, emailaddress: "hi@hoop.test", phoneNumber: "+1 416 555 0142", ...extra } })
+        .storeInfo;
+    expect(info({ showPhone: false })).toMatchObject({ phoneNumber: "", emailaddress: "hi@hoop.test" });
+    expect(info({})).toMatchObject({ phoneNumber: "+1 416 555 0142" });
+    const both = info({ showPhone: false, showEmail: false });
+    expect(both).toMatchObject({ phoneNumber: "", emailaddress: "", contactFormAvailable: true });
+  });
+
+  it("the public endpoint hides it too", async () => {
+    store({ ...withEmail(false) });
+    const res = await get();
+    expect(res.status).toBe(200);
+    expect(res.text).not.toContain("hi@hoop.test");
+    expect(res.body.settings.storeInfo.contactFormAvailable).toBe(true);
   });
 });
 

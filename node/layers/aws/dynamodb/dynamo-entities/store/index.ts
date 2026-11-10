@@ -500,6 +500,12 @@ export async function getStoreInventoryData(
   }
 }
 
+/* contactFormAvailable is worked out for public responses; it's never saved. */
+function withoutPublicOnlyInfo(info: StoreSettings["storeInfo"]): StoreSettings["storeInfo"] {
+  const { contactFormAvailable: _ignored, ...rest } = info;
+  return rest;
+}
+
 export async function updateStoreSettings(
   storeId: string,
   storeSettings: StoreSettings
@@ -535,7 +541,7 @@ export async function updateStoreSettings(
       ExpressionAttributeValues: {
         ":templateId": storeSettings.templateId,
         ":themeId": storeSettings.themeId,
-        ":storeInfo": storeSettings.storeInfo,
+        ":storeInfo": withoutPublicOnlyInfo(storeSettings.storeInfo),
         ":purchaseRewards": storeSettings.purchaseRewards,
         ":socialMediaLinks": storeSettings.socialMediaLinks,
         ":currencies": storeSettings.currencies,
@@ -616,7 +622,28 @@ export class StoreUnavailableError extends Error {
 }
 
 /*
- * What a shopper may see: no admin block, only active categories, only active items in them
+ * The settings a shopper may see: the email and phone number are left out when the merchant hid
+ * them (`showEmail` / `showPhone` false: often personal details), and `contactFormAvailable`
+ * says whether Contact us can be offered (the store has an email; contact-store reads the real
+ * one on the server).
+ */
+export function toPublicSettings(settings: StoreSettings): StoreSettings {
+  const info = settings.storeInfo ?? initStoreSettings().storeInfo;
+  const email = (info.emailaddress ?? "").trim();
+  const { contactFormAvailable: _ignored, ...rest } = info;
+  return {
+    ...settings,
+    storeInfo: {
+      ...rest,
+      emailaddress: info.showEmail === false ? "" : info.emailaddress,
+      phoneNumber: info.showPhone === false ? "" : info.phoneNumber,
+      contactFormAvailable: email.length > 0,
+    },
+  };
+}
+
+/*
+ * What a shopper may see: no admin block, the email only if shown (toPublicSettings), only active categories, only active items in them
  * (items of a missing or inactive category are left out), and each category's count is the
  * number of items returned, so hidden items aren't given away by the counts.
  * Prices (2.5) are cut to the currencies the store offers; an item priced in none of them can't
@@ -638,7 +665,7 @@ export function toPublicInventory(data: StoreInventoryData): StoreInventoryData 
   const counts = new Map<string, number>();
   for (const i of items) counts.set(i.storeItemCategoryId, (counts.get(i.storeItemCategoryId) ?? 0) + 1);
   return withoutAdminSettings({
-    settings: data.settings,
+    settings: toPublicSettings(data.settings),
     categories: categories.map((c) => ({ ...c, storeCategoryItemCount: counts.get(c.storeCategoriyId) ?? 0 })),
     items,
   });

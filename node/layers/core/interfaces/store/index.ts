@@ -95,6 +95,19 @@ export interface StoreSettings {
     logoUri: string;
     phoneNumber: string;
     emailaddress: string;
+    /*
+     * Show the email on the storefront. Optional: settings saved before it existed don't have
+     * it, and missing means shown. When false the public responses leave the email out; the
+     * Contact us form still reaches it (the server sends the message, the shopper never sees it).
+     */
+    showEmail?: boolean;
+    /* Show the phone number on the storefront; same rules as showEmail (missing = shown). */
+    showPhone?: boolean;
+    /*
+     * Public responses only (set by toPublicInventory, never saved): the store has an email, so
+     * the Contact us form can be offered even when the address itself is hidden.
+     */
+    contactFormAvailable?: boolean;
   };
 
   purchaseRewards: {
@@ -236,6 +249,9 @@ export function isStoreSettingsPure(storeSettings: StoreSettings): boolean {
   if (typeof s.templateId !== "string" || typeof s.themeId !== "string") return false;
 
   if (!isObject(s.storeInfo) || !allStrings(s.storeInfo, STORE_INFO_STRING_KEYS)) return false;
+  for (const key of ["showEmail", "showPhone"]) {
+    if (s.storeInfo[key] !== undefined && typeof s.storeInfo[key] !== "boolean") return false;
+  }
 
   const r = s.purchaseRewards;
   if (
