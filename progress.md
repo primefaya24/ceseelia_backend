@@ -470,7 +470,7 @@ match the backend and webapp._
 - [ ] 3.2 Cache headers (`Cache-Control`, `ETag`) on public endpoints, and CloudFront in front of
       the API's public paths and the storage bucket.
   - [x] a. Headers. _Done 2026-11-09, tested by hand. `layers/core/http/cache.ts`:
-        storefront (both routes) and item → `private, max-age=30` (the body varies by shopper:
+        storefront (both routes) and item → `private, no-cache` (was `max-age=30` until QA Q.21, 2026-11-11; the body varies by shopper:
         geo-IP default currency, so a shared cache must not keep one copy); slug lookup →
         `public, max-age=300`; every public error and contact-store → `no-store`. Express's weak
         ETag + 304 already worked (now tested; checked live). Uploaded images get
@@ -664,6 +664,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
 | 2026-11-09 | QA Q.16 (WA): `storeInfo.showEmail` / `showPhone` (optional, missing = shown). When false, `toPublicSettings` blanks that detail in every public response (storefront and item link); `contactFormAvailable` (public only, worked out from the stored email, never saved) keeps Contact us offered; contact-store still emails the real address. |
 | 2026-11-09 | 4.4 done: Canadian sales tax by province (`taxMode: CANADA`): pickup in the store's province, delivery by the shopper's postal code; GST/HST/PST/RST/QST lines in the quote. |

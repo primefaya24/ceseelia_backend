@@ -4,13 +4,15 @@ import { Response } from "express";
  * Cache-Control for the public endpoints (progress.md 3.2). Express already adds a weak ETag to
  * every response and answers a matching If-None-Match with 304, so a revalidation is cheap.
  *   - storefront / item: `private`. The body depends on the shopper (their geo-IP currency is
- *     the default), so a shared cache (CloudFront) must not keep one copy for everyone. 30 s
- *     keeps a merchant's edits showing up quickly.
+ *     the default), so a shared cache (CloudFront) must not keep one copy for everyone.
+ *     `no-cache` (QA Q.21): the browser keeps the copy but asks every time (a 304 via the ETag
+ *     when nothing changed), so an item the merchant disables or discounts shows at once when an
+ *     open storefront refreshes. (It was `max-age=30`, which served the old copy for 30 s.)
  *   - slug → storeId: the same for everyone and rarely changes, so `public` for 5 minutes.
  *   - errors and writes: `no-store`, so a store that's fixed or goes live shows up at once.
  */
 export const CACHE_CONTROL = {
-  storefront: "private, max-age=30",
+  storefront: "private, no-cache",
   slug: "public, max-age=300",
   none: "no-store",
 } as const;

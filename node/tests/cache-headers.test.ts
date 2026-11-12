@@ -52,7 +52,7 @@ describe("Cache-Control on public endpoints (3.2)", () => {
     liveStore();
     const res = await get(path);
     expect(res.status).toBe(200);
-    expect(res.headers["cache-control"]).toBe("private, max-age=30");
+    expect(res.headers["cache-control"]).toBe("private, no-cache");
     expect(res.headers.etag).toBeTruthy();
   });
 
