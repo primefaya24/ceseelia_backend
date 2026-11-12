@@ -25,7 +25,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > delivery tax estimated from geo-IP, no postal code in the quote). **Stage 5 started:** 5.1 is
 > decided (Stripe Connect **Standard**, direct charges; commission is a fixed amount per order in
 > each currency, `admin.salesCommissions`) and 5.1a is done. 5.2 (onboarding routes, keys in
-> Secrets Manager) is done. **Next: WA 5.4** (Payments card), then 5.3 (order model).
+> Secrets Manager) is done, and so is WA 5.4 (Payments card). **Next: 5.3** (order model).
 > Both repos are committed on `dev_v1.0.0_customer_store_front`; nothing pushed.
 
 > **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
@@ -618,6 +618,12 @@ match the backend and webapp._
   - [ ] c. Create the Checkout Session **on the connected account** (direct charge) with
         `payment_intent_data.application_fee_amount = platformFeeMinor(...)` (from the
         merchant's share; the shopper's total is the quote's total), plus an idempotency key.
+        **Tax:** charge exactly the quote's tax as its own line (or amounts), and **never** set
+        `automatic_tax: { enabled: true }`. Merchants may opt in to Stripe Tax during onboarding
+        (it's offered there); turning it on in the session would add Stripe's tax on top of ours
+        (double tax) and bill the merchant Stripe Tax fees. Add a test that the session params
+        have no `automatic_tax` / `tax_id_collection` and that the session total equals the
+        quote total.
   - [ ] d. Return the URL and an order-status token. (WA 5.2)
 - [ ] 5.5 Webhook rewrite:
   - [ ] a. A **Connect** webhook endpoint (direct charges' events come from the connected
@@ -699,6 +705,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | Note for 5.4c (from the sandbox onboarding test): never enable Stripe `automatic_tax` in checkout; Ceseelia charges the quote's tax. Merchants can opt in to Stripe Tax during onboarding, so enabling it would double-tax shoppers. |
 | 2026-11-11 | 5.2 done: `create-connect-account-link` and `status` under `/store/payments`; Standard accounts in CA/US/AU; `payments` attribute on SETTINGS (private; public gets `paymentsEnabled`); Stripe keys read from Secrets Manager (`STRIPE_SECRET_ID`), live key refused in dev, prod won't start without one. Sandbox smoke test passed. |
 | 2026-11-11 | 5.1 decided: Stripe Connect **Standard** (direct charges, Connect webhook endpoint). 5.1a done: `admin.salesCommission` (flat, no currency) is now `admin.salesCommissions` (cents per currency, default 125 each); old values are converted when read (`normalizeAdminSettings`); `platformFeeMinor` for 5.4c. Next: 5.2. |
 | 2026-11-11 | QA done for now; next is Stage 5. Decided: the platform commission is taken from the merchant (`application_fee_amount`) and never shown to shoppers (5.1 note); commission model (percentage vs fixed) still open. |

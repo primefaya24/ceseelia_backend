@@ -301,6 +301,10 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     per-order fee added after the price is shown is drip pricing (Canada's Competition Act,
     Australian Consumer Law, California SB 478). A merchant who wants to pass it on raises their
     prices. The platform's own GST/HST on its fee is charged to the merchant (B2B).
+    **Tax is Ceseelia's, not Stripe's:** the Checkout Session charges exactly the quote's tax and
+    never enables `automatic_tax`. Stripe's onboarding offers merchants Stripe Tax (and Radar
+    upgrades); those are on the merchant's own account, and enabling `automatic_tax` would tax
+    the shopper twice.
 5.2 ✅ Merchant onboarding: `POST /store/payments/create-connect-account-link`,
     `GET /store/payments/status/:storeId`; `stripeAccountId` + cached flags in the SETTINGS
     row's own `payments` attribute (not the admin block, which the admin form replaces).
