@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import storeInventoryRouter from "./inventory";
 import storeCategoryRouter from "./category";
 import storePublicRouter from "./public";
+import storePaymentsRouter from "./payments";
 import route_create from './create/index';
 import route_delete from './delete/index';
 import route_get_header_strip_image_upload_url from './get-header-strip-image-upload-url/index';
@@ -26,6 +27,7 @@ route_update_settings(storeRouter);
 storeRouter.use("/category", storeCategoryRouter);
 storeRouter.use("/inventory", storeInventoryRouter);
 storeRouter.use("/public", storePublicRouter);
+storeRouter.use("/payments", storePaymentsRouter);
 
 // Export Router
 export default storeRouter;

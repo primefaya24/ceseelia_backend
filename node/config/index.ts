@@ -72,6 +72,13 @@ export const COGNITO_AUTH_DOMAIN: string = env("COGNITO_AUTH_DOMAIN");
 export const COGNITO_FEDERATION_REDIRECT_URL: string = env("COGNITO_FEDERATION_REDIRECT_URL");
 
 /*
+* Stripe (5.2). The keys live in AWS Secrets Manager, never in env files or git: a JSON secret
+* { "secretKey": "sk_…" | "rk_…", "webhookSecret": "whsec_…" } read once at startup by
+* layers/payments/stripe. Dev must use a test-mode key.
+*/
+export const STRIPE_SECRET_ID: string = env("STRIPE_SECRET_ID", `ceseelia/${STAGE}/stripe`);
+
+/*
 * S3
 */
 export const S3_STORAGE_BUCKET_NAME: string = env("S3_STORAGE_BUCKET_NAME", `${appConstants.S3_STORAGE_BUCKET_PREFIX}${STAGE}`);

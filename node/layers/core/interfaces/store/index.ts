@@ -173,8 +173,33 @@ export interface StoreSettings {
     isStoreLive: boolean; // True
   };
 
+  /**
+   * The store's Stripe account (5.2): a Standard connected account owned by the merchant. Kept
+   * in its own attribute so neither update-settings nor the admin form can overwrite it. Only
+   * the payments routes read it; members' get-data and public responses leave it out.
+   */
+  payments?: StorePayments;
+  /** Public responses only: the store can take payments (its Stripe account has charges on). */
+  paymentsEnabled?: boolean;
+
   customize: any;
 }
+
+/** A store's Stripe connection (5.2). The flags are a cache of the account; Stripe is the truth. */
+export interface StorePayments {
+  stripeAccountId?: string;
+  chargesEnabled?: boolean;
+  payoutsEnabled?: boolean;
+  detailsSubmitted?: boolean;
+  /** Last time the flags were refreshed from Stripe (ms). */
+  updatedAt?: number;
+  /** When the merchant disconnected their account from Ceseelia (ms); a new one can be created. */
+  disconnectedAt?: number;
+}
+
+/** Countries a store's Stripe account can be created in (5.2), matching the store currencies. */
+export const PAYMENT_COUNTRIES = ["CA", "US", "AU"] as const;
+export type PaymentCountry = (typeof PAYMENT_COUNTRIES)[number];
 
 /** How a store charges tax (4.4). */
 export const TAX_MODES = ["FLAT", "CANADA"] as const;

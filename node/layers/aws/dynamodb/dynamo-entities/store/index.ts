@@ -24,6 +24,7 @@ import {
   StoreItem,
   StoreOverview,
   StoreParameter,
+  StorePayments,
   StoreSettings,
 } from "../../../../core/interfaces/store";
 import { getStorageImageUrl } from "../../../../core/utils";
@@ -607,7 +608,7 @@ export async function updateStoreAdminSettings(
 
 /* The same data without the admin block, for merchants and the public storefront. */
 export function withoutAdminSettings(data: StoreInventoryData): StoreInventoryData {
-  const { admin: _admin, ...settings } = data.settings;
+  const { admin: _admin, payments: _payments, ...settings } = data.settings;
   return { ...data, settings: settings as StoreSettings };
 }
 
@@ -634,6 +635,7 @@ export function toPublicSettings(settings: StoreSettings): StoreSettings {
   const { contactFormAvailable: _ignored, ...rest } = info;
   return {
     ...settings,
+    paymentsEnabled: settings.payments?.chargesEnabled === true,
     storeInfo: {
       ...rest,
       emailaddress: info.showEmail === false ? "" : info.emailaddress,
@@ -693,8 +695,8 @@ export async function getPublicStoreSettings(storeId: string): Promise<StoreSett
   );
   if (!settings.Item) throw new StoreRecordNotFoundError("Store");
   if (settings.Item.admin?.isStoreLive === false) throw new StoreUnavailableError();
-  const { pk: _pk, sk: _sk, admin: _admin, ...rest } = settings.Item;
-  return rest as StoreSettings;
+  const { pk: _pk, sk: _sk, admin: _admin, payments, ...rest } = settings.Item;
+  return { ...rest, paymentsEnabled: payments?.chargesEnabled === true } as StoreSettings;
 }
 
 /*
@@ -810,3 +812,113 @@ export async function deleteStore(storeId: string): Promise<boolean> {
   return true;
 }
 
+
+////////////////////////////////////////
+// Payments: the store's Stripe account (5.2)
+////////////////////////////////////////
+const paymentsKey = (storeId: string) => storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS);
+
+/* The store's payments attribute ({} when it has none). Throws StoreRecordNotFoundError. */
+export async function getStorePayments(storeId: string): Promise<StorePayments> {
+  const res = await dynamoDbDocumentClient.send(
+    new GetCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: paymentsKey(storeId),
+      ProjectionExpression: "#pk, #payments",
+      ExpressionAttributeNames: { "#pk": "pk", "#payments": "payments" },
+    })
+  );
+  if (!res.Item) throw new StoreRecordNotFoundError("Store");
+  return (res.Item.payments ?? {}) as StorePayments;
+}
+
+/*
+ * Save a newly created Stripe account unless the store already has one (two clicks at once).
+ * Returns the account the store ends up with: this one, or the one saved first.
+ */
+export async function saveStoreStripeAccount(storeId: string, stripeAccountId: string): Promise<string> {
+  const payments: StorePayments = {
+    stripeAccountId,
+    chargesEnabled: false,
+    payoutsEnabled: false,
+    detailsSubmitted: false,
+    updatedAt: Date.now(),
+  };
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        Key: paymentsKey(storeId),
+        UpdateExpression: "SET #payments = :payments",
+        ConditionExpression: "attribute_exists(pk) AND attribute_not_exists(#payments.#acct)",
+        ExpressionAttributeNames: { "#payments": "payments", "#acct": "stripeAccountId" },
+        ExpressionAttributeValues: { ":payments": payments },
+      })
+    );
+    return stripeAccountId;
+  } catch (e) {
+    if (!isConditionalCheckFailure(e)) throw e;
+    const existing = (await getStorePayments(storeId)).stripeAccountId;
+    if (!existing) throw new StoreRecordNotFoundError("Store");
+    return existing;
+  }
+}
+
+/* Refresh the cached flags, only if the store still uses that account. Returns false otherwise. */
+export async function updateStorePaymentsStatus(
+  storeId: string,
+  stripeAccountId: string,
+  flags: Required<Pick<StorePayments, "chargesEnabled" | "payoutsEnabled" | "detailsSubmitted">>
+): Promise<boolean> {
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        Key: paymentsKey(storeId),
+        UpdateExpression:
+          "SET #payments.#charges = :charges, #payments.#payouts = :payouts, #payments.#details = :details, #payments.#updated = :now",
+        ConditionExpression: "#payments.#acct = :acct",
+        ExpressionAttributeNames: {
+          "#payments": "payments",
+          "#acct": "stripeAccountId",
+          "#charges": "chargesEnabled",
+          "#payouts": "payoutsEnabled",
+          "#details": "detailsSubmitted",
+          "#updated": "updatedAt",
+        },
+        ExpressionAttributeValues: {
+          ":acct": stripeAccountId,
+          ":charges": flags.chargesEnabled,
+          ":payouts": flags.payoutsEnabled,
+          ":details": flags.detailsSubmitted,
+          ":now": Date.now(),
+        },
+      })
+    );
+    return true;
+  } catch (e) {
+    if (isConditionalCheckFailure(e)) return false;
+    throw e;
+  }
+}
+
+/*
+ * The merchant disconnected that account from Ceseelia (or it's gone): forget it, keeping when
+ * it happened, so the store stops taking payments and can connect a new one.
+ */
+export async function clearStoreStripeAccount(storeId: string, stripeAccountId: string): Promise<void> {
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        Key: paymentsKey(storeId),
+        UpdateExpression: "SET #payments = :payments",
+        ConditionExpression: "#payments.#acct = :acct",
+        ExpressionAttributeNames: { "#payments": "payments", "#acct": "stripeAccountId" },
+        ExpressionAttributeValues: { ":acct": stripeAccountId, ":payments": { disconnectedAt: Date.now() } },
+      })
+    );
+  } catch (e) {
+    if (!isConditionalCheckFailure(e)) throw e;
+  }
+}

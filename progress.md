@@ -24,8 +24,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > Backend fixes from QA: Q.16 (hide email/phone), Q.21 (`private, no-cache`), Q.23 (Canadian
 > delivery tax estimated from geo-IP, no postal code in the quote). **Stage 5 started:** 5.1 is
 > decided (Stripe Connect **Standard**, direct charges; commission is a fixed amount per order in
-> each currency, `admin.salesCommissions`) and 5.1a is done. **Next: 5.2** (merchant onboarding),
-> which needs a Stripe platform account with Connect enabled (test mode) and its keys.
+> each currency, `admin.salesCommissions`) and 5.1a is done. 5.2 (onboarding routes, keys in
+> Secrets Manager) is done. **Next: WA 5.4** (Payments card), then 5.3 (order model).
 > Both repos are committed on `dev_v1.0.0_customer_store_front`; nothing pushed.
 
 > **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
@@ -592,12 +592,22 @@ match the backend and webapp._
         every currency; `get-data` returns the normalized block to admins.
         `platformFeeMinor(admin, currency, total)` gives 5.4c's fee, capped at the order total.
         The webapp's Admin settings form has a box per currency.
-- [ ] 5.2 Merchant onboarding (Standard account: create it, then an `account_onboarding`
-      Account Link; decide whether to also let a merchant link an existing Stripe account
-      through OAuth):
-  - [ ] a. `POST /store/payments/create-connect-account-link`
-  - [ ] b. `GET /store/payments/status/:storeId`
-  - [ ] c. Save `stripeAccountId` in the admin block. (WA 5.4)
+- [x] 5.2 Merchant onboarding (Standard account, then an `account_onboarding` Account Link).
+      New accounts only, no OAuth linking of existing accounts (owner, 2026-11-11).
+  - [x] a. `POST /store/payments/create-connect-account-link` `{storeId, country?}` (store
+        admins): creates the account once (`country` CA/US/AU, required until one exists;
+        idempotency key `store-<id>-account-<disconnectedAt>-<country>`; a race keeps the first
+        saved), then a fresh link per call. Returns to `/store/storefront/:storeId?payments=…`.
+  - [x] b. `GET /store/payments/status/:storeId` (members): live from Stripe; refreshes the
+        cached flags; a disconnected account is forgotten (`disconnected: true`).
+  - [x] c. Saved in the SETTINGS row's own `payments` attribute (the admin form replaces the
+        whole admin block, so not there). Members' get-data and public responses drop it; public
+        settings get `paymentsEnabled` (= `chargesEnabled`). (WA 5.4)
+  - [x] d. Keys in AWS Secrets Manager (`ceseelia/dev/stripe`, sandbox "Ceseelia sandbox");
+        `layers/payments/stripe.ts`. Smoke-tested against the sandbox (create, link, delete).
+  - [ ] e. Prod: create `ceseelia/prod/stripe` with a **restricted** live key (`rk_live_…`,
+        IP-allowlisted) and give the EC2 instance role `secretsmanager:GetSecretValue` on that
+        secret only. Before launch (Stage 9).
 - [ ] 5.3 Order model: `StoreOrderStatus` enum replaces the boolean
       (`PENDING_PAYMENT → PAID → PREPARING → READY/SHIPPED → COMPLETED`, `CANCELLED`, `REFUNDED`).
 - [ ] 5.4 `POST /customer/create-order`:
@@ -689,6 +699,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | 5.2 done: `create-connect-account-link` and `status` under `/store/payments`; Standard accounts in CA/US/AU; `payments` attribute on SETTINGS (private; public gets `paymentsEnabled`); Stripe keys read from Secrets Manager (`STRIPE_SECRET_ID`), live key refused in dev, prod won't start without one. Sandbox smoke test passed. |
 | 2026-11-11 | 5.1 decided: Stripe Connect **Standard** (direct charges, Connect webhook endpoint). 5.1a done: `admin.salesCommission` (flat, no currency) is now `admin.salesCommissions` (cents per currency, default 125 each); old values are converted when read (`normalizeAdminSettings`); `platformFeeMinor` for 5.4c. Next: 5.2. |
 | 2026-11-11 | QA done for now; next is Stage 5. Decided: the platform commission is taken from the merchant (`application_fee_amount`) and never shown to shoppers (5.1 note); commission model (percentage vs fixed) still open. |
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |

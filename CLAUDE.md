@@ -166,6 +166,7 @@ export default function registerRoute(router: Router): void {
 | User | `DELETE /user/delete-user` | ⛔ disabled (501) until a full delete exists (after 1.2) |
 | Merchant | `GET /merchant/path` | ❌ template stub |
 | Customer | — | ❌ empty router |
+| Payments (5.2) | `POST /store/payments/create-connect-account-link` `{storeId, country?}` → `{url, expiresAt}` (store admins); `GET /store/payments/status/:storeId` (members) | ✅ Standard account created once per store (`country` CA/US/AU required the first time; idempotency key), fresh onboarding link per call returning to `/store/storefront/:storeId?payments=return\|refresh`; status reads Stripe, refreshes the cached flags, forgets a disconnected account. 503 `PAYMENTS_NOT_CONFIGURED`, 502 `STRIPE_ERROR`. `payments` lives in its own SETTINGS attribute; public responses get only `paymentsEnabled` |
 | Payments | `POST /api/v1/website/listen-to-stripe-event/:websiteId` | ❌ returns 501 until Stage 5 (registered before `express.json()` so the raw body is available) |
 
 Infra helpers ready to reuse: SES `sendEmail` + templates, PDF invoice generator (`pdfkit`),
@@ -300,8 +301,14 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     per-order fee added after the price is shown is drip pricing (Canada's Competition Act,
     Australian Consumer Law, California SB 478). A merchant who wants to pass it on raises their
     prices. The platform's own GST/HST on its fee is charged to the merchant (B2B).
-5.2 Merchant onboarding: `POST /store/payments/create-connect-account-link`,
-    `GET /store/payments/status/:storeId`; save `stripeAccountId` in store settings (admin block).
+5.2 ✅ Merchant onboarding: `POST /store/payments/create-connect-account-link`,
+    `GET /store/payments/status/:storeId`; `stripeAccountId` + cached flags in the SETTINGS
+    row's own `payments` attribute (not the admin block, which the admin form replaces).
+    **Stripe keys** live in AWS Secrets Manager (`STRIPE_SECRET_ID`, default
+    `ceseelia/<STAGE>/stripe`, JSON `{secretKey, webhookSecret}`), read once by
+    `layers/payments/stripe.ts`; never in `.env` or git. Dev refuses a live key; prod refuses
+    to start without a usable key (`checkStripeConfig` in `index.ts`). The legacy `layers/stripe`
+    is unused.
 5.3 `POST /customer/create-order`: re-quote (4.2) with the delivery address's postal code
     (`priceLines(..., { postalCode })`; never the cart's geo-IP estimate, QA Q.23), write `ORDER#…` with status `PENDING_PAYMENT`,
     create a Stripe Checkout Session (connected account + application fee), return its URL.
