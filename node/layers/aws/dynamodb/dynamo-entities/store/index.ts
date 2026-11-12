@@ -18,6 +18,7 @@ import { DB_TABLE_NAME } from "../../../../../config";
 import {
   initStore,
   initStoreSettings,
+  normalizeAdminSettings,
   StoreCategory,
   StoreInventoryData,
   StoreItem,
@@ -488,7 +489,7 @@ export async function getStoreInventoryData(
     let settings: StoreSettings = initStoreSettings();
     if (settingsResult.Item) {
       const { pk: _pk, sk: _sk, ...rest } = settingsResult.Item;
-      settings = rest as StoreSettings;
+      settings = { ...rest, admin: normalizeAdminSettings(rest.admin) } as StoreSettings;
     }
 
     return {
@@ -566,8 +567,6 @@ export async function updateStoreSettings(
 ////////////////////////////////////////
 export type StoreAdminSettings = StoreSettings["admin"];
 
-const defaultAdminSettings = (): StoreAdminSettings => ({ ...initStoreSettings().admin });
-
 /* The store's admin block (platform commission, store live), or null if there's no such store. */
 export async function getStoreAdminSettings(storeId: string): Promise<StoreAdminSettings | null> {
   const res = await dynamoDbDocumentClient.send(
@@ -579,7 +578,7 @@ export async function getStoreAdminSettings(storeId: string): Promise<StoreAdmin
     })
   );
   if (!res.Item) return null;
-  return { ...defaultAdminSettings(), ...(res.Item.admin ?? {}) };
+  return normalizeAdminSettings(res.Item.admin);
 }
 
 /* Replace the admin block. Only the admin route calls this; merchants' update-settings never does. */
@@ -587,7 +586,7 @@ export async function updateStoreAdminSettings(
   storeId: string,
   admin: StoreAdminSettings
 ): Promise<StoreAdminSettings> {
-  const value: StoreAdminSettings = { salesCommission: admin.salesCommission, isStoreLive: admin.isStoreLive };
+  const value: StoreAdminSettings = { salesCommissions: admin.salesCommissions, isStoreLive: admin.isStoreLive };
   try {
     await dynamoDbDocumentClient.send(
       new UpdateCommand({

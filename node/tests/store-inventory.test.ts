@@ -38,7 +38,10 @@ describe("getStoreInventoryData", () => {
     expect(data.items.map((i: any) => i.n)).toEqual([0, 1, 2, 3, 4, 5, 6]);
     expect(ddb.commandCalls(QueryCommand)).toHaveLength(3 + 3); // ceil(5/2) + ceil(7/3)
     expect(data.items[0]).not.toHaveProperty("pk");
-    expect(data.settings).toEqual({ templateId: "t0" });
+    expect(data.settings).toEqual({
+      templateId: "t0",
+      admin: { salesCommissions: { USD: 125, CAD: 125, AUD: 125 }, isStoreLive: true }, // defaults filled in (5.1a)
+    });
   });
 
   it("makes one query per type for a small store", async () => {

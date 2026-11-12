@@ -214,7 +214,8 @@ export const appConstants = {
    * Store
    */
   // Financial
-  STORE_DEFAULT_SALES_COMMISSION: 1.25,
+  // Platform commission per order, in minor units, for each currency (5.1a): 1.25
+  STORE_DEFAULT_SALES_COMMISSION_MINOR: 125,
 
   // Store themes
   STORE_TEMPLATE_DEFAULT: "TEMPLATE_DEFAULT",

@@ -48,7 +48,8 @@ export const NUMBER_RANGE = {
   // STOCK_UNLIMITED (-1) or a tracked count 0..1,000,000 (progress.md 2.6)
   stock: { min: -1, max: 1_000_000 },
   points: { min: 0, max: 1_000_000 },
-  salesCommission: { min: 0, max: 1_000 },
+  // Platform commission per order, minor units per currency (5.1a): up to 1,000.00
+  salesCommissionMinor: { min: 0, max: 100_000 },
 } as const;
 
 /* Max list sizes. The webapp has no caps of its own yet; these are generous. */

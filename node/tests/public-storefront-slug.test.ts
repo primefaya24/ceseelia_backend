@@ -92,7 +92,7 @@ describe("GET /store/public/storefront/:slug (3.1)", () => {
   });
 
   it("a suspended store: 404 STORE_UNAVAILABLE", async () => {
-    store({ settings: { ...initStoreSettings(), admin: { salesCommission: 1, isStoreLive: false } } });
+    store({ settings: { ...initStoreSettings(), admin: { isStoreLive: false } } });
     const res = await get("northern-hoop");
     expect(res.status).toBe(404);
     expect(res.body.code).toBe("STORE_UNAVAILABLE");

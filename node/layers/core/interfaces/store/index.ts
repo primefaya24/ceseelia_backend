@@ -163,8 +163,14 @@ export interface StoreSettings {
 
   // Admin
   admin: {
-    salesCommission: number; // $1.25 default
-    isStoreLive: boolean; // False
+    /**
+     * Platform commission per order (5.1a), a fixed amount in minor units for every currency in
+     * CURRENCY_CODES ({ USD: 125, CAD: 125, AUD: 125 } = 1.25 each). It's taken from the merchant
+     * as Stripe's `application_fee_amount`, never shown to shoppers. Read it with
+     * `normalizeAdminSettings` (stores saved before 5.1a have a flat `salesCommission`).
+     */
+    salesCommissions: Required<StoreItemPrices>;
+    isStoreLive: boolean; // True
   };
 
   customize: any;
@@ -221,10 +227,64 @@ export function initStoreSettings(): StoreSettings {
 
     // Admin
     admin: {
-      salesCommission: appConstants.STORE_DEFAULT_SALES_COMMISSION,
+      salesCommissions: defaultSalesCommissions(),
       isStoreLive: true,
     },
   };
+}
+
+/** The default commission (1.25) in every currency. */
+export function defaultSalesCommissions(): Required<StoreItemPrices> {
+  return Object.fromEntries(
+    CURRENCY_CODES.map((c) => [c, appConstants.STORE_DEFAULT_SALES_COMMISSION_MINOR])
+  ) as Required<StoreItemPrices>;
+}
+
+/** A commission for every allowed currency, each a whole number of cents in range (5.1a). */
+export function isSalesCommissionsValid(v: unknown): v is Required<StoreItemPrices> {
+  if (!isObject(v)) return false;
+  const keys = Object.keys(v);
+  return (
+    keys.length === CURRENCY_CODES.length &&
+    CURRENCY_CODES.every(
+      (c) => Number.isInteger(v[c]) && isInRange(v[c] as number, NUMBER_RANGE.salesCommissionMinor)
+    )
+  );
+}
+
+/*
+ * The saved admin block with defaults filled in. Blocks saved before 5.1a have a flat
+ * `salesCommission` in major units with no currency; it becomes that amount in every currency.
+ * Missing or bad per-currency values fall back to the default.
+ */
+export function normalizeAdminSettings(raw: unknown): StoreSettings["admin"] {
+  const r = isObject(raw) ? raw : {};
+  const legacy =
+    isFiniteNumber(r.salesCommission) && isInRange(Math.round(r.salesCommission * 100), NUMBER_RANGE.salesCommissionMinor)
+      ? Math.round(r.salesCommission * 100)
+      : null;
+  const saved = isObject(r.salesCommissions) ? r.salesCommissions : {};
+  const salesCommissions = defaultSalesCommissions();
+  for (const c of CURRENCY_CODES) {
+    const v = saved[c];
+    if (Number.isInteger(v) && isInRange(v, NUMBER_RANGE.salesCommissionMinor)) salesCommissions[c] = v;
+    else if (legacy !== null) salesCommissions[c] = legacy;
+  }
+  return { salesCommissions, isStoreLive: r.isStoreLive !== false };
+}
+
+/*
+ * The platform fee for one order (5.4c `application_fee_amount`): the store's commission in the
+ * charge's currency, never more than the order total (Stripe rejects a fee above the charge).
+ */
+export function platformFeeMinor(
+  admin: StoreSettings["admin"] | undefined,
+  currency: string,
+  totalMinor: number
+): number {
+  const fees = normalizeAdminSettings(admin).salesCommissions;
+  const fee = fees[currency as keyof typeof fees] ?? appConstants.STORE_DEFAULT_SALES_COMMISSION_MINOR;
+  return Math.max(0, Math.min(fee, Math.floor(totalMinor)));
 }
 
 const isObject = (v: unknown): v is Record<string, any> =>

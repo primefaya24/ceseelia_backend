@@ -7,7 +7,7 @@ import { sendServerError } from "../route-errors";
 
 /*
  * GET /admin/get-store-admin-settings/:storeId (admin, progress.md 1.6)
- * → { salesCommission, isStoreLive } · 404 STORE_NOT_FOUND
+ * → { salesCommissions, isStoreLive } (minor units per currency, 5.1a) · 404 STORE_NOT_FOUND
  */
 export default function registerRoute(router: Router): void {
   router.get("/get-store-admin-settings/:storeId", (req: Request, res: Response): void => {

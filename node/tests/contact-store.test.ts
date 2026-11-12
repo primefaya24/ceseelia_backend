@@ -106,7 +106,7 @@ describe("POST /customer/contact-store (3.4)", () => {
   it("unknown and suspended stores get the storefront's 404s", async () => {
     ddb.on(GetCommand).resolves({});
     expect((await post(body())).body.code).toBe("STORE_NOT_FOUND");
-    store("owner@hoop.test", { admin: { salesCommission: 1, isStoreLive: false } });
+    store("owner@hoop.test", { admin: { isStoreLive: false } });
     expect((await post(body())).body.code).toBe("STORE_UNAVAILABLE");
   });
 

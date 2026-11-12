@@ -134,7 +134,7 @@ describe("POST /customer/quote (4.3)", () => {
   it("unknown and suspended stores get the storefront's 404s", async () => {
     ddb.on(GetCommand).resolves({});
     expect((await quote(body([]))).body.code).toBe("STORE_NOT_FOUND");
-    liveStore({ admin: { salesCommission: 1, isStoreLive: false } });
+    liveStore({ admin: { isStoreLive: false } });
     expect((await quote(body([]))).body.code).toBe("STORE_UNAVAILABLE");
   });
 

@@ -85,7 +85,7 @@ describe("GET /store/public/item/:storeId/:itemId (3.3)", () => {
   });
 
   it("a suspended store: 404 STORE_UNAVAILABLE, even for a visible item", async () => {
-    rows({ settings: { ...initStoreSettings(), admin: { salesCommission: 1, isStoreLive: false } } });
+    rows({ settings: { ...initStoreSettings(), admin: { isStoreLive: false } } });
     expect((await get()).body.code).toBe("STORE_UNAVAILABLE");
   });
 

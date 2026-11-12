@@ -22,8 +22,10 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > **▶ Start the next session here (2026-11-11).** The owner's QA pass is done for now
 > (`../ceseelia_webapp/progress.md` §1a: Q.1–Q.26 all fixed).
 > Backend fixes from QA: Q.16 (hide email/phone), Q.21 (`private, no-cache`), Q.23 (Canadian
-> delivery tax estimated from geo-IP, no postal code in the quote). **Next: Stage 5**, starting
-> with 5.1: confirm Stripe Connect Express and settle the commission model (see the note in §7).
+> delivery tax estimated from geo-IP, no postal code in the quote). **Stage 5 started:** 5.1 is
+> decided (Stripe Connect **Standard**, direct charges; commission is a fixed amount per order in
+> each currency, `admin.salesCommissions`) and 5.1a is done. **Next: 5.2** (merchant onboarding),
+> which needs a Stripe platform account with Connect enabled (test mode) and its keys.
 > Both repos are committed on `dev_v1.0.0_customer_store_front`; nothing pushed.
 
 > **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
@@ -575,20 +577,24 @@ match the backend and webapp._
 
 ## 7. Stage 5 — Checkout, orders & payments
 
-- [ ] 5.1 Decision: **Stripe Connect Express** (recommended). Record it in `CLAUDE.md`.
+- [x] 5.1 Decision (2026-11-11): **Stripe Connect, Standard accounts**, direct charges. Recorded
+      in `CLAUDE.md` with what Standard means (merchant of record, Connect webhook endpoint,
+      refunds and disputes in the merchant's own dashboard).
 
-  > **Platform commission (decided 2026-11-11):** the per-order commission (`admin.salesCommission`)
-  > is taken from the **merchant** through Stripe Connect's `application_fee_amount`. It is never
-  > shown to or charged to the shopper: no "handling fee" line in the cart, quote or checkout. A
-  > mandatory per-order fee added after the price is shown is drip pricing (Canada's Competition
-  > Act, Australian Consumer Law, California SB 478), and surprise costs are a top cause of
-  > abandoned carts. A merchant who wants to pass it on raises their prices. **Open for 5.1:** a
-  > percentage (optionally + fixed, like Stripe's) instead of today's flat number, which has no
-  > currency; a fixed part would have to be per currency, since the fee is in the charge's currency.
-  > The platform's own GST/HST on its fee is charged to the merchant (B2B), not to the shopper.
-  - [ ] a. Commission model: percentage, fixed per currency, or both (owner). Change
-        `salesCommission` and the admin settings form (WA) to match.
-- [ ] 5.2 Merchant onboarding:
+  > **Platform commission (decided 2026-11-11):** a fixed amount per order in each currency,
+  > taken from the **merchant** through `application_fee_amount`. It is never shown to or charged
+  > to the shopper: no "handling fee" line in the cart, quote or checkout (drip pricing: Canada's
+  > Competition Act, Australian Consumer Law, California SB 478). A merchant who wants to pass it
+  > on raises their prices. The platform's own GST/HST on its fee is charged to the merchant (B2B).
+  - [x] a. `admin.salesCommissions`: cents for every currency (`{ USD, CAD, AUD }`, default 125),
+        validated by `isSalesCommissionsValid` (0–100,000 each). `normalizeAdminSettings` fills
+        defaults and reads a flat pre-5.1a `salesCommission` (major units) as that amount in
+        every currency; `get-data` returns the normalized block to admins.
+        `platformFeeMinor(admin, currency, total)` gives 5.4c's fee, capped at the order total.
+        The webapp's Admin settings form has a box per currency.
+- [ ] 5.2 Merchant onboarding (Standard account: create it, then an `account_onboarding`
+      Account Link; decide whether to also let a merchant link an existing Stripe account
+      through OAuth):
   - [ ] a. `POST /store/payments/create-connect-account-link`
   - [ ] b. `GET /store/payments/status/:storeId`
   - [ ] c. Save `stripeAccountId` in the admin block. (WA 5.4)
@@ -599,14 +605,17 @@ match the backend and webapp._
         address's postal code** (`priceLines(..., { postalCode })`), never the cart's geo-IP
         estimate (QA Q.23); pickup uses the store's province.
   - [ ] b. Write `ORDER#<ts>#<id>` as `PENDING_PAYMENT`.
-  - [ ] c. Create a Checkout Session with the connected account and `application_fee_amount`
-        (the commission, from the merchant's share; the shopper's total is the quote's total),
-        plus an idempotency key.
+  - [ ] c. Create the Checkout Session **on the connected account** (direct charge) with
+        `payment_intent_data.application_fee_amount = platformFeeMinor(...)` (from the
+        merchant's share; the shopper's total is the quote's total), plus an idempotency key.
   - [ ] d. Return the URL and an order-status token. (WA 5.2)
 - [ ] 5.5 Webhook rewrite:
-  - [ ] a. Verify the signature with the platform secret, keeping the raw body.
+  - [ ] a. A **Connect** webhook endpoint (direct charges' events come from the connected
+        account; `event.account` → store). Verify with its signing secret, keeping the raw body.
   - [ ] b. Respond 2xx fast. Store processed event ids for idempotency.
   - [ ] c. Handle `checkout.session.completed`, `expired` and `payment_intent.payment_failed`.
+  - [ ] d. Standard merchants can refund in their own dashboard: sync `charge.refunded` and
+        `charge.dispute.*` onto the order. Handle `account.updated` for 5.2b's status.
 - [ ] 5.6 On paid:
   - [ ] a. Mark the order `PAID`.
   - [ ] b. Conditional stock decrement. If stock ran out, flag the order for refund. For an item
@@ -680,6 +689,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | 5.1 decided: Stripe Connect **Standard** (direct charges, Connect webhook endpoint). 5.1a done: `admin.salesCommission` (flat, no currency) is now `admin.salesCommissions` (cents per currency, default 125 each); old values are converted when read (`normalizeAdminSettings`); `platformFeeMinor` for 5.4c. Next: 5.2. |
 | 2026-11-11 | QA done for now; next is Stage 5. Decided: the platform commission is taken from the merchant (`application_fee_amount`) and never shown to shoppers (5.1 note); commission model (percentage vs fixed) still open. |
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |

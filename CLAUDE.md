@@ -158,7 +158,7 @@ export default function registerRoute(router: Router): void {
 | Customer | `POST /customer/quote` `{storeId, currency, fulfilment?, lines:[{itemId, quantity, params?}]}` (no auth) | ✅ always 200 with `priceLines`' quote (per-line errors, delivery, tax parts in `taxLines`, `ok`); Canadian tax by province when `taxMode: CANADA` (`layers/core/tax/canada.ts`, 4.4); a delivery's province is an estimate from geo-IP, else the store's (`taxRegion.estimated`, QA Q.23); 400 malformed / > 50 lines; 60/IP/min → 429 (4.3, 4.2) |
 | Customer | `POST /customer/contact-store` `{storeId, name, email, message, website}` (no auth) | ✅ SES to the store, customer as Reply-To; honeypot; 5/IP/10 min + 30/store/h → 429; 409 `CONTACT_UNAVAILABLE` (3.4) |
 | Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
-| Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, salesCommission, isStoreLive}` | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
+| Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, salesCommissions, isStoreLive}` (`salesCommissions`: cents for every currency, 5.1a) | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
 | Admin | `POST /admin/assign-store-member` `{storeId, email, role?}` | ✅ existing account → member now (`ADDED`); no account → pending invite + SES email (`INVITED`, `emailSent`); 409 `ALREADY_MEMBER` |
 | Admin | `DELETE /admin/remove-store-member/:storeId/:userId`, `DELETE /admin/cancel-store-invite/:storeId/:email` | ✅ 404 `NOT_A_MEMBER` / `NOT_INVITED` |
 | User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |
@@ -279,18 +279,27 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     delivery fee/zones) — extend `StoreSettings` + `initStoreSettings` + validators.
 
 ### Stage 5 — Checkout, orders & payments
-5.1 Payment provider decision: **Stripe Connect (Express accounts)** is recommended — it fits
-    the platform `salesCommission` via `application_fee_amount`, and merchants never hand us their
-    secret keys. (The legacy code stores per-merchant Stripe keys in Secrets Manager; avoid that.)
-    **Platform commission (decided 2026-11-11):** the per-order commission (`admin.salesCommission`)
-    is taken from the **merchant** through Stripe Connect's `application_fee_amount`. It is never
-    shown to or charged to the shopper: no "handling fee" line in the cart, quote or checkout. A
-    mandatory per-order fee added after the price is shown is drip pricing (Canada's Competition
-    Act, Australian Consumer Law, California SB 478), and surprise costs are a top cause of
-    abandoned carts. A merchant who wants to pass it on raises their prices. **Open for 5.1:** a
-    percentage (optionally + fixed, like Stripe's) instead of today's flat number, which has no
-    currency; a fixed part would have to be per currency, since the fee is in the charge's currency.
-    The platform's own GST/HST on its fee is charged to the merchant (B2B), not to the shopper.
+5.1 ✅ Payment provider (decided 2026-11-11): **Stripe Connect with Standard accounts** (owner's
+    choice over Express). Merchants never hand us their secret keys (the legacy code stores
+    per-merchant keys in Secrets Manager; don't). What Standard means for the build:
+    - Each merchant has a full Stripe account and dashboard and is the merchant of record: their
+      name on statements, they pay Stripe's fees, and they own disputes and chargebacks.
+    - Use **direct charges**: create the Checkout Session *on the connected account*
+      (`stripeAccount: acct_…`) with `payment_intent_data.application_fee_amount`.
+    - Events from those charges reach a **Connect** webhook endpoint (its own signing secret,
+      `event.account` names the store's account), not the platform endpoint.
+    - Merchants can refund or cancel in their own dashboard, so the webhook must sync
+      `charge.refunded` / `charge.dispute.*` onto the order; our own refund route (6.2) refunds
+      on the connected account.
+    **Platform commission (decided 2026-11-11):** a **fixed amount per order in each currency**,
+    `admin.salesCommissions` (cents: `{ USD: 125, CAD: 125, AUD: 125 }`, default 1.25 each; flat
+    pre-5.1a `salesCommission` values are read as that amount in every currency by
+    `normalizeAdminSettings`). It is taken from the **merchant** as `application_fee_amount`
+    (`platformFeeMinor(admin, currency, total)`, capped at the order total) and never shown to or
+    charged to the shopper: no "handling fee" line in the cart, quote or checkout. A mandatory
+    per-order fee added after the price is shown is drip pricing (Canada's Competition Act,
+    Australian Consumer Law, California SB 478). A merchant who wants to pass it on raises their
+    prices. The platform's own GST/HST on its fee is charged to the merchant (B2B).
 5.2 Merchant onboarding: `POST /store/payments/create-connect-account-link`,
     `GET /store/payments/status/:storeId`; save `stripeAccountId` in store settings (admin block).
 5.3 `POST /customer/create-order`: re-quote (4.2) with the delivery address's postal code

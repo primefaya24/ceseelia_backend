@@ -168,7 +168,7 @@ describe("GET /store/inventory/get-data-public/:storeId (2.4c)", () => {
   });
 
   it("a suspended store: 404 STORE_UNAVAILABLE, without querying its rows", async () => {
-    store({ ...initStoreSettings(), admin: { salesCommission: 1, isStoreLive: false } });
+    store({ ...initStoreSettings(), admin: { isStoreLive: false } });
     const res = await get();
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ code: "STORE_UNAVAILABLE", message: "Store unavailable" });
