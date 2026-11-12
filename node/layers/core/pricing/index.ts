@@ -15,6 +15,7 @@ import {
   chargesAnyCanadaTax,
   provinceFromPostalCode,
 } from "../tax/canada";
+import { findVariant, hasVariants, variantKey, variantsReady } from "../variants";
 
 /*
  * The one pricing function (progress.md 4.1). `POST /customer/quote` (4.3) and order creation
@@ -29,7 +30,9 @@ import {
  *   - A line with a problem gets an `error` and counts for nothing; the rest are still priced,
  *     so the cart can show what to fix. `ok` is true only when every line is fine.
  *   - Stock is shared: two lines of one item (different options) draw on the same stock, in
- *     line order.
+ *     line order. For an item with variants (2.7) the stock and the price are the picked
+ *     combination's: lines of the same combination share its stock, other combinations have
+ *     their own. A combination that isn't sold is OPTION_UNAVAILABLE.
  *   - Fulfilment (4.2): PICKUP or DELIVERY, whichever the store offers (pickup first by
  *     default). Delivery is a flat fee per currency, charged only when some line can be bought.
  *   - Tax (4.2): `taxPercent` of the goods after discount plus delivery, rounded half up once on
@@ -57,7 +60,8 @@ export type LineErrorCode =
   | "OUT_OF_STOCK"
   | "INSUFFICIENT_STOCK"
   | "MISSING_PARAM"
-  | "INVALID_PARAM";
+  | "INVALID_PARAM"
+  | "OPTION_UNAVAILABLE";
 
 export interface LineError {
   code: LineErrorCode;
@@ -262,7 +266,7 @@ export function priceLines(
   }
   const items = new Map(store.items.map((i) => [i.storeItemId, i]));
   const categories = new Map(store.categories.map((c) => [c.storeCategoriyId, c]));
-  /** Tracked stock left per item as lines draw on it. */
+  /** Tracked stock left per item (or per item combination, 2.7) as lines draw on it. */
   const stockLeft = new Map<string, number>();
 
   const priced = lines.map((line, index): PricedLine => {
@@ -284,7 +288,7 @@ export function priceLines(
     };
     const fail = (error: LineError): PricedLine => ({ ...base, error });
 
-    if (!item || !item.storeItemIsActive || !category || !category.storeCategoryIsActive) {
+    if (!item || !item.storeItemIsActive || !category || !category.storeCategoryIsActive || !variantsReady(item)) {
       return fail({ code: "ITEM_NOT_FOUND", message: "This item is no longer available." });
     }
     const unit = item.storeItemPrices?.[currency as keyof typeof item.storeItemPrices];
@@ -294,27 +298,50 @@ export function priceLines(
     if (!Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > MAX_QUANTITY_PER_LINE) {
       return fail({ code: "INVALID_QUANTITY", message: `Choose a quantity from 1 to ${MAX_QUANTITY_PER_LINE}.` });
     }
-    const checked = checkParams(item.storeItemCustomParams ?? [], line.params ?? []);
+    const variantItem = hasVariants(item);
+    // Variant params are always required, also on items saved before that rule (2.7).
+    const itemParams = (item.storeItemCustomParams ?? []).map((p) =>
+      variantItem && p.storeParamType !== "MULTI_SELECT" ? { ...p, storeParamIsMandatory: true } : p
+    );
+    const checked = checkParams(itemParams, line.params ?? []);
     if ("error" in checked) return fail(checked.error);
 
-    if (!isUnlimitedStock(item.storeItemStock)) {
-      const left = stockLeft.get(item.storeItemId) ?? Math.max(0, item.storeItemStock);
+    let unitMinor = unit as number;
+    let stock = item.storeItemStock;
+    let stockKey = item.storeItemId;
+    if (variantItem) {
+      const picked = Object.fromEntries(checked.params.map((p) => [p.label, p.values[0] ?? ""]));
+      const variant = findVariant(item, picked);
+      if (!variant || !variant.storeVariantIsActive) {
+        return fail({ code: "OPTION_UNAVAILABLE", message: "This combination isn't available." });
+      }
+      const variantUnit = variant.storeVariantPrices?.[currency as keyof typeof variant.storeVariantPrices];
+      if (!Number.isInteger(variantUnit) || (variantUnit as number) < 0) {
+        return fail({ code: "NOT_SOLD_IN_CURRENCY", message: `This option isn't sold in ${currency}.` });
+      }
+      unitMinor = variantUnit as number;
+      stock = variant.storeVariantStock;
+      stockKey = `${item.storeItemId}|${variantKey(item.storeItemCustomParams, picked)}`;
+    }
+
+    if (!isUnlimitedStock(stock)) {
+      const left = stockLeft.get(stockKey) ?? Math.max(0, stock);
       if (left === 0) {
         return fail({ code: "OUT_OF_STOCK", message: "Sold out.", available: 0 });
       }
       if (line.quantity > left) {
         return fail({ code: "INSUFFICIENT_STOCK", message: `Only ${left} left.`, available: left });
       }
-      stockLeft.set(item.storeItemId, left - line.quantity);
+      stockLeft.set(stockKey, left - line.quantity);
     }
 
     const { percent, source } = bestDiscount(item, category, store.settings.general?.discountPercent);
-    const subtotalMinor = (unit as number) * line.quantity;
+    const subtotalMinor = unitMinor * line.quantity;
     const discountMinor = percentOf(subtotalMinor, percent);
     return {
       ...base,
       params: checked.params,
-      unitPriceMinor: unit as number,
+      unitPriceMinor: unitMinor,
       discountPercent: percent,
       discountSource: source,
       subtotalMinor,

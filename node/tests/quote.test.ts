@@ -45,6 +45,12 @@ function liveStore(settingsPatch: object = {}) {
     baseItem(TEA, {
       storeItemStock: 5,
       storeItemCustomParams: [{ storeParamLabel: "Size", storeParamType: "SINGLE_SELECT", storeParamIsMandatory: true, storeParamOptions: ["S", "M"] }],
+      storeItemVariants: ["S", "M"].map((o) => ({
+        storeVariantOptions: { Size: o },
+        storeVariantStock: 5,
+        storeVariantPrices: { USD: 1000, AUD: 1500 },
+        storeVariantIsActive: true,
+      })),
     }),
     baseItem(CAKE, { storeItemDiscountPercent: 25, storeItemPrices: { USD: 333 } }),
     baseItem(SECRET, { storeItemCategoryId: HIDDEN_CAT }),

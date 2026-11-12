@@ -57,6 +57,8 @@ export const MAX_COUNT = {
   itemHashtags: 30,
   itemParams: 10,
   paramOptions: 30,
+  // Option combinations (variants) per item (2.7): Size × Color… rows, each with stock and prices
+  itemVariants: 100,
   categoryHashtags: 30,
   promoImages: 10,
   currencies: 3,

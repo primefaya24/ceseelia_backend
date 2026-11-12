@@ -145,7 +145,7 @@ export default function registerRoute(router: Router): void {
 | Category | `POST /store/category/create` (create + update via `isUpdate`) | ✅ |
 | Category | `DELETE /store/category/delete/:storeId/:storeCategoryId` | ✅ only when the category has no items, else 409 `CATEGORY_NOT_EMPTY` `{message, itemCount}`; then deletes its banner |
 | Category | `GET /store/category/get-banner-upload-url/:storeId/:categoryId/:imageType` | ✅ 404 unless the category exists |
-| Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing; prices are `storeItemPrices` in whole cents per currency (2.5) |
+| Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing; prices are `storeItemPrices` in whole cents per currency (2.5); variants (2.7): `storeItemVariants` = one row per combination of the single-choice params' options (stock, prices, sold), item stock/prices worked out from them by `withVariantTotals` (`layers/core/variants`) |
 | Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ −1 on its category, then deletes its images |
 | Inventory | `GET /store/inventory/get-data/:storeId` (auth) | ✅ categories + items + settings |
 | Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ active items in active categories only (counts match), no admin block, `storeId`, geo-IP default currency if the store offers it; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (suspended) |
@@ -251,6 +251,11 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     conversion); replaces `storeItemPrice`. `scripts/migrate-item-prices.mjs` moves old prices.
 2.6 ✅ Stock semantics: `STOCK_UNLIMITED` (-1) vs. a tracked count (0 = sold out); `hasStockFor`
     is the check for quotes and the paid-order decrement (Stage 5).
+2.7 ✅ Variants: single-choice params (always required) make `storeItemVariants`, a row per option
+    combination with its own stock, price per currency and sold flag (≤ 100); multiple-choice
+    params are add-ons with no stock or price. Public data hides unsold rows and items whose
+    table isn't filled in; the quote prices and stocks by combination (`OPTION_UNAVAILABLE`).
+    The paid-order decrement (5.6b) must decrement the combination's row.
 
 ### Stage 3 — Public storefront API
 3.1 ✅ `GET /store/public/storefront/:slug` → storeId + settings + categories + active items (wraps 2.4/1.8).

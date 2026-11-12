@@ -31,6 +31,7 @@ import {
   storeImageFolder,
 } from "../../utils/validation";
 import { isUlid } from "../../utils";
+import { areVariantsValid, isStoreItemVariantPure } from "../../variants";
 
 // JOIN_REQUEST, REQUEST_ID
 export interface Merchant {
@@ -598,6 +599,25 @@ export interface StoreItem {
   storeItemHashtagIds: string[];
   storeItemDiscountPercent: number;
   storeItemCustomParams: StoreParameter[];
+  /*
+   * Stock and prices per option combination (2.7, `layers/core/variants`): one row per
+   * combination of the single-choice params' options. Empty (or missing, on items saved before
+   * 2.7) when the item has no single-choice params. With rows, `storeItemStock` and
+   * `storeItemPrices` are worked out from them on save (sum / lowest price).
+   */
+  storeItemVariants?: StoreItemVariant[];
+}
+
+/* One option combination of an item (2.7), e.g. { Size: "M", Color: "White" }. */
+export interface StoreItemVariant {
+  /* The option picked for each single-choice param, by param label. */
+  storeVariantOptions: Record<string, string>;
+  /* STOCK_UNLIMITED (-1) or a tracked count >= 0, like storeItemStock. */
+  storeVariantStock: number;
+  /* Minor units per currency, like storeItemPrices; a missing currency = not sold in it. */
+  storeVariantPrices: StoreItemPrices;
+  /* False: this combination isn't sold (not made); shoppers can't pick it. */
+  storeVariantIsActive: boolean;
 }
 
 export function isStoreItemPure(storeItem: StoreItem): boolean {
@@ -617,14 +637,17 @@ export function isStoreItemPure(storeItem: StoreItem): boolean {
     i.storeItemHashtagIds.every((id) => typeof id === "string") &&
     typeof i.storeItemDiscountPercent === "number" &&
     Array.isArray(i.storeItemCustomParams) &&
-    i.storeItemCustomParams.every((p) => isObject(p) && isStoreParameterPure(p))
+    i.storeItemCustomParams.every((p) => isObject(p) && isStoreParameterPure(p)) &&
+    (i.storeItemVariants === undefined ||
+      (Array.isArray(i.storeItemVariants) && i.storeItemVariants.every(isStoreItemVariantPure)))
   );
 }
 
 /*
- * Value checks (call only after isStoreItemPure). `itemId` is the existing item's ID on update,
- * or undefined on create; a new item can't have images yet (they're uploaded under the ID the
- * create returns).
+ * Value checks (call only after isStoreItemPure, on the item as it will be saved: run it through
+ * `withVariantTotals` first so a variant item's stock and prices are the ones worked out from its
+ * rows). `itemId` is the existing item's ID on update, or undefined on create; a new item can't
+ * have images yet (they're uploaded under the ID the create returns).
  */
 export function isStoreItemValid(
   storeItem: StoreItem,
@@ -649,7 +672,8 @@ export function isStoreItemValid(
     i.storeItemHashtagIds.length <= MAX_COUNT.itemHashtags &&
     i.storeItemHashtagIds.every((id) => id.length > 0 && isMaxLength(id, MAX_LENGTH.hashtagId)) &&
     i.storeItemCustomParams.length <= MAX_COUNT.itemParams &&
-    i.storeItemCustomParams.every(isStoreParameterValid)
+    i.storeItemCustomParams.every(isStoreParameterValid) &&
+    areVariantsValid(i, isStoreItemPricesValid)
   );
 }
 

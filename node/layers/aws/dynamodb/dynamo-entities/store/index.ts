@@ -26,6 +26,7 @@ import {
   StoreSettings,
 } from "../../../../core/interfaces/store";
 import { getStorageImageUrl } from "../../../../core/utils";
+import { publicVariants, variantsReady } from "../../../../core/variants";
 import { reserveSlugPut, SlugTakenError, slugKey, transactionFailedAt } from "../slug";
 import { TransactWriteCommandInput } from "@aws-sdk/lib-dynamodb";
 
@@ -172,7 +173,7 @@ export async function createStore(
 }
 
 const ITEM_SET_EXPRESSION =
-  "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrices = :storeItemPrices, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemHashtagIds = :storeItemHashtagIds, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams REMOVE storeItemPrice";
+  "SET storeItemId = :storeItemId, storeItemCategoryId = :storeItemCategoryId, storeItemImageUris = :storeItemImageUris, storeItemName = :storeItemName, storeItemStock = :storeItemStock, storeItemPrices = :storeItemPrices, storeItemDescription = :storeItemDescription, storeItemIsActive = :storeItemIsActive, storeItemHashtagIds = :storeItemHashtagIds, storeItemDiscountPercent = :storeItemDiscountPercent, storeItemCustomParams = :storeItemCustomParams, storeItemVariants = :storeItemVariants REMOVE storeItemPrice";
 
 function itemValues(id: string, storeItem: StoreItem): Record<string, unknown> {
   return {
@@ -187,6 +188,7 @@ function itemValues(id: string, storeItem: StoreItem): Record<string, unknown> {
     ":storeItemHashtagIds": storeItem.storeItemHashtagIds,
     ":storeItemDiscountPercent": storeItem.storeItemDiscountPercent,
     ":storeItemCustomParams": storeItem.storeItemCustomParams,
+    ":storeItemVariants": storeItem.storeItemVariants ?? [],
   };
 }
 
@@ -647,7 +649,8 @@ export function toPublicSettings(settings: StoreSettings): StoreSettings {
  * (items of a missing or inactive category are left out), and each category's count is the
  * number of items returned, so hidden items aren't given away by the counts.
  * Prices (2.5) are cut to the currencies the store offers; an item priced in none of them can't
- * be bought, so it's left out too.
+ * be bought, so it's left out too. Variant rows (2.7) are cut the same way, and rows that aren't
+ * sold are left out; an item whose variant table isn't filled in is left out.
  */
 export function toPublicInventory(data: StoreInventoryData): StoreInventoryData {
   const categories = data.categories.filter((c) => c.storeCategoryIsActive === true);
@@ -655,11 +658,14 @@ export function toPublicInventory(data: StoreInventoryData): StoreInventoryData 
   const offered = new Set(data.settings.currencies.map((c) => c.currencyCode));
   const items = data.items
     .filter((i) => i.storeItemIsActive === true && activeCategoryIds.has(i.storeItemCategoryId))
+    // A variant item whose table isn't filled in (saved before 2.7) can't be bought yet.
+    .filter((i) => variantsReady(i))
     .map((i) => ({
       ...i,
       storeItemPrices: Object.fromEntries(
         Object.entries(i.storeItemPrices ?? {}).filter(([code]) => offered.has(code))
       ),
+      storeItemVariants: publicVariants(i.storeItemVariants, offered),
     }))
     .filter((i) => Object.keys(i.storeItemPrices).length > 0);
   const counts = new Map<string, number>();

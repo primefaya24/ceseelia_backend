@@ -259,7 +259,7 @@ describe("h. parameter options", () => {
   it("must be non-empty strings", () => {
     expect(itemOk(item({ storeItemCustomParams: [param({ storeParamOptions: [""] })] as any }))).toBe(false);
     expect(itemOk(item({ storeItemCustomParams: [param({ storeParamOptions: [1] })] as any }))).toBe(false);
-    expect(itemOk(item({ storeItemCustomParams: [param()] as any }))).toBe(true);
+    expect(itemOk(item({ storeItemCustomParams: [param({ storeParamType: "MULTI_SELECT" })] as any }))).toBe(true);
   });
 });
 

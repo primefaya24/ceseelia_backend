@@ -58,7 +58,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Admin stats, join requests, tickets | ❌ Not started | |
 | Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging`; SES production access for contact-store; contact-store's in-memory rate limits need a shared store with >1 instance |
 
-**Health check (2026-11-09):** `npm test` 557/557 passing · `npm run typecheck` clean ·
+**Health check (2026-11-11):** `npm test` 622/622 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 79 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -433,6 +433,24 @@ match the backend and webapp._
     `isUnlimitedStock` / `hasStockFor(stock, qty)` in `interfaces/store` are the one check the
     quote (4.1) and paid-order decrement (5.5) will call. The webapp storefront grid hid
     anything with stock ≤ 0, unlimited included; it now uses `isInStock` (WA side)._
+- [x] 🟠 **2.7 Stock and price per option combination (variants).** (WA 2.9)
+  - _Done 2026-11-11. Rules in `layers/core/variants` (mirrored in WA
+    `core/functions/variant.functions.ts`). A single-choice param with options is a variant param
+    (always required); an item with any has `storeItemVariants`: one row per combination of their
+    options (`storeVariantOptions` by param label, `storeVariantStock` -1 or a count,
+    `storeVariantPrices` per currency, `storeVariantIsActive` = sold or not made). Multiple-choice
+    params are add-ons: no stock or price of their own. Items with no variant params keep one
+    stock and one price per currency. `create-item` runs `withVariantTotals` before validating:
+    labels trimmed, variant params made required, rows put in combination order, and for a
+    variant item `storeItemStock` (sum of sold rows, -1 if any is unlimited) and `storeItemPrices`
+    (lowest sold price per currency) worked out from the rows, never taken from the client.
+    Validation: unique param labels and options, ≤ 100 combinations (`MAX_COUNT.itemVariants`),
+    exactly one row per combination, at least one sold, every sold row priced, stock in range.
+    Public data drops rows that aren't sold and cuts row prices to offered currencies; an item
+    with variant params but no full table (saved before 2.7: dev data only) is hidden until the
+    merchant fills it in. The quote uses the picked combination's price and stock (lines of one
+    combination share it; add-ons don't split it), with a new line error `OPTION_UNAVAILABLE`.
+    Tests: `tests/variants.test.ts`; pricing/quote/validator tests updated._
 
 ---
 
@@ -575,7 +593,10 @@ match the backend and webapp._
   - [ ] c. Handle `checkout.session.completed`, `expired` and `payment_intent.payment_failed`.
 - [ ] 5.6 On paid:
   - [ ] a. Mark the order `PAID`.
-  - [ ] b. Conditional stock decrement. If stock ran out, flag the order for refund.
+  - [ ] b. Conditional stock decrement. If stock ran out, flag the order for refund. For an item
+        with options (2.7), decrement the combination's `storeVariantStock` (find its index in
+        `storeItemVariants`, condition on that row's options and stock) and keep `storeItemStock`
+        as the sum.
   - [ ] c. Bump the overview counters.
   - [ ] d. Write `APP / ORDER#ts#STORE#id` for admin graphs.
 - [ ] 5.7 Sweeper for abandoned `PENDING_PAYMENT` orders (`registerTimer` +
@@ -643,6 +664,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
 | 2026-11-09 | QA Q.16 (WA): `storeInfo.showEmail` / `showPhone` (optional, missing = shown). When false, `toPublicSettings` blanks that detail in every public response (storefront and item link); `contactFormAvailable` (public only, worked out from the stored email, never saved) keeps Contact us offered; contact-store still emails the real address. |
 | 2026-11-09 | 4.4 done: Canadian sales tax by province (`taxMode: CANADA`): pickup in the store's province, delivery by the shopper's postal code; GST/HST/PST/RST/QST lines in the quote. |
 | 2026-11-09 | 4.2 done: tax rate (added or included), pickup/delivery with a flat fee per currency, in settings and in the quote. |

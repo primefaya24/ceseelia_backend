@@ -13,6 +13,7 @@ import {
   initStoreCategory,
   initStoreSettings,
   StoreItem,
+  StoreItemVariant,
   StoreParameter,
 } from "../layers/core/interfaces/store";
 
@@ -54,6 +55,9 @@ function store(
     items: opts.items ?? [item("TEA")],
   };
 }
+/** One sold row per Size option (S, M, L), $10 / A$15, unlimited. */
+const sizeRows = (): StoreItemVariant[] =>
+  ["S", "M", "L"].map((o) => ({ storeVariantOptions: { Size: o }, storeVariantStock: -1, storeVariantPrices: { USD: 1000, AUD: 1500 }, storeVariantIsActive: true }));
 const line = (itemId: string, quantity = 1, params: QuoteLineInput["params"] = []): QuoteLineInput => ({ itemId, quantity, params });
 
 describe("priceLines (4.1)", () => {
@@ -129,17 +133,17 @@ describe("priceLines (4.1)", () => {
     expect(q.ok).toBe(false);
   });
 
-  it("lines of one item share its stock, in line order", () => {
-    const tea = item("TEA", { storeItemStock: 5, storeItemCustomParams: [size] });
+  it("lines of one item share its stock, in line order (add-ons don't split it)", () => {
+    const tea = item("TEA", { storeItemStock: 5, storeItemCustomParams: [extras] });
     const q = priceLines(store({ items: [tea] }), [
-      line("TEA", 3, [{ label: "Size", values: ["S"] }]),
-      line("TEA", 3, [{ label: "Size", values: ["M"] }]),
-      line("TEA", 1, [{ label: "Size", values: ["L"] }]),
+      line("TEA", 3, [{ label: "Extras", values: ["Card"] }]),
+      line("TEA", 3, [{ label: "Extras", values: ["Wrap"] }]),
+      line("TEA", 1),
     ], "USD");
     expect(q.lines.map((l) => l.error?.code ?? null)).toEqual([null, "INSUFFICIENT_STOCK", null]);
     expect(q.lines[1].error?.available).toBe(2);
     expect(q.subtotalMinor).toBe(4000);
-    const used = priceLines(store({ items: [tea] }), [line("TEA", 5, [{ label: "Size", values: ["S"] }]), line("TEA", 1, [{ label: "Size", values: ["M"] }])], "USD");
+    const used = priceLines(store({ items: [tea] }), [line("TEA", 5, [{ label: "Extras", values: ["Card"] }]), line("TEA", 1)], "USD");
     expect(used.lines[1].error).toMatchObject({ code: "OUT_OF_STOCK", available: 0 });
   });
 
@@ -152,7 +156,7 @@ describe("priceLines (4.1)", () => {
   });
 
   it("returns the picks in the item's order and names the item", () => {
-    const tea = item("TEA", { storeItemCustomParams: [size, extras] });
+    const tea = item("TEA", { storeItemCustomParams: [size, extras], storeItemVariants: sizeRows() });
     const q = priceLines(store({ items: [tea] }), [line("TEA", 1, [{ label: "Extras", values: ["Wrap", "Card"] }, { label: "Size", values: ["M"] }])], "USD");
     expect(q.lines[0]).toMatchObject({ itemName: "TEA", params: [{ label: "Size", values: ["M"] }, { label: "Extras", values: ["Card", "Wrap"] }] });
   });

@@ -8,6 +8,7 @@ import {
   isStoreItemPure,
   isStoreItemValid,
 } from "../../../../../layers/core/interfaces/store";
+import { withVariantTotals } from "../../../../../layers/core/variants";
 import { StoreRecordNotFoundError, updateStoreItem } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import { cleanUpS3Folder, isUlid, isUlidOrEmpty } from "../../../../../layers/core/utils";
@@ -41,9 +42,12 @@ function pureRequestParams(req: Request): boolean {
 }
 
 /*
- * Ensure request params are valid
+ * Ensure request params are valid. The item is first put in its saved shape (2.7): trimmed
+ * labels, variant params required, and a variant item's stock and prices worked out from its
+ * rows, never taken from the client. That shape is what gets validated and saved.
  */
 function validRequestParams(req: Request): boolean {
+  req.body.storeItem = withVariantTotals(req.body.storeItem);
   return isStoreItemValid(
     req.body.storeItem,
     req.body.storeId,
