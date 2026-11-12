@@ -26,12 +26,10 @@ export function sendPaymentsError(e: unknown, res: Response, where: string): voi
   }
   if (e instanceof Stripe.errors.StripeError) {
     console.error(where, `${e.type} ${e.code ?? ""} ${e.message} (request ${e.requestId ?? "-"})`);
-    res
-      .status(502)
-      .send({
-        message: "Stripe couldn't complete the request. Please try again.",
-        code: "STRIPE_ERROR",
-      });
+    res.status(502).send({
+      message: "Stripe couldn't complete the request. Please try again.",
+      code: "STRIPE_ERROR",
+    });
     return;
   }
   sendServerError(e, res, where);

@@ -190,20 +190,36 @@ describe("GET /store/payments/status/:storeId", () => {
     details_submitted: true,
     country: "CA",
     default_currency: "cad",
-    requirements: { currently_due: ["external_account"], disabled_reason: null },
+    requirements: {
+      currently_due: ["external_account"],
+      past_due: [],
+      current_deadline: null,
+      disabled_reason: null,
+    },
     ...patch,
   });
 
   it("says not connected without an account", async () => {
     withPayments();
-    expect((await status()).body).toEqual({ connected: false });
+    expect((await status()).body).toEqual({ canManage: true, connected: false });
     expect(stripe.accounts.retrieve).not.toHaveBeenCalled();
   });
 
-  it("is open to any store member", async () => {
+  it("is open to any store member; only store admins may manage", async () => {
     role.current = "MERCHANT";
     withPayments();
-    expect((await status()).status).toBe(200);
+    const res = await status();
+    expect(res.status).toBe(200);
+    expect(res.body.canManage).toBe(false);
+  });
+
+  it("platform admins may manage any store", async () => {
+    vi.mocked(verifyCognitoAccessToken).mockResolvedValue({
+      sub: "a",
+      "cognito:groups": ["Admins"],
+    });
+    withPayments();
+    expect((await status()).body.canManage).toBe(true);
   });
 
   it("reads Stripe and refreshes changed flags for that account only", async () => {
@@ -217,11 +233,15 @@ describe("GET /store/payments/status/:storeId", () => {
     stripe.accounts.retrieve.mockResolvedValue(account());
     const res = await status();
     expect(res.body).toEqual({
+      canManage: true,
       connected: true,
       chargesEnabled: true,
       payoutsEnabled: false,
       detailsSubmitted: true,
       requirementsDue: 1,
+      pastDue: 0,
+      pendingVerification: 0,
+      deadline: null,
       disabledReason: null,
       country: "CA",
       defaultCurrency: "CAD",
@@ -232,6 +252,62 @@ describe("GET /store/payments/status/:storeId", () => {
       ":acct": ACCT,
       ":charges": true,
       ":details": true,
+    });
+  });
+
+  it("counts past-due details once and reports Stripe's deadline", async () => {
+    withPayments({
+      stripeAccountId: ACCT,
+      chargesEnabled: true,
+      payoutsEnabled: false,
+      detailsSubmitted: true,
+    });
+    stripe.accounts.retrieve.mockResolvedValue(
+      account({
+        requirements: {
+          currently_due: ["individual.verification.proof_of_liveness", "external_account"],
+          past_due: ["individual.verification.proof_of_liveness"],
+          current_deadline: null,
+          disabled_reason: "requirements.past_due",
+        },
+        future_requirements: { current_deadline: 1_800_000_000 },
+      })
+    );
+    const res = await status();
+    expect(res.body).toMatchObject({
+      requirementsDue: 2,
+      pastDue: 1,
+      deadline: 1_800_000_000_000,
+      disabledReason: "requirements.past_due",
+    });
+  });
+
+  it("reports details Stripe is still checking (sandbox case)", async () => {
+    withPayments({
+      stripeAccountId: ACCT,
+      chargesEnabled: true,
+      payoutsEnabled: false,
+      detailsSubmitted: true,
+    });
+    stripe.accounts.retrieve.mockResolvedValue(
+      account({
+        payouts_enabled: false,
+        requirements: {
+          currently_due: [],
+          past_due: [],
+          pending_verification: [
+            "individual.verification.document",
+            "individual.verification.proof_of_liveness",
+          ],
+          current_deadline: null,
+          disabled_reason: "requirements.pending_verification",
+        },
+      })
+    );
+    expect((await status()).body).toMatchObject({
+      requirementsDue: 0,
+      pastDue: 0,
+      pendingVerification: 2,
     });
   });
 
@@ -256,7 +332,11 @@ describe("GET /store/payments/status/:storeId", () => {
         type: "invalid_request_error",
       })
     );
-    expect((await status()).body).toEqual({ connected: false, disconnected: true });
+    expect((await status()).body).toEqual({
+      canManage: true,
+      connected: false,
+      disconnected: true,
+    });
     const input = ddb.commandCalls(UpdateCommand)[0].args[0].input;
     expect(input.ExpressionAttributeValues?.[":payments"]).toEqual({
       disconnectedAt: expect.any(Number),
