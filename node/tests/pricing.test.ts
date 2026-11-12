@@ -276,7 +276,7 @@ describe("priceLines Canadian tax (4.4)", () => {
 
   it("pickup is taxed in the store's province", () => {
     const q = priceLines(canada(), [line("TEA", 2)], "USD", { fulfilment: "PICKUP" });
-    expect(q.taxRegion).toEqual({ province: "ON", name: "Ontario" });
+    expect(q.taxRegion).toEqual({ province: "ON", name: "Ontario", estimated: false });
     expect(q.taxLines).toEqual([{ code: "HST", label: "HST", percent: 13, minor: 260 }]);
     expect(q).toMatchObject({ taxMinor: 260, taxPercent: 13, totalMinor: 2260, ok: true, error: null });
   });
@@ -294,15 +294,23 @@ describe("priceLines Canadian tax (4.4)", () => {
     expect(sk.taxLines.map((l) => l.label)).toEqual(["GST"]);
   });
 
-  it("a delivery needs a valid Canadian postal code before tax is known", () => {
-    const missing = priceLines(canada(), [line("TEA")], "USD", { fulfilment: "DELIVERY" });
-    expect(missing).toMatchObject({ taxMinor: 0, taxLines: [], ok: false, error: { code: "POSTAL_CODE_REQUIRED" } });
-    expect(missing.lines[0].error).toBeNull();
+  it("a delivery postal code is exact; without one the tax is estimated (QA Q.23)", () => {
+    const exact = priceLines(canada(), [line("TEA")], "USD", { fulfilment: "DELIVERY", postalCode: "v6b 1a1", locationProvince: "AB" });
+    expect(exact.taxRegion).toEqual({ province: "BC", name: "British Columbia", estimated: false });
+    // From the shopper's location: Alberta has GST only
+    const located = priceLines(canada(), [line("TEA")], "USD", { fulfilment: "DELIVERY", locationProvince: "AB" });
+    expect(located.taxRegion).toEqual({ province: "AB", name: "Alberta", estimated: true });
+    expect(located).toMatchObject({ taxLines: [{ code: "GST", minor: 75 }], ok: true, error: null });
+    // Location unknown (outside Canada, VPN, no region): the store's province
+    const unknown = priceLines(canada(), [line("TEA")], "USD", { fulfilment: "DELIVERY" });
+    expect(unknown.taxRegion).toEqual({ province: "ON", name: "Ontario", estimated: true });
+    expect(unknown).toMatchObject({ taxLines: [{ code: "HST", minor: 195 }], ok: true, error: null });
     const bad = priceLines(canada(), [line("TEA")], "USD", { fulfilment: "DELIVERY", postalCode: "90210" });
-    expect(bad).toMatchObject({ ok: false, error: { code: "INVALID_POSTAL_CODE" } });
+    expect(bad).toMatchObject({ taxMinor: 0, ok: false, error: { code: "INVALID_POSTAL_CODE" } });
+    expect(bad.lines[0].error).toBeNull();
   });
 
-  it("a store that charges no tax needs no postal code", () => {
+  it("a store that charges no tax has no tax region", () => {
     const q = priceLines(canada({ gstRegistered: false, provincialRegistrations: [] }), [line("TEA")], "USD", { fulfilment: "DELIVERY" });
     expect(q).toMatchObject({ taxMinor: 0, taxLines: [], ok: true, error: null });
   });

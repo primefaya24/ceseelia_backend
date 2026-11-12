@@ -6,6 +6,7 @@ import { IN_DEV, S3_STORAGE_BUCKET_NAME, S3_STORAGE_BUCKET_ORIGIN, STAGE } from 
 import { jwtDecode } from "jwt-decode";
 import { deleteS3Keys, listPrefixFiles } from "../../aws/s3";
 import { StoreSettings } from "../interfaces/store";
+import { CaProvince, isCaProvince } from "../tax/canada";
 import geoip from "geoip-lite";
 
 /*
@@ -606,6 +607,11 @@ export function resolveCurrencyFromGeo(geo: geoip.Lookup | null): string {
     default:
       return "USD";
   }
+}
+
+/** The Canadian province a geo-IP lookup points at; null outside Canada or when unknown. */
+export function resolveCaProvinceFromGeo(geo: geoip.Lookup | null): CaProvince | null {
+  return geo?.country === "CA" && isCaProvince(geo.region) ? geo.region : null;
 }
 
 /*

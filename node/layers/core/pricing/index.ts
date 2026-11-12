@@ -39,12 +39,14 @@ import { findVariant, hasVariants, variantKey, variantsReady } from "../variants
  *     the whole cart. With `pricesIncludeTax` it is the part of that amount that is tax
  *     (amount × r / (100 + r)) and adds nothing; otherwise it is added to the total.
  *   - Canadian tax (4.4, `taxMode: "CANADA"`): the parts (GST/HST, PST/RST/QST) for the province
- *     the goods end up in: the store's home province for pickup, the one from the shopper's
- *     postal code for delivery (`opts.postalCode`). Each part is its own percent of the same
- *     taxable amount, rounded on its own, and added to the total. A delivery with no valid
- *     postal code gets no tax and `error: POSTAL_CODE_REQUIRED` / `INVALID_POSTAL_CODE`.
- *     The rates and rules are in `layers/core/tax/canada.ts`; nothing about tax comes from the
- *     client except the postal code.
+ *     the goods end up in: the store's home province for pickup. For delivery, the province of
+ *     the delivery postal code (`opts.postalCode`, given at checkout) when there is one;
+ *     otherwise an estimate (QA Q.23): the province the shopper's IP is in
+ *     (`opts.locationProvince`), else the store's. An estimate is marked
+ *     `taxRegion.estimated`; the order is charged on the delivery address. Each part is its own
+ *     percent of the same taxable amount, rounded on its own, and added to the total. An invalid
+ *     postal code gets no tax and `error: INVALID_POSTAL_CODE`. The rates and rules are in
+ *     `layers/core/tax/canada.ts`; the client never sends anything about tax.
  */
 
 export interface QuoteLineInput {
@@ -103,7 +105,6 @@ export interface TaxLine {
 export type QuoteErrorCode =
   | "CURRENCY_NOT_OFFERED"
   | "FULFILMENT_UNAVAILABLE"
-  | "POSTAL_CODE_REQUIRED"
   | "INVALID_POSTAL_CODE";
 
 export interface Quote {
@@ -121,8 +122,12 @@ export interface Quote {
   pricesIncludeTax: boolean;
   /** The tax parts (4.4); empty when no tax is charged. Their `minor`s add up to `taxMinor`. */
   taxLines: TaxLine[];
-  /** Canada mode: the province taxed (null in FLAT mode, or when it isn't known yet). */
-  taxRegion: { province: CaProvince; name: string } | null;
+  /**
+   * Canada mode: the province taxed (null in FLAT mode, or when nothing is taxed). `estimated`:
+   * a delivery taxed for a guessed province (the shopper's location, else the store's), not
+   * for a delivery postal code; the final tax comes from the delivery address.
+   */
+  taxRegion: { province: CaProvince; name: string; estimated: boolean } | null;
   taxMinor: number;
   /** Goods after discount + delivery, + tax unless prices include it. */
   totalMinor: number;
@@ -130,8 +135,8 @@ export interface Quote {
   /**
    * Whole-quote problem. CURRENCY_NOT_OFFERED: nothing is priced (lines empty).
    * FULFILMENT_UNAVAILABLE: the lines are priced, but the chosen method isn't offered.
-   * POSTAL_CODE_REQUIRED / INVALID_POSTAL_CODE (4.4): a Canada-mode delivery needs a valid
-   * Canadian postal code to know the tax; everything else is priced, tax is 0 until then.
+   * INVALID_POSTAL_CODE (4.4): a delivery postal code was given but isn't a Canadian one;
+   * everything else is priced, tax is 0.
    */
   error: { code: QuoteErrorCode; message: string } | null;
 }
@@ -236,7 +241,13 @@ export function priceLines(
   store: PricingStore,
   lines: QuoteLineInput[],
   currency: string,
-  opts: { fulfilment?: Fulfilment; postalCode?: string } = {}
+  opts: {
+    fulfilment?: Fulfilment;
+    /** The delivery postal code (checkout). Wins over `locationProvince`. */
+    postalCode?: string;
+    /** Where the shopper seems to be (geo-IP), for an estimate before there's an address. */
+    locationProvince?: CaProvince | null;
+  } = {}
 ): Quote {
   const f = fulfilmentSettings(store.settings.general);
   if (!store.settings.currencies.some((c) => c.currencyCode === currency)) {
@@ -358,7 +369,7 @@ export function priceLines(
   const chosen = fulfilmentOptions.find((o) => o.method === wanted) ?? null;
   const deliveryMinor = chosen && valid.length > 0 ? chosen.feeMinor : 0;
   const taxable = subtotalMinor - discountMinor + deliveryMinor;
-  const tax = taxFor(f, chosen?.method ?? null, taxable, opts.postalCode);
+  const tax = taxFor(f, chosen?.method ?? null, taxable, opts.postalCode, opts.locationProvince ?? null);
   const error: Quote["error"] = chosen
     ? tax.error
     : {
@@ -389,7 +400,8 @@ function taxFor(
   f: ReturnType<typeof fulfilmentSettings>,
   method: Fulfilment | null,
   taxable: number,
-  postalCode: string | undefined
+  postalCode: string | undefined,
+  locationProvince: CaProvince | null
 ): {
   lines: TaxLine[];
   minor: number;
@@ -407,17 +419,21 @@ function taxFor(
   const settings = f.canadaTax;
   // Saved settings are validated, but don't trust a half-written record: no settings, no tax.
   if (!settings || !method || !chargesAnyCanadaTax(settings)) return none;
-  let province: CaProvince | null = settings.homeProvince;
+  let province: CaProvince = settings.homeProvince;
+  let estimated = false;
   if (method === "DELIVERY") {
-    if (!postalCode) {
-      return { ...none, error: { code: "POSTAL_CODE_REQUIRED", message: "Enter your postal code to see the tax." } };
-    }
-    province = provinceFromPostalCode(postalCode);
-    if (!province) {
-      return {
-        ...none,
-        error: { code: "INVALID_POSTAL_CODE", message: "Enter a Canadian postal code, like K1A 0B1." },
-      };
+    if (postalCode) {
+      const fromCode = provinceFromPostalCode(postalCode);
+      if (!fromCode) {
+        return {
+          ...none,
+          error: { code: "INVALID_POSTAL_CODE", message: "Enter a Canadian postal code, like K1A 0B1." },
+        };
+      }
+      province = fromCode;
+    } else {
+      province = locationProvince ?? settings.homeProvince;
+      estimated = true;
     }
   }
   const lines: TaxLine[] = canadaTaxComponents(province, settings).map((c) => ({
@@ -430,7 +446,7 @@ function taxFor(
     // Round away float noise (5 + 9.975)
     percent: Math.round(lines.reduce((n, l) => n + l.percent, 0) * 1000) / 1000,
     included: false,
-    region: { province, name: CA_PROVINCE_NAMES[province] },
+    region: { province, name: CA_PROVINCE_NAMES[province], estimated },
     error: null,
   };
 }

@@ -158,7 +158,7 @@ describe("POST /customer/quote (4.3)", () => {
     expect((await quote(body([cake], { fulfilment: "COURIER" }))).status).toBe(400);
   });
 
-  it("taxes a Canadian delivery by the postal code's province, and refuses an oversized one (4.4)", async () => {
+  it("estimates Canadian delivery tax from the shopper's location, never from the body (QA Q.23)", async () => {
     const s = initStoreSettings();
     liveStore({
       general: {
@@ -171,11 +171,18 @@ describe("POST /customer/quote (4.3)", () => {
       },
     });
     const cake = { itemId: CAKE, quantity: 3 }; // 999 - 25% = 749
-    const ab = await quote(body([cake], { fulfilment: "DELIVERY", postalCode: "T2P 1J9" }));
-    expect(ab.body).toMatchObject({ taxRegion: { province: "AB" }, taxMinor: 37, ok: true });
-    const none = await quote(body([cake], { fulfilment: "DELIVERY" }));
-    expect(none.body).toMatchObject({ ok: false, error: { code: "POSTAL_CODE_REQUIRED" } });
-    expect((await quote(body([cake], { fulfilment: "DELIVERY", postalCode: "K1A 0B1 K1A 0B1" }))).status).toBe(400);
-    expect((await quote(body([cake], { fulfilment: "DELIVERY", postalCode: 12345 }))).status).toBe(400);
+    // Tests run as dev, where the shopper's IP is Australian: no province, so the store's own.
+    const est = await quote(body([cake], { fulfilment: "DELIVERY" }));
+    expect(est.body).toMatchObject({
+      taxRegion: { province: "ON", estimated: true },
+      taxLines: [{ code: "HST", minor: 97 }],
+      taxMinor: 97,
+      ok: true,
+      error: null,
+    });
+    // A postal code (or anything else) in the body is ignored: the client can't pick the province.
+    const sent = await quote(body([cake], { fulfilment: "DELIVERY", postalCode: "T2P 1J9", province: "AB" }));
+    expect(sent.status).toBe(200);
+    expect(sent.body).toMatchObject({ taxRegion: { province: "ON", estimated: true }, taxMinor: 97 });
   });
 });

@@ -155,7 +155,7 @@ export default function registerRoute(router: Router): void {
 | Public | `GET /store/public/resolve-slug/:slug` → `{storeId}` (404 if unknown) | ✅ |
 | Public | `GET /store/public/storefront/:slug` → `{storeId, settings, categories, items}` (no auth) | ✅ same body as `get-data-public` (`sendPublicStorefront`); 400 bad slug, 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (3.1); `Cache-Control: private, no-cache` (3.2; revalidated by ETag every time since QA Q.21) |
 | Public | `GET /store/public/item/:storeId/:itemId` → `{storeId, item, category, currencies}` (no auth) | ✅ storefront rules; 404 `ITEM_NOT_FOUND` for missing or hidden (3.3) |
-| Customer | `POST /customer/quote` `{storeId, currency, fulfilment?, postalCode?, lines:[{itemId, quantity, params?}]}` (no auth) | ✅ always 200 with `priceLines`' quote (per-line errors, delivery, tax parts in `taxLines`, `ok`); Canadian tax by province when `taxMode: CANADA` (`layers/core/tax/canada.ts`, 4.4); 400 malformed / > 50 lines; 60/IP/min → 429 (4.3, 4.2) |
+| Customer | `POST /customer/quote` `{storeId, currency, fulfilment?, lines:[{itemId, quantity, params?}]}` (no auth) | ✅ always 200 with `priceLines`' quote (per-line errors, delivery, tax parts in `taxLines`, `ok`); Canadian tax by province when `taxMode: CANADA` (`layers/core/tax/canada.ts`, 4.4); a delivery's province is an estimate from geo-IP, else the store's (`taxRegion.estimated`, QA Q.23); 400 malformed / > 50 lines; 60/IP/min → 429 (4.3, 4.2) |
 | Customer | `POST /customer/contact-store` `{storeId, name, email, message, website}` (no auth) | ✅ SES to the store, customer as Reply-To; honeypot; 5/IP/10 min + 30/store/h → 429; 409 `CONTACT_UNAVAILABLE` (3.4) |
 | Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
 | Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, salesCommission, isStoreLive}` | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
@@ -183,7 +183,8 @@ Open:
 4. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
    saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3
 5. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
-6. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency).
+6. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency), so
+   in dev a Canada delivery's tax estimate always falls back to the store's province.
 7. No structured logging, rate limiting or CI yet. → Stage 9
 
 Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
@@ -281,9 +282,19 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 5.1 Payment provider decision: **Stripe Connect (Express accounts)** is recommended — it fits
     the platform `salesCommission` via `application_fee_amount`, and merchants never hand us their
     secret keys. (The legacy code stores per-merchant Stripe keys in Secrets Manager; avoid that.)
+    **Platform commission (decided 2026-11-11):** the per-order commission (`admin.salesCommission`)
+    is taken from the **merchant** through Stripe Connect's `application_fee_amount`. It is never
+    shown to or charged to the shopper: no "handling fee" line in the cart, quote or checkout. A
+    mandatory per-order fee added after the price is shown is drip pricing (Canada's Competition
+    Act, Australian Consumer Law, California SB 478), and surprise costs are a top cause of
+    abandoned carts. A merchant who wants to pass it on raises their prices. **Open for 5.1:** a
+    percentage (optionally + fixed, like Stripe's) instead of today's flat number, which has no
+    currency; a fixed part would have to be per currency, since the fee is in the charge's currency.
+    The platform's own GST/HST on its fee is charged to the merchant (B2B), not to the shopper.
 5.2 Merchant onboarding: `POST /store/payments/create-connect-account-link`,
     `GET /store/payments/status/:storeId`; save `stripeAccountId` in store settings (admin block).
-5.3 `POST /customer/create-order`: re-quote (4.2), write `ORDER#…` with status `PENDING_PAYMENT`,
+5.3 `POST /customer/create-order`: re-quote (4.2) with the delivery address's postal code
+    (`priceLines(..., { postalCode })`; never the cart's geo-IP estimate, QA Q.23), write `ORDER#…` with status `PENDING_PAYMENT`,
     create a Stripe Checkout Session (connected account + application fee), return its URL.
     Also support a "pay on pickup" path if desired.
 5.4 Webhook: rewrite `listen-to-stripe-event/:storeId` — verify signature with the platform

@@ -8,7 +8,7 @@ vi.mock("../config", async (importOriginal) => ({
   IN_DEV: false,
 }));
 
-import { getClientIp } from "../layers/core/utils";
+import { getClientIp, resolveCaProvinceFromGeo } from "../layers/core/utils";
 import { TRUST_PROXY_HOPS } from "../config";
 
 describe("trusted client IP (S.13)", () => {
@@ -47,5 +47,15 @@ describe("trusted client IP (S.13)", () => {
     expect(getClientIp({ ip: "::ffff:203.0.113.7" } as any)).toBe("203.0.113.7");
     expect(getClientIp({ ip: "2001:db8::1" } as any)).toBe("2001:db8::1");
     expect(getClientIp({ ip: undefined } as any)).toBeUndefined();
+  });
+});
+
+describe("province from geo-IP (QA Q.23)", () => {
+  it("is the region for a Canadian lookup, null otherwise", () => {
+    expect(resolveCaProvinceFromGeo({ country: "CA", region: "QC" } as any)).toBe("QC");
+    expect(resolveCaProvinceFromGeo({ country: "CA", region: "" } as any)).toBeNull();
+    expect(resolveCaProvinceFromGeo({ country: "US", region: "NY" } as any)).toBeNull();
+    expect(resolveCaProvinceFromGeo({ country: "AU", region: "NT" } as any)).toBeNull(); // AU's NT isn't Canada's
+    expect(resolveCaProvinceFromGeo(null)).toBeNull();
   });
 });

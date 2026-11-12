@@ -1,5 +1,6 @@
 // Imports
 import { Request, Response, Router } from "express";
+import geoip from "geoip-lite";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { MAX_COUNT, MAX_LENGTH } from "../../../../constants/input-limits";
 import { getPublicStoreInventoryData } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
@@ -7,14 +8,15 @@ import { sendPublicError } from "../../../../layers/core/http/public-storefront"
 import { createRateLimiter } from "../../../../layers/core/http/rate-limit";
 import { CACHE_CONTROL, setCacheControl } from "../../../../layers/core/http/cache";
 import { Fulfilment, priceLines, QuoteLineInput } from "../../../../layers/core/pricing";
-import { getClientIp, isUlid } from "../../../../layers/core/utils";
+import { getClientIp, isUlid, resolveCaProvinceFromGeo } from "../../../../layers/core/utils";
 
 /*
  * POST /customer/quote (public, no auth; progress.md 4.3 / WA 4.4)
- * Body { storeId, currency, fulfilment?: "PICKUP" | "DELIVERY", postalCode?: string,
+ * Body { storeId, currency, fulfilment?: "PICKUP" | "DELIVERY",
  *        lines: [{ itemId, quantity, params: [{ label, values }] }] }.
- * `postalCode` (4.4) is only used to find the province for Canadian tax on a delivery. It is
- * checked against the Canada Post format inside `priceLines` and never stored or logged.
+ * Canadian tax on a delivery (QA Q.23) is an estimate for the province the shopper's IP is in
+ * (geo-IP, never stored or logged), else the store's own; `taxRegion.estimated` says so. A VPN
+ * only changes this estimate: the order is taxed on its delivery address at checkout (Stage 5).
  * Without `fulfilment` the store's first option (pickup, else delivery) is priced (4.2).
  * Prices the cart with `priceLines` (4.1) against the store's public data, so hidden items,
  * hidden categories and currencies the store doesn't offer are never priced. Always 200 with
@@ -60,7 +62,6 @@ function pureRequestParams(req: Request): boolean {
     isString(b?.storeId) &&
     isString(b?.currency) &&
     (b.fulfilment === undefined || b.fulfilment === "PICKUP" || b.fulfilment === "DELIVERY") &&
-    (b.postalCode === undefined || isString(b.postalCode)) &&
     Array.isArray(b?.lines) &&
     b.lines.every(isLinePure)
   );
@@ -72,7 +73,6 @@ function validRequestParams(req: Request): boolean {
   return (
     isUlid(req.body.storeId) &&
     req.body.currency.length <= 3 &&
-    (req.body.postalCode === undefined || req.body.postalCode.length <= MAX_LENGTH.postalCode) &&
     lines.length <= MAX_COUNT.cartLines &&
     lines.every(
       (l) =>
@@ -90,7 +90,8 @@ function validRequestParams(req: Request): boolean {
 
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   setCacheControl(res, CACHE_CONTROL.none);
-  const check = quoteLimit.take(`ip:${getClientIp(req) ?? "unknown"}`);
+  const ip = getClientIp(req);
+  const check = quoteLimit.take(`ip:${ip ?? "unknown"}`);
   if (!check.ok) {
     res.set("Retry-After", String(check.retryAfterSeconds));
     res.status(429).send({
@@ -110,7 +111,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     res.send(
       priceLines(store, lines, String(req.body.currency).toUpperCase(), {
         fulfilment: req.body.fulfilment as Fulfilment | undefined,
-        postalCode: req.body.postalCode as string | undefined,
+        locationProvince: ip ? resolveCaProvinceFromGeo(geoip.lookup(ip)) : null,
       })
     );
   } catch (e) {

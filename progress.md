@@ -1,6 +1,6 @@
 # Ceseelia Backend — Progress Tracker
 
-_Last reviewed: 2026-11-08 (full codebase read-through) · Last updated: 2026-11-09_
+_Last reviewed: 2026-11-08 (full codebase read-through) · Last updated: 2026-11-11_
 
 This file tracks **what's left to do**. Design notes and conventions are in `CLAUDE.md`. The
 webapp has a matching file at `../ceseelia_webapp/progress.md`.
@@ -19,11 +19,12 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 ## 1. Where things stand
 
-> **⏸ QA pause (2026-11-09): start the next session here.** The owner is doing a full UI QA
-> pass before Stage 5, tracked in `../ceseelia_webapp/progress.md` §1a (checklist and findings).
-> Next session: go through the findings first (backend fixes included), and only then start
-> **Stage 5** with the 5.1 decision (Stripe Connect Express recommended). Last commits before the
-> pause: backend `b98f224` (4.2), webapp `578c502` (4.4); both clean, nothing pushed.
+> **▶ Start the next session here (2026-11-11).** The owner's QA pass is done for now
+> (`../ceseelia_webapp/progress.md` §1a: Q.1–Q.24 fixed except Q.11, which is still open).
+> Backend fixes from QA: Q.16 (hide email/phone), Q.21 (`private, no-cache`), Q.23 (Canadian
+> delivery tax estimated from geo-IP, no postal code in the quote). **Next: Stage 5**, starting
+> with 5.1: confirm Stripe Connect Express and settle the commission model (see the note in §7).
+> Both repos are committed on `dev_v1.0.0_customer_store_front`; nothing pushed.
 
 > **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
 > are done, as are WA 1.1–1.5.
@@ -575,6 +576,18 @@ match the backend and webapp._
 ## 7. Stage 5 — Checkout, orders & payments
 
 - [ ] 5.1 Decision: **Stripe Connect Express** (recommended). Record it in `CLAUDE.md`.
+
+  > **Platform commission (decided 2026-11-11):** the per-order commission (`admin.salesCommission`)
+  > is taken from the **merchant** through Stripe Connect's `application_fee_amount`. It is never
+  > shown to or charged to the shopper: no "handling fee" line in the cart, quote or checkout. A
+  > mandatory per-order fee added after the price is shown is drip pricing (Canada's Competition
+  > Act, Australian Consumer Law, California SB 478), and surprise costs are a top cause of
+  > abandoned carts. A merchant who wants to pass it on raises their prices. **Open for 5.1:** a
+  > percentage (optionally + fixed, like Stripe's) instead of today's flat number, which has no
+  > currency; a fixed part would have to be per currency, since the fee is in the charge's currency.
+  > The platform's own GST/HST on its fee is charged to the merchant (B2B), not to the shopper.
+  - [ ] a. Commission model: percentage, fixed per currency, or both (owner). Change
+        `salesCommission` and the admin settings form (WA) to match.
 - [ ] 5.2 Merchant onboarding:
   - [ ] a. `POST /store/payments/create-connect-account-link`
   - [ ] b. `GET /store/payments/status/:storeId`
@@ -582,9 +595,12 @@ match the backend and webapp._
 - [ ] 5.3 Order model: `StoreOrderStatus` enum replaces the boolean
       (`PENDING_PAYMENT → PAID → PREPARING → READY/SHIPPED → COMPLETED`, `CANCELLED`, `REFUNDED`).
 - [ ] 5.4 `POST /customer/create-order`:
-  - [ ] a. Re-quote with 4.1. Never trust client prices.
+  - [ ] a. Re-quote with 4.1. Never trust client prices. Tax a delivery on the **delivery
+        address's postal code** (`priceLines(..., { postalCode })`), never the cart's geo-IP
+        estimate (QA Q.23); pickup uses the store's province.
   - [ ] b. Write `ORDER#<ts>#<id>` as `PENDING_PAYMENT`.
-  - [ ] c. Create a Checkout Session with the connected account and `application_fee_amount`,
+  - [ ] c. Create a Checkout Session with the connected account and `application_fee_amount`
+        (the commission, from the merchant's share; the shopper's total is the quote's total),
         plus an idempotency key.
   - [ ] d. Return the URL and an order-status token. (WA 5.2)
 - [ ] 5.5 Webhook rewrite:
@@ -664,6 +680,8 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-11 | QA done for now; next is Stage 5. Decided: the platform commission is taken from the merchant (`application_fee_amount`) and never shown to shoppers (5.1 note); commission model (percentage vs fixed) still open. |
+| 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
 | 2026-11-09 | QA Q.16 (WA): `storeInfo.showEmail` / `showPhone` (optional, missing = shown). When false, `toPublicSettings` blanks that detail in every public response (storefront and item link); `contactFormAvailable` (public only, worked out from the stored email, never saved) keeps Contact us offered; contact-store still emails the real address. |
