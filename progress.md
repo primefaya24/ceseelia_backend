@@ -20,7 +20,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 ## 1. Where things stand
 
 > **▶ Start the next session here (2026-11-11).** The owner's QA pass is done for now
-> (`../ceseelia_webapp/progress.md` §1a: Q.1–Q.25 fixed except Q.11, which is still open).
+> (`../ceseelia_webapp/progress.md` §1a: Q.1–Q.26 fixed except Q.11, which is still open).
 > Backend fixes from QA: Q.16 (hide email/phone), Q.21 (`private, no-cache`), Q.23 (Canadian
 > delivery tax estimated from geo-IP, no postal code in the quote). **Next: Stage 5**, starting
 > with 5.1: confirm Stripe Connect Express and settle the commission model (see the note in §7).
