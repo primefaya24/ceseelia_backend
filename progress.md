@@ -35,6 +35,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > **Pick up here (2026-11-12):** Stages S, 0–4 and **Stage P (P.1–P.6, P.8)** are done in both
 > repos, plus 5.1 (Stripe Connect Standard, commission rules) and 5.2 (merchant onboarding).
 > Latest commits: see `git log` (P.8 is the last one). **Next steps, in order:**
+> 0. **Owner's Stage P QA in the UI** (`../ceseelia_webapp/progress.md` §1b) before checkout.
 > 1. **Stage 5 checkout: 5.3 `POST /customer/create-order` + 5.4 Checkout Session and the
 >    Connect webhook** (WA 5.1 checkout page, 5.2 redirect/return). Rules already decided:
 >    re-quote on the server with the delivery postal code; refuse unless the store is LIVE, not
