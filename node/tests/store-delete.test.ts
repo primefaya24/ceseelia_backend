@@ -59,6 +59,8 @@ describe("deleteStore (1.7)", () => {
 
     expect(deletedKeys()).toEqual([{ pk: PK, sk: "SETTINGS" }, OVERVIEW]);
     expect(batchDeletedKeys()).toEqual([
+      { pk: "APP_REVIEW", sk: `STORE#${STORE}` }, // the admin lists (P.8, P.5)
+      { pk: "APP_BILLING_GRACE", sk: `STORE#${STORE}` },
       { pk: PK, sk: "CATEGORY#C1" },
       { pk: PK, sk: "ITEM#I1" },
       { pk: PK, sk: "MEMBER#U1" },
@@ -86,7 +88,11 @@ describe("deleteStore (1.7)", () => {
     storeWith([]);
     expect(await deleteStore(STORE)).toBe(true);
     expect(deletedKeys()).toEqual([OVERVIEW]);
-    expect(ddb.commandCalls(BatchWriteCommand)).toHaveLength(0);
+    // Only the admin-list rows, in case a first attempt stopped before them.
+    expect(batchDeletedKeys()).toEqual([
+      { pk: "APP_REVIEW", sk: `STORE#${STORE}` },
+      { pk: "APP_BILLING_GRACE", sk: `STORE#${STORE}` },
+    ]);
   });
 
   it("keeps the overview when deleting files fails, so it can be retried", async () => {

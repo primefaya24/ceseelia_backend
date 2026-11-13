@@ -6,6 +6,7 @@ import { IN_DEV } from "../../../../config";
 import { appConstants } from "../../../../constants";
 import { StoreOverview } from "../../../../layers/core/interfaces/store";
 import { getAllStores } from "../../../../layers/aws/dynamodb/dynamo-entities/admin";
+import { getStoreSummaries } from "../../../../layers/aws/dynamodb/dynamo-entities/store-admin";
 dotenv.config();
 
 /*
@@ -44,8 +45,11 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Fetch data
     const allStores: StoreOverview[] = await getAllStores();
 
-    // Respond to user
-    res.send(allStores);
+    // P.8: each store's status, plan and subscription from its SETTINGS row. A store without
+    // one (being deleted) keeps its overview fields only.
+    // (Reads every SETTINGS row in full; fine at today's store count, page it when that grows.)
+    const summaries = await getStoreSummaries(allStores.map((s) => String(s.storeId)));
+    res.send(allStores.map((s) => ({ ...s, ...(summaries[String(s.storeId)] ?? {}) })));
   } catch (e) {
     if (IN_DEV) {
       console.error(e);

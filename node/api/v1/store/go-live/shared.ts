@@ -15,10 +15,16 @@ export interface GoLivePlanOption {
   unavailableReason: "PLAN_NOT_AVAILABLE" | "FREE_PLAN_IN_USE" | null;
 }
 
-export function planOptions(currency: "CAD" | "USD" | "AUD" | null, freeInUse: boolean): GoLivePlanOption[] {
+export function planOptions(
+  currency: "CAD" | "USD" | "AUD" | null,
+  freeInUse: boolean,
+  /** A plan an admin gave the store (P.8): always available, nothing to pay. */
+  gifted: StorePlan | null = null
+): GoLivePlanOption[] {
   return STORE_PLANS.map((id) => {
     const p = PLANS[id];
-    const reason = !isPlanAvailable(id) ? "PLAN_NOT_AVAILABLE" : id === "FREE" && freeInUse ? "FREE_PLAN_IN_USE" : null;
+    const reason =
+      id === gifted ? null : !isPlanAvailable(id) ? "PLAN_NOT_AVAILABLE" : id === "FREE" && freeInUse ? "FREE_PLAN_IN_USE" : null;
     return {
       id,
       name: p.name,

@@ -262,6 +262,15 @@ export interface StoreLifecycle {
    * already had a live FREE store. Cleared when it goes live again.
    */
   pausedReason?: StorePausedReason;
+  /** A platform admin set the plan by hand (P.8, e.g. a free month of Spark); cleared when billing changes it. */
+  planSetByAdmin?: boolean;
+  /**
+   * An admin approved the store after review (P.8) but it asked for a paid plan: it's a DRAFT
+   * again, and its next Go Live skips runSmartStoreValidation and goes to checkout. Cleared live.
+   */
+  reviewApprovedAt?: number;
+  /** An admin turned it down after review (P.8): a DRAFT again, with the reason for the merchant. */
+  reviewRejection?: { message: string; at: number };
 }
 
 export const STORE_PAUSED_REASONS = ["FREE_PLAN_IN_USE"] as const;
@@ -326,6 +335,11 @@ export function normalizeStoreLifecycle(raw: unknown): StoreLifecycle {
   if (typeof raw.createdByUserId === "string") out.createdByUserId = raw.createdByUserId;
   if ((STORE_PAUSED_REASONS as readonly string[]).includes(raw.pausedReason)) {
     out.pausedReason = raw.pausedReason as StorePausedReason;
+  }
+  if (raw.planSetByAdmin === true) out.planSetByAdmin = true;
+  if (isFiniteNumber(raw.reviewApprovedAt)) out.reviewApprovedAt = raw.reviewApprovedAt;
+  if (isObject(raw.reviewRejection) && typeof raw.reviewRejection.message === "string" && isFiniteNumber(raw.reviewRejection.at)) {
+    out.reviewRejection = { message: raw.reviewRejection.message, at: raw.reviewRejection.at };
   }
   return out;
 }

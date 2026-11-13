@@ -47,13 +47,17 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     res.send({
       status: lifecycle.status,
       pausedReason: lifecycle.pausedReason ?? null,
+      // P.8: the admin's answer after a review, and a plan an admin gave (goes live without paying).
+      reviewRejection: lifecycle.reviewRejection ?? null,
+      reviewApproved: lifecycle.reviewApprovedAt !== undefined,
+      giftedPlan: lifecycle.planSetByAdmin ? lifecycle.plan : null,
       plan: lifecycle.plan,
       suspended: normalizeAdminSettings(data.settings.admin).suspended,
       canGoLive: auth.isAdmin || auth.storeRole === "ADMIN",
       ready: steps.every((s) => s.ok),
       steps,
       billingCurrency: currency,
-      plans: planOptions(currency, freeInUse),
+      plans: planOptions(currency, freeInUse, lifecycle.planSetByAdmin ? lifecycle.plan : null),
     });
   } catch (e) {
     sendPaymentsError(e, res, "In go-live/checklist");

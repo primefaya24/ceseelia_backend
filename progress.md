@@ -32,19 +32,28 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > (no pay at pickup, owner 2026-11-12).
 > Both repos are committed on `dev_v1.0.0_customer_store_front`; nothing pushed.
 
-> **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
-> are done, as are WA 1.1–1.5.
-> WA 1.6a–c (profile pages) done too; 1.6d waits on a real `delete-user` (501 since S.11).
-> Stage 2.1–2.3 are done (item counts, category delete rule, upload limits; WA uses all three).
-> 2.4 (public data endpoint) and 2.5 (prices: whole cents per currency, `storeItemPrices`) are
-> done too (WA 2.6 has a price box per currency), and 2.6 (stock rule: `-1` unlimited, `0`
-> sold out). **Stage 2 is done** in both repos (WA 2.7–2.8 too). **Next: Stage 3**
-> (3.1–3.4 done except 3.2b CloudFront; WA 3.3b uses contact-store). 4.1 (`priceLines`) is
-> done: biggest discount wins, and 4.3 `POST /customer/quote` uses it, with 4.2's tax and
-> delivery. BE Stage 4 is complete (WA 4.4 shows the quote). **Next: Stage 5** (checkout,
-> starting with the 5.1 Stripe Connect decision).
-> Deliberately deferred: BE 1.5 merchant stats (no orders until Stages 5–6); S.14–S.17
-> (before going live); S.2 password rotation (manual, owner).
+> **Pick up here (2026-11-12):** Stages S, 0–4 and **Stage P (P.1–P.6, P.8)** are done in both
+> repos, plus 5.1 (Stripe Connect Standard, commission rules) and 5.2 (merchant onboarding).
+> Latest commits: see `git log` (P.8 is the last one). **Next steps, in order:**
+> 1. **Stage 5 checkout: 5.3 `POST /customer/create-order` + 5.4 Checkout Session and the
+>    Connect webhook** (WA 5.1 checkout page, 5.2 redirect/return). Rules already decided:
+>    re-quote on the server with the delivery postal code; refuse unless the store is LIVE, not
+>    suspended and `paymentsEnabled`; fee = `platformFeeForStore(admin, lifecycle.plan, quote)`
+>    and save `commissionInEffect(...)` on the order (P.6); direct charge on the connected
+>    account with `application_fee_amount`; **never `automatic_tax`** on shopper checkout;
+>    online payment only (no pay at pickup). The Connect webhook uses `webhookSecret`, the
+>    platform Billing one (`/api/v1/billing/stripe-webhook`) uses `billingWebhookSecret`.
+> 2. **P.7 Free order limit** (needs paid orders from 5.5/5.6): 30 paid orders per calendar
+>    month (UTC) on FREE, warning at 24 (80%), then 7 days' grace, then new checkouts pause;
+>    show "12 of 30 orders this month" on WA Plan & billing.
+> 3. **Owner TODOs (not code):** build the AI check in `runSmartStoreValidation`
+>    (`layers/core/store-validation`, still a stub that passes every store); do the Stripe
+>    Billing setup listed under P.5 "Setup" (prices script, Stripe Tax, webhook, retries,
+>    portal) and test a Spark checkout end to end in test mode; set `PAID_PLANS_ENABLED=true`
+>    in prod once that works; S.2 password rotation.
+> 4. Later: merchant emails on review decisions (Stage 8 / 6.3), admin menu badge for the
+>    review queue, paging Admin › Stores (it reads every SETTINGS row), P.9 custom domains (9.8),
+>    BE 1.5 merchant stats (after orders exist), S.14–S.17 before going live.
 > Dev test data: store Northern Hoop `01M6DTXGVMGDBPQ6Y70JT4R9G1`; `shukybadeer+m1@gmail.com` is
 > its MERCHANT; `shukybadeer+ms1@gmail.com` is the non-member tester; admin is
 > `shukybadeer@gmail.com`.
@@ -675,7 +684,8 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         store. Come back to it and build the AI check.** When it's built and flags a store:
         status `IN_REVIEW` (not LIVE), the merchant sees "We're reviewing your store", and the
         store goes into an admin review queue (approve → LIVE, reject with a reason → DRAFT).
-        (Go Live's IN_REVIEW write and the merchant's message are done; the admin queue is P.8.)
+        (Go Live's IN_REVIEW write and the merchant's message are done; the admin queue is done
+        in P.8. **The AI check itself is still the owner's TODO.**)
         Later, also worth deciding: re-run it when a live store adds or changes items.
 - [x] P.5 Subscriptions (done 2026-11-12; Stripe setup below is the owner's) (Stripe **Billing on the platform account**, separate from Connect): a
       Stripe Customer per user account, a Subscription per store (metadata `storeId`). Billing
@@ -737,9 +747,9 @@ pickup or delivery, goes through Stripe Checkout (5.4).
     can open the portal; **A4** validation runs when the checkout starts, not again when it's
     paid; **A5** the grace sweep runs in the API process (one server today; with several,
     each would sweep, which is safe because the sync is conditional).
-  - For P.8: approving an IN_REVIEW store that asked for a paid plan needs a way to pay
-    (e.g. it goes LIVE on FREE with an "Upgrade" prompt); rejecting a paying store must cancel
-    its subscription, or the next payment takes it LIVE again.
+  - For P.8 (done in P.8): approving a paid request sends the store back to DRAFT, approved,
+    so its next Go Live skips the check and goes to checkout; rejecting cancels a paying
+    subscription first.
 - [x] P.6 Fee from the plan: `platformFeeMinor` uses the store's **admin override** if one is set
       (the 5.1b mode / percentage / amounts, kept for negotiated deals), else the plan's default
       (NOVA = 0). Add `admin.commissionSource: PLAN | CUSTOM` (missing = PLAN) so a store follows
@@ -759,8 +769,31 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       Warn the merchant at 24 (80%). At 30, **7 days' grace** (orders still go through), then new
       checkouts pause until they upgrade or the month turns. Checked only in `create-order`
       (5.4), so a shopper already in Stripe Checkout is never stopped.
-- [ ] P.8 Admin: plan, status and subscription on Admin › Stores; admins can set the plan or a
+- [x] P.8 Admin: plan, status and subscription on Admin › Stores; admins can set the plan or a
       custom commission; the review queue from P.4c (with Stage 8).
+      Done 2026-11-12:
+      - `GET /admin/get-all-stores` adds `status`, `plan`, `suspended`, `planSetByAdmin` and a
+        `subscription` summary (no Stripe ids) per store, from its SETTINGS row (reads every row
+        in full: page it when the store count grows).
+      - **Review queue**: Go Live's IN_REVIEW write also puts `APP_REVIEW / STORE#id`
+        (`storeId`, reasons, requested plan, when, who) in the same transaction; `GET
+        /admin/get-review-queue` lists it oldest first with the store's name and slug. `POST
+        /admin/review-store {storeId, decision, message?}`: APPROVE on Free → LIVE (unless the
+        owner meanwhile has another live Free store: then DRAFT, approved); APPROVE on a paid
+        plan → DRAFT with `lifecycle.reviewApprovedAt` (next Go Live skips the check and goes
+        to checkout); REJECT (message 1–500) → DRAFT with `lifecycle.reviewRejection`. One
+        write, conditional on IN_REVIEW (409 `STATUS_CHANGED` when another admin decided first;
+        409 `NOT_IN_REVIEW`). Going live clears the approval and the rejection. The store delete
+        removes its queue (and grace) rows.
+      - **Plan by hand**: `PUT /admin/set-store-plan {storeId, plan}` sets `lifecycle.plan` with
+        `planSetByAdmin` (Free clears it); 409 `HAS_SUBSCRIPTION` while a subscription pays (or
+        is in grace); conditional on the lifecycle and subscription read. Go Live on that plan
+        needs no checkout (and works with `PAID_PLANS_ENABLED` off); billing changing the plan
+        clears the mark. Status is never set by hand (suspend is the admin's switch).
+      - Checklist adds `reviewRejection`, `reviewApproved` and `giftedPlan`; the admin settings
+        GET adds `planSetByAdmin` and `paysForPlan`.
+      - Not done: emails to the merchant on a decision (Stage 8 / 6.3 notifications); the
+        merchant sees it in the Go Live sheet.
 - [ ] P.9 Custom domains: listed on SPARK / NOVA as "coming soon" at launch; built in 9.8.
 
 ---
@@ -917,6 +950,8 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | "Pick up here" refreshed for the next session: Stage 5 checkout (5.3–5.4) next, then P.7; owner TODOs listed (AI check, Stripe Billing setup). |
+| 2026-11-12 | P.8 done: admin store list with status / plan / billing, review queue (`APP_REVIEW`, get-review-queue, review-store approve/reject), set-store-plan (gift a plan, no checkout needed at Go Live); store delete cleans the admin-list rows. |
 | 2026-11-12 | P.6 done: `admin.commissionSource` PLAN / CUSTOM (missing = PLAN); `platformFeeForStore`, `commissionInEffect`, `feeFromCommission` (5.4c must use them); admin settings routes take/return the source, GET adds the plan and its default fee. |
 | 2026-11-12 | P.5 done: Stripe Billing subscriptions (Go Live paid → Checkout, `/store/billing/{status,checkout,portal}`, webhook `/api/v1/billing/stripe-webhook`, sync from Stripe with grace + hourly sweep, one subscription per store, store delete cancels it), `PAID_PLANS_ENABLED`, `scripts/setup-billing-prices.mjs`; owner's Stripe setup listed under P.5. |
 | 2026-11-12 | P.4a/b done: `GET /store/go-live/checklist/:storeId`, `POST /store/go-live` (FREE; paid plans 409 `PLAN_NOT_AVAILABLE` until P.5), `GET /store/public/plans`; `runSmartStoreValidation` stub called on Go Live (**AI check still TODO**), fail-closed to IN_REVIEW with admin-only `review`; `readStoreStripeAccount` shared with payments/status. |

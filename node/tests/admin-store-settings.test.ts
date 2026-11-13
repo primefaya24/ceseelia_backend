@@ -48,7 +48,13 @@ const saved = { commissionSource: "CUSTOM", commissionMode: "FIXED", commissionP
 const block = (b: object) => ({ commissionSource: "PLAN", commissionMode: "FIXED", commissionPercentBps: 0, ...b });
 /** GET adds the store's plan and its default fee (P.6); no lifecycle = LIVE on FREE (A2). */
 const FREE_FEES = { CAD: 295, AUD: 295, USD: 245 };
-const read = (b: object, plan = "FREE", planCommissions: object = FREE_FEES) => ({ ...b, plan, planCommissions });
+const read = (b: object, plan = "FREE", planCommissions: object = FREE_FEES) => ({
+  ...b,
+  plan,
+  planCommissions,
+  planSetByAdmin: false,
+  paysForPlan: false,
+});
 
 beforeEach(() => {
   ddb.reset();
@@ -160,6 +166,19 @@ describe("GET /admin/get-store-admin-settings/:storeId", () => {
       },
     });
     expect((await getAdmin()).body).toEqual(expected);
+  });
+
+  it("says whether an admin gave the plan and whether a subscription pays for it (P.8)", async () => {
+    ddb.on(GetCommand).resolves({
+      Item: {
+        pk: "x",
+        admin: saved,
+        lifecycle: { status: "LIVE", plan: "SPARK", planSetByAdmin: true },
+        subscription: { subscriptionId: "s", status: "active", graceEndsAt: null },
+      },
+    });
+    expect((await getAdmin()).body).toMatchObject({ planSetByAdmin: true, paysForPlan: true });
+    expect(JSON.stringify((await getAdmin()).body)).not.toContain('"s"');
   });
 
   it("includes the store's plan and that plan's default fee (P.6)", async () => {

@@ -86,13 +86,25 @@ export function lifecycleAfter(
   effect: PlanEffect,
   opts: { now: number; otherLiveFreeStore: boolean }
 ): StoreLifecycle {
+  const after = lifecycleAfterBilling(lifecycle, effect, opts);
+  if (after === lifecycle || !after.planSetByAdmin) return after;
+  // Billing changed the plan: it's no longer the one an admin gave (P.8).
+  const { planSetByAdmin: _s, ...rest } = after;
+  return rest;
+}
+
+function lifecycleAfterBilling(
+  lifecycle: StoreLifecycle,
+  effect: PlanEffect,
+  opts: { now: number; otherLiveFreeStore: boolean }
+): StoreLifecycle {
   const { now } = opts;
   if (effect.kind === "NONE") return lifecycle;
   if (effect.kind === "PAID" || effect.kind === "GRACE") {
     if (lifecycle.status === "DRAFT" && effect.kind === "PAID") {
       // Our checkout runs the checklist and runSmartStoreValidation before it takes a card, so a
       // paid draft goes live here.
-      const { pausedReason: _p, ...rest } = lifecycle;
+      const { pausedReason: _p, reviewApprovedAt: _a, reviewRejection: _r, ...rest } = lifecycle;
       return {
         ...rest,
         status: "LIVE",

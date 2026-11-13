@@ -29,6 +29,7 @@ import {
   StoreParameter,
   StorePayments,
   StoreSettings,
+  StoreSubscription,
 } from "../../../../core/interfaces/store";
 import { getStorageImageUrl } from "../../../../core/utils";
 import { publicVariants, variantsReady } from "../../../../core/variants";
@@ -212,7 +213,13 @@ export async function setStoreStatusFromDraft(
   }
 ): Promise<StoreLifecycle> {
   const now = Date.now();
-  const { pausedReason: _paused, ...previous } = change.previous;
+  // Leaving DRAFT: last time's pause, review answer and approval no longer apply (P.5, P.8).
+  const {
+    pausedReason: _paused,
+    reviewRejection: _rejected,
+    reviewApprovedAt: _approved,
+    ...previous
+  } = change.previous;
   const lifecycle: StoreLifecycle = {
     ...previous,
     status: change.status,
@@ -223,31 +230,45 @@ export async function setStoreStatusFromDraft(
   const names: Record<string, string> = { "#lc": "lifecycle", "#st": "status" };
   const values: Record<string, unknown> = { ":lc": lifecycle, ":draft": "DRAFT" };
   let update = "SET #lc = :lc";
-  if (change.review) {
-    names["#review"] = "review";
-    values[":review"] = { ...change.review, requestedPlan: change.plan, requestedAt: now };
+  const review = change.review ? { ...change.review, requestedPlan: change.plan, requestedAt: now } : null;
+  names["#review"] = "review";
+  if (review) {
+    values[":review"] = review;
     update += ", #review = :review";
   } else {
-    names["#review"] = "review";
     update += " REMOVE #review";
   }
+  const settingsUpdate = {
+    TableName: DEFAULT_TABLE_NAME,
+    Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS),
+    UpdateExpression: update,
+    ConditionExpression: "#lc.#st = :draft",
+    ExpressionAttributeNames: names,
+    ExpressionAttributeValues: values,
+  };
   try {
-    await dynamoDbDocumentClient.send(
-      new UpdateCommand({
-        TableName: DEFAULT_TABLE_NAME,
-        Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS),
-        UpdateExpression: update,
-        ConditionExpression: "#lc.#st = :draft",
-        ExpressionAttributeNames: names,
-        ExpressionAttributeValues: values,
-      })
-    );
+    if (review) {
+      // IN_REVIEW: listed for the admin review queue (P.8) in the same write.
+      await dynamoDbDocumentClient.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            { Update: settingsUpdate },
+            { Put: { TableName: DEFAULT_TABLE_NAME, Item: { ...reviewQueueKey(storeId), storeId, ...review } } },
+          ],
+        })
+      );
+    } else {
+      await dynamoDbDocumentClient.send(new UpdateCommand(settingsUpdate));
+    }
   } catch (e) {
-    if (isConditionalCheckFailure(e)) throw new StoreStatusChangedError();
+    if (isConditionalCheckFailure(e) || transactionFailedAt(e, 0)) throw new StoreStatusChangedError();
     throw e;
   }
   return lifecycle;
 }
+
+/* The admin review queue (P.8): `APP_REVIEW / STORE#<id>`, one row per store IN_REVIEW. */
+export const reviewQueueKey = (storeId: string) => ({ pk: "APP_REVIEW", sk: `STORE#${storeId}` });
 
 /* createStore's owner has no PROFILE#INFO row (P.3). */
 export class StoreOwnerNotFoundError extends Error {
@@ -658,17 +679,21 @@ export type StoreAdminSettings = StoreSettings["admin"];
 /* The store's admin block (platform commission mode/amounts, store live), or null if there's no such store. */
 export async function getStoreAdminSettings(
   storeId: string
-): Promise<{ admin: StoreAdminSettings; plan: StorePlan } | null> {
+): Promise<{ admin: StoreAdminSettings; lifecycle: StoreLifecycle; subscription?: StoreSubscription } | null> {
   const res = await dynamoDbDocumentClient.send(
     new GetCommand({
       TableName: DEFAULT_TABLE_NAME,
       Key: { pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId, sk: appConstants.DYNAMO_ENTITY_SETTINGS },
-      ProjectionExpression: "#pk, #admin, #lc",
-      ExpressionAttributeNames: { "#pk": "pk", "#admin": "admin", "#lc": "lifecycle" },
+      ProjectionExpression: "#pk, #admin, #lc, #sub",
+      ExpressionAttributeNames: { "#pk": "pk", "#admin": "admin", "#lc": "lifecycle", "#sub": "subscription" },
     })
   );
   if (!res.Item) return null;
-  return { admin: normalizeAdminSettings(res.Item.admin), plan: normalizeStoreLifecycle(res.Item.lifecycle).plan };
+  return {
+    admin: normalizeAdminSettings(res.Item.admin),
+    lifecycle: normalizeStoreLifecycle(res.Item.lifecycle),
+    ...(res.Item.subscription ? { subscription: res.Item.subscription as StoreSubscription } : {}),
+  };
 }
 
 /* Replace the admin block. Only the admin route calls this; merchants' update-settings never does. */
@@ -927,8 +952,12 @@ export async function deleteStore(storeId: string): Promise<boolean> {
     );
   }
 
-  // 2. The partition and the reverse rows that point at it
-  const keys: { pk: string; sk: string }[] = [];
+  // 2. The partition, the reverse rows that point at it, and the admin lists (review queue P.8,
+  //    payment grace P.5; deleting a missing row is fine)
+  const keys: { pk: string; sk: string }[] = [
+    reviewQueueKey(storeId),
+    { pk: "APP_BILLING_GRACE", sk: `STORE#${storeId}` },
+  ];
   for (const r of rows) {
     if (r.sk === appConstants.DYNAMO_ENTITY_SETTINGS) continue;
     keys.push({ pk: r.pk, sk: r.sk });
@@ -938,7 +967,7 @@ export async function deleteStore(storeId: string): Promise<boolean> {
       keys.push({ pk: r.sk, sk: userStoreSk }); // INVITE#<email> / STORE#<id>
     }
   }
-  if (keys.length > 0) {
+  {
     await dynamoWriteManyItems(DEFAULT_TABLE_NAME, keys.map((Key) => ({ DeleteRequest: { Key } })));
   }
 

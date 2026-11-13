@@ -112,6 +112,7 @@ export default function registerRoute(router: Router): void {
   | Store settings | `STORE#<storeId>` | `SETTINGS` (own attributes `payments` (5.2), `lifecycle` (P.2), `review` (P.4), `subscription` and `billingCheckout` (P.5): only their own code writes them) |
   | Billing customer | `USER#<userId>` | `BILLING#<CURRENCY>` (`stripeCustomerId`; P.5) |
   | Stores in payment grace | `APP_BILLING_GRACE` | `STORE#<storeId>` (`graceEndsAt`; the hourly sweep's list, P.5) |
+  | Review queue | `APP_REVIEW` | `STORE#<storeId>` (one row per store IN_REVIEW, written with it by Go Live; removed by the decision, P.8) |
   | Category | `STORE#<storeId>` | `CATEGORY#<categoryId>` |
   | Item | `STORE#<storeId>` | `ITEM#<itemId>` |
   | User profile | `USER#<uuid>` | `PROFILE#INFO`, `PROFILE#COGNITO_DATA#<cognitoId>`, `PROFILE#NOTIFICATION_SETTINGS` (written by the CloudFormation sign-up Lambda) |
@@ -154,6 +155,7 @@ export default function registerRoute(router: Router): void {
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount` | ✅ 1–10 in total; 404 unless the item exists |
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug; 409 if the slug is taken) | ✅ |
+| Admin (P.8) | `GET /admin/get-review-queue`, `POST /admin/review-store` `{storeId, decision: APPROVE\|REJECT, message?}`, `PUT /admin/set-store-plan` `{storeId, plan}` | ✅ approve Free → LIVE, paid → DRAFT approved (next Go Live skips the check, goes to checkout); reject → DRAFT with the reason; conditional on IN_REVIEW (409 `STATUS_CHANGED`). Set plan = a plan with no subscription (`planSetByAdmin`, no checkout at Go Live), 409 `HAS_SUBSCRIPTION`. `get-all-stores` adds status / plan / billing per store |
 | Public | `GET /store/public/resolve-slug/:slug` → `{storeId}` (404 if unknown) | ✅ |
 | Public | `GET /store/public/storefront/:slug` → `{storeId, settings, categories, items}` (no auth) | ✅ same body as `get-data-public` (`sendPublicStorefront`); 400 bad slug, 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (3.1); `Cache-Control: private, no-cache` (3.2; revalidated by ETag every time since QA Q.21) |
 | Public | `GET /store/public/item/:storeId/:itemId` → `{storeId, item, category, currencies}` (no auth) | ✅ storefront rules; 404 `ITEM_NOT_FOUND` for missing or hidden (3.3) |

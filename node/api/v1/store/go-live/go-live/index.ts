@@ -70,11 +70,13 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     if (lifecycle.status === "IN_REVIEW") {
       return void conflict(res, "IN_REVIEW", "We're reviewing this store. We'll let you know when it's live.");
     }
-    if (!isPlanAvailable(plan)) {
+    // P.8: a plan an admin gave this store needs no checkout (and no PAID_PLANS_ENABLED).
+    const gifted = isPaidPlan(plan) && lifecycle.planSetByAdmin === true && lifecycle.plan === plan;
+    if (!gifted && !isPlanAvailable(plan)) {
       return void conflict(res, "PLAN_NOT_AVAILABLE", "This plan isn't available yet. Go live on Free for now.");
     }
 
-    const billing = isPaidPlan(plan) ? await getStoreBillingState(storeId) : null;
+    const billing = isPaidPlan(plan) && !gifted ? await getStoreBillingState(storeId) : null;
     if (billing && blocksNewSubscription(billing.subscription, Date.now())) {
       return void conflict(res, "ALREADY_SUBSCRIBED", "This store already has a plan.");
     }
@@ -93,7 +95,8 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
 
     let result: SmartStoreValidationResult;
     try {
-      result = await runSmartStoreValidation({ storeId, data });
+      // P.8: an admin already approved this store after review; don't send it back.
+      result = lifecycle.reviewApprovedAt ? { ok: true } : await runSmartStoreValidation({ storeId, data });
     } catch (e) {
       // Fail closed: a check that couldn't run sends the store to a human, never straight live.
       console.error("In go-live: runSmartStoreValidation", e);

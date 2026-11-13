@@ -87,6 +87,8 @@ const goLive = (body: object) =>
 const checklist = () =>
   request(app).get(`/api/v1/store/go-live/checklist/${STORE}`).set("Host", "localhost").set("Authorization", "Bearer t");
 const written = () => ddb.commandCalls(UpdateCommand)[0]?.args[0].input;
+/** IN_REVIEW is a transaction (P.8): the SETTINGS update, then the review queue row. */
+const reviewTx = () => ddb.commandCalls(TransactWriteCommand)[0]?.args[0].input.TransactItems ?? [];
 
 beforeEach(() => {
   ddb.reset();
@@ -234,8 +236,11 @@ describe("POST /store/go-live (P.4b)", () => {
     const res = await goLive({ storeId: STORE, plan: "FREE" });
     expect(res.body).toEqual({ status: "IN_REVIEW", plan: "FREE" });
     expect(res.body).not.toHaveProperty("reasons");
-    const input = written();
+    const [update, queue] = reviewTx();
+    const input = update.Update!;
     expect(input.UpdateExpression).toBe("SET #lc = :lc, #review = :review");
+    expect(input.ConditionExpression).toBe("#lc.#st = :draft");
+    expect(queue.Put!.Item).toMatchObject({ pk: "APP_REVIEW", sk: `STORE#${STORE}`, storeId: STORE, requestedPlan: "FREE" });
     expect(input.ExpressionAttributeValues![":review"]).toMatchObject({
       reasons: ["Counterfeit brand names"],
       requestedPlan: "FREE",
@@ -248,7 +253,7 @@ describe("POST /store/go-live (P.4b)", () => {
     vi.mocked(runSmartStoreValidation).mockRejectedValue(new Error("AI down"));
     const res = await goLive({ storeId: STORE, plan: "FREE" });
     expect(res.body.status).toBe("IN_REVIEW");
-    expect(written().ExpressionAttributeValues![":review"].reasons).toEqual(["VALIDATION_UNAVAILABLE"]);
+    expect(reviewTx()[0].Update!.ExpressionAttributeValues![":review"].reasons).toEqual(["VALIDATION_UNAVAILABLE"]);
   });
 
   it("409 STATUS_CHANGED when the store left DRAFT meanwhile", async () => {
@@ -313,5 +318,48 @@ describe("P.4 data rules", () => {
       ["NOVA", false],
     ]);
     expect(res.body.plans[2].monthlyPriceMinor).toEqual({ CAD: 4900, AUD: 4900, USD: 3900 });
+  });
+});
+
+describe("Go Live after an admin's review or plan (P.8)", () => {
+  it("a store an admin approved skips the check", async () => {
+    vi.mocked(getStoreInventoryData).mockResolvedValue(
+      readyStore((d) => (d.settings.lifecycle = { status: "DRAFT", plan: "FREE", reviewApprovedAt: 1, reviewRejection: { message: "m", at: 0 } }))
+    );
+    const res = await goLive({ storeId: STORE, plan: "FREE" });
+    expect(res.body).toEqual({ status: "LIVE", plan: "FREE" });
+    expect(runSmartStoreValidation).not.toHaveBeenCalled();
+    const lc = written().ExpressionAttributeValues![":lc"];
+    expect(lc).not.toHaveProperty("reviewApprovedAt");
+    expect(lc).not.toHaveProperty("reviewRejection");
+  });
+
+  it("a plan an admin gave goes live without a checkout, even with paid plans off", async () => {
+    setPaidPlansEnabledForTests(false);
+    vi.mocked(getStoreInventoryData).mockResolvedValue(
+      readyStore((d) => (d.settings.lifecycle = { status: "DRAFT", plan: "NOVA", planSetByAdmin: true }))
+    );
+    const res = await goLive({ storeId: STORE, plan: "NOVA" });
+    expect(res.body).toEqual({ status: "LIVE", plan: "NOVA" });
+    expect(written().ExpressionAttributeValues![":lc"]).toMatchObject({ plan: "NOVA", planSetByAdmin: true });
+    // Any other paid plan is still refused while they're off.
+    vi.mocked(getStoreInventoryData).mockResolvedValue(
+      readyStore((d) => (d.settings.lifecycle = { status: "DRAFT", plan: "NOVA", planSetByAdmin: true }))
+    );
+    expect((await goLive({ storeId: STORE, plan: "SPARK" })).body.code).toBe("PLAN_NOT_AVAILABLE");
+  });
+
+  it("the checklist tells the merchant about a rejection, an approval and a gifted plan", async () => {
+    setPaidPlansEnabledForTests(false);
+    vi.mocked(getStoreInventoryData).mockResolvedValue(
+      readyStore(
+        (d) =>
+          (d.settings.lifecycle = { status: "DRAFT", plan: "SPARK", planSetByAdmin: true, reviewRejection: { message: "Fix X", at: 2 } })
+      )
+    );
+    const res = await checklist();
+    expect(res.body).toMatchObject({ reviewRejection: { message: "Fix X", at: 2 }, reviewApproved: false, giftedPlan: "SPARK" });
+    expect(res.body.plans.find((p: { id: string }) => p.id === "SPARK")).toMatchObject({ available: true, unavailableReason: null });
+    expect(res.body.plans.find((p: { id: string }) => p.id === "NOVA").available).toBe(false);
   });
 });
