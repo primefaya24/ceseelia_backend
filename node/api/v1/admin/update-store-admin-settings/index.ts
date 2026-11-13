@@ -4,6 +4,7 @@ import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { isUlid } from "../../../../layers/core/utils";
 import {
   COMMISSION_MODES,
+  COMMISSION_SOURCES,
   isCommissionPercentBpsValid,
   isSalesCommissionsValid,
 } from "../../../../layers/core/interfaces/store";
@@ -15,8 +16,10 @@ import { sendServerError } from "../route-errors";
 
 /*
  * PUT /admin/update-store-admin-settings (admin, progress.md 1.6)
- * Body: { storeId, commissionMode, commissionPercentBps, salesCommissions, suspended } → the
- * saved block (same fields without storeId). All fields are required (5.1b):
+ * Body: { storeId, commissionSource, commissionMode, commissionPercentBps, salesCommissions,
+ * suspended } → the saved block (same fields without storeId). All fields are required:
+ * - commissionSource: "PLAN" (the store's plan's default fee) | "CUSTOM" (the fields below; P.6).
+ *   The custom fields are saved either way, so switching back to CUSTOM restores them.
  * - commissionMode: "FIXED" | "PERCENT".
  * - commissionPercentBps: basis points 0–3,000 (250 = 2.5%), whole number; kept in FIXED mode too.
  * - salesCommissions: whole cents for every currency, e.g. { USD: 125, CAD: 125, AUD: 125 } (5.1a):
@@ -30,9 +33,10 @@ export default function registerRoute(router: Router): void {
 }
 
 function pureRequestParams(req: Request): boolean {
-  const { storeId, commissionMode, commissionPercentBps, salesCommissions, suspended } = req.body;
+  const { storeId, commissionSource, commissionMode, commissionPercentBps, salesCommissions, suspended } = req.body;
   return (
     isUlid(storeId) &&
+    typeof commissionSource === "string" &&
     typeof commissionMode === "string" &&
     typeof commissionPercentBps === "number" &&
     typeof salesCommissions === "object" &&
@@ -41,8 +45,9 @@ function pureRequestParams(req: Request): boolean {
 }
 
 function validRequestParams(req: Request): boolean {
-  const { commissionMode, commissionPercentBps, salesCommissions } = req.body;
+  const { commissionSource, commissionMode, commissionPercentBps, salesCommissions } = req.body;
   return (
+    (COMMISSION_SOURCES as readonly string[]).includes(commissionSource) &&
     (COMMISSION_MODES as readonly string[]).includes(commissionMode) &&
     isCommissionPercentBpsValid(commissionPercentBps) &&
     isSalesCommissionsValid(salesCommissions)
@@ -51,10 +56,11 @@ function validRequestParams(req: Request): boolean {
 
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
-    const { storeId, commissionMode, commissionPercentBps, salesCommissions, suspended } = req.body;
+    const { storeId, commissionSource, commissionMode, commissionPercentBps, salesCommissions, suspended } = req.body;
     const { USD, CAD, AUD } = salesCommissions;
     res.send(
       await updateStoreAdminSettings(storeId, {
+        commissionSource,
         commissionMode,
         commissionPercentBps,
         salesCommissions: { USD, CAD, AUD },

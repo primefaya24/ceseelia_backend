@@ -32,7 +32,7 @@ import {
 } from "../../utils/validation";
 import { isUlid } from "../../utils";
 import { areVariantsValid, isStoreItemVariantPure } from "../../variants";
-import { isStorePlan, StorePlan } from "../../plans";
+import { isStorePlan, PLANS, StorePlan } from "../../plans";
 
 // JOIN_REQUEST, REQUEST_ID
 export interface Merchant {
@@ -165,7 +165,13 @@ export interface StoreSettings {
   // Admin
   admin: {
     /**
-     * How the platform commission is worked out (5.1b; missing = FIXED). It's taken from the
+     * Where the store's commission comes from (P.6; missing = PLAN): PLAN = its plan's default
+     * (PLANS[plan].commissionMinor, a fixed fee, 0 on NOVA), CUSTOM = the fields below, set by a
+     * platform admin for a negotiated deal. Read the fee with `platformFeeForStore`.
+     */
+    commissionSource: CommissionSource;
+    /**
+     * How a CUSTOM commission is worked out (5.1b; missing = FIXED). It's taken from the
      * merchant as Stripe's `application_fee_amount`, never shown to shoppers. Read the block with
      * `normalizeAdminSettings` and the fee with `platformFeeMinor`.
      * - FIXED: `salesCommissions` per order, in the order's currency.
@@ -324,6 +330,10 @@ export function normalizeStoreLifecycle(raw: unknown): StoreLifecycle {
   return out;
 }
 
+/** Where a store's commission comes from (P.6): its plan's default, or an admin's custom deal. */
+export const COMMISSION_SOURCES = ["PLAN", "CUSTOM"] as const;
+export type CommissionSource = (typeof COMMISSION_SOURCES)[number];
+
 /** How the platform commission is worked out (5.1b). */
 export const COMMISSION_MODES = ["FIXED", "PERCENT"] as const;
 export type CommissionMode = (typeof COMMISSION_MODES)[number];
@@ -379,6 +389,7 @@ export function initStoreSettings(): StoreSettings {
 
     // Admin
     admin: {
+      commissionSource: "PLAN",
       commissionMode: "FIXED",
       commissionPercentBps: 0,
       salesCommissions: defaultSalesCommissions(),
@@ -433,6 +444,7 @@ export function normalizeAdminSettings(raw: unknown): StoreSettings["admin"] {
     else if (legacy !== null) salesCommissions[c] = legacy;
   }
   return {
+    commissionSource: r.commissionSource === "CUSTOM" ? "CUSTOM" : "PLAN",
     commissionMode: r.commissionMode === "PERCENT" ? "PERCENT" : "FIXED",
     commissionPercentBps: isCommissionPercentBpsValid(r.commissionPercentBps) ? r.commissionPercentBps : 0,
     salesCommissions,
@@ -455,8 +467,9 @@ export interface FeeQuote {
 }
 
 /*
- * The platform fee for one order (5.4c `application_fee_amount`), always from the server's own
- * re-quote and the stored admin block, never from anything the client sends.
+ * The fee from an admin block's CUSTOM fields (5.1b), whatever its `commissionSource`: callers
+ * use platformFeeForStore, which picks the plan's default or these. Always from the server's
+ * own re-quote and the stored admin block, never from anything the client sends.
  * FIXED: the store's amount in the order's currency. PERCENT: `commissionPercentBps` of
  * `commissionBaseMinor`, rounded half up, raised to the currency's minimum. Either way never more
  * than the order total (Stripe rejects a fee above the charge) and never below 0.
@@ -471,6 +484,64 @@ export function platformFeeMinor(admin: StoreSettings["admin"] | undefined, quot
       ? Math.max(fixed, bpsOf(commissionBaseMinor(quote), a.commissionPercentBps))
       : fixed;
   return Math.max(0, Math.min(fee, Math.floor(quote.totalMinor)));
+}
+
+/** The commission a store is charged, as `platformFeeMinor` reads it (P.6). */
+export interface CommissionInEffect {
+  source: CommissionSource;
+  plan: StorePlan;
+  commissionMode: CommissionMode;
+  commissionPercentBps: number;
+  salesCommissions: Record<(typeof CURRENCY_CODES)[number], number>;
+}
+
+/*
+ * The commission in effect for a store (P.6): the admin's CUSTOM one if set, else the plan's
+ * default as a fixed fee per order (NOVA = 0). This is also what an order copies (5.4c), so a
+ * later plan or admin change never alters an order in progress.
+ */
+export function commissionInEffect(admin: StoreSettings["admin"] | undefined, plan: StorePlan): CommissionInEffect {
+  const a = normalizeAdminSettings(admin);
+  if (a.commissionSource === "CUSTOM") {
+    return {
+      source: "CUSTOM",
+      plan,
+      commissionMode: a.commissionMode,
+      commissionPercentBps: a.commissionPercentBps,
+      salesCommissions: a.salesCommissions,
+    };
+  }
+  const p = PLANS[isStorePlan(plan) ? plan : "FREE"];
+  return {
+    source: "PLAN",
+    plan: p.id,
+    commissionMode: "FIXED",
+    commissionPercentBps: 0,
+    salesCommissions: { ...p.commissionMinor },
+  };
+}
+
+/*
+ * The platform fee for one order of this store (P.6, the 5.4c `application_fee_amount`): the
+ * commission in effect, worked out by platformFeeMinor (capped at the total, never below 0).
+ * `plan` is the store's lifecycle plan, read on the server.
+ */
+export function platformFeeForStore(admin: StoreSettings["admin"] | undefined, plan: StorePlan, quote: FeeQuote): number {
+  return feeFromCommission(commissionInEffect(admin, plan), quote);
+}
+
+/* The fee for an order from a commission (the store's now, or the copy saved on an order). */
+export function feeFromCommission(c: CommissionInEffect, quote: FeeQuote): number {
+  return platformFeeMinor(
+    {
+      commissionSource: "CUSTOM",
+      commissionMode: c.commissionMode,
+      commissionPercentBps: c.commissionPercentBps,
+      salesCommissions: c.salesCommissions,
+      suspended: false,
+    },
+    quote
+  );
 }
 
 /*

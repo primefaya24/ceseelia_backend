@@ -740,11 +740,21 @@ pickup or delivery, goes through Stripe Checkout (5.4).
   - For P.8: approving an IN_REVIEW store that asked for a paid plan needs a way to pay
     (e.g. it goes LIVE on FREE with an "Upgrade" prompt); rejecting a paying store must cancel
     its subscription, or the next payment takes it LIVE again.
-- [ ] P.6 Fee from the plan: `platformFeeMinor` uses the store's **admin override** if one is set
+- [x] P.6 Fee from the plan: `platformFeeMinor` uses the store's **admin override** if one is set
       (the 5.1b mode / percentage / amounts, kept for negotiated deals), else the plan's default
       (NOVA = 0). Add `admin.commissionSource: PLAN | CUSTOM` (missing = PLAN) so a store follows
       its plan unless an admin sets a custom commission. 5.4c still copies what was used onto
       the order.
+      Done 2026-11-12: `admin.commissionSource` (normalized: anything but CUSTOM = PLAN, so
+      stores saved before P.6 follow their plan; their old custom fields are kept, unused).
+      **5.4c must call `platformFeeForStore(admin, lifecycle.plan, quote)`** (never
+      `platformFeeMinor` directly) and save `commissionInEffect(admin, plan)` on the order; a
+      later fee is `feeFromCommission(copy, quote)`. PLAN = the plan's fixed fee per order in
+      the order's currency (FREE 2.95 / 2.45, SPARK 1.95 / 1.45, NOVA 0), capped at the total;
+      CUSTOM overrides on every plan, NOVA included. The admin routes take and return
+      `commissionSource` (required on PUT; the custom fields are saved either way); GET adds
+      `plan` and `planCommissions`. Note: the Go Live sheet and Plan & billing show the plan's
+      default fee, even for a store with a CUSTOM deal.
 - [ ] P.7 FREE order limit: count paid orders per store per calendar month (UTC), bumped in 5.6.
       Warn the merchant at 24 (80%). At 30, **7 days' grace** (orders still go through), then new
       checkouts pause until they upgrade or the month turns. Checked only in `create-order`
@@ -907,6 +917,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | P.6 done: `admin.commissionSource` PLAN / CUSTOM (missing = PLAN); `platformFeeForStore`, `commissionInEffect`, `feeFromCommission` (5.4c must use them); admin settings routes take/return the source, GET adds the plan and its default fee. |
 | 2026-11-12 | P.5 done: Stripe Billing subscriptions (Go Live paid → Checkout, `/store/billing/{status,checkout,portal}`, webhook `/api/v1/billing/stripe-webhook`, sync from Stripe with grace + hourly sweep, one subscription per store, store delete cancels it), `PAID_PLANS_ENABLED`, `scripts/setup-billing-prices.mjs`; owner's Stripe setup listed under P.5. |
 | 2026-11-12 | P.4a/b done: `GET /store/go-live/checklist/:storeId`, `POST /store/go-live` (FREE; paid plans 409 `PLAN_NOT_AVAILABLE` until P.5), `GET /store/public/plans`; `runSmartStoreValidation` stub called on Go Live (**AI check still TODO**), fail-closed to IN_REVIEW with admin-only `review`; `readStoreStripeAccount` shared with payments/status. |
 | 2026-11-12 | P.3 done: `POST /merchant/create-store` (self-serve FREE draft, caller becomes ADMIN in the same transaction; 5-draft cap, 5/hour, 409 `SLUG_TAKEN` / `DRAFT_LIMIT_REACHED`). 8.2 join requests marked superseded. |

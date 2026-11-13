@@ -3,12 +3,15 @@ import { appConstants } from "../../../../constants";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { isUlid } from "../../../../layers/core/utils";
 import { getStoreAdminSettings } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { PLANS } from "../../../../layers/core/plans";
 import { sendServerError } from "../route-errors";
 
 /*
  * GET /admin/get-store-admin-settings/:storeId (admin, progress.md 1.6)
- * → { commissionMode, commissionPercentBps, salesCommissions, suspended } (5.1a/5.1b, defaults
- *   filled in by normalizeAdminSettings) · 404 STORE_NOT_FOUND
+ * → { commissionSource, commissionMode, commissionPercentBps, salesCommissions, suspended,
+ *     plan, planCommissions } (5.1a/5.1b/P.6, defaults filled in by normalizeAdminSettings)
+ *   `plan` / `planCommissions` = the store's plan and its default fee per order (cents), what
+ *   the store pays while `commissionSource` is PLAN. · 404 STORE_NOT_FOUND
  */
 export default function registerRoute(router: Router): void {
   router.get("/get-store-admin-settings/:storeId", (req: Request, res: Response): void => {
@@ -22,12 +25,12 @@ function pureRequestParams(req: Request): boolean {
 
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
-    const admin = await getStoreAdminSettings(req.params.storeId as string);
-    if (!admin) {
+    const found = await getStoreAdminSettings(req.params.storeId as string);
+    if (!found) {
       res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: "Store not found", code: "STORE_NOT_FOUND" });
       return;
     }
-    res.send(admin);
+    res.send({ ...found.admin, plan: found.plan, planCommissions: { ...PLANS[found.plan].commissionMinor } });
   } catch (e) {
     sendServerError(e, res, "In get-store-admin-settings");
   }

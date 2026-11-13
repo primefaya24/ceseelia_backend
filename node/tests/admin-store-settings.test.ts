@@ -16,7 +16,14 @@ vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", async (orig) => ({
 
 import { verifyCognitoAccessToken } from "../layers/aws/cognito";
 import { createApp } from "../app";
-import { commissionBaseMinor, FeeQuote, platformFeeMinor } from "../layers/core/interfaces/store";
+import {
+  commissionBaseMinor,
+  commissionInEffect,
+  FeeQuote,
+  feeFromCommission,
+  platformFeeForStore,
+  platformFeeMinor,
+} from "../layers/core/interfaces/store";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const app = createApp();
@@ -28,10 +35,20 @@ const put = (body: object) =>
 const getAdmin = () =>
   request(app).get(`/api/v1/admin/get-store-admin-settings/${STORE}`).set("Host", "localhost").set("Authorization", "Bearer t");
 const fees = { USD: 250, CAD: 300, AUD: 0 };
-const valid = { storeId: STORE, commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, suspended: true };
-const saved = { commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, suspended: true };
-/** What a read returns: the defaults for 5.1b's fields plus these. */
-const block = (b: object) => ({ commissionMode: "FIXED", commissionPercentBps: 0, ...b });
+const valid = {
+  storeId: STORE,
+  commissionSource: "CUSTOM",
+  commissionMode: "FIXED",
+  commissionPercentBps: 0,
+  salesCommissions: fees,
+  suspended: true,
+};
+const saved = { commissionSource: "CUSTOM", commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, suspended: true };
+/** What a read returns: the defaults for 5.1b's and P.6's fields plus these. */
+const block = (b: object) => ({ commissionSource: "PLAN", commissionMode: "FIXED", commissionPercentBps: 0, ...b });
+/** GET adds the store's plan and its default fee (P.6); no lifecycle = LIVE on FREE (A2). */
+const FREE_FEES = { CAD: 295, AUD: 295, USD: 245 };
+const read = (b: object, plan = "FREE", planCommissions: object = FREE_FEES) => ({ ...b, plan, planCommissions });
 
 beforeEach(() => {
   ddb.reset();
@@ -70,8 +87,12 @@ describe("PUT /admin/update-store-admin-settings", () => {
     [{ ...valid, salesCommission: 1.25, salesCommissions: undefined }],
     [{ ...valid, suspended: "yes" }],
     // P.2: the old field name is refused, not silently read
-    [{ storeId: STORE, commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, isStoreLive: true }],
+    [{ storeId: STORE, commissionSource: "CUSTOM", commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, isStoreLive: true }],
     [{ storeId: STORE, salesCommissions: fees }],
+    // P.6: the source is required and checked
+    [{ ...valid, commissionSource: undefined }],
+    [{ ...valid, commissionSource: "plan" }],
+    [{ ...valid, commissionSource: "NEGOTIATED" }],
     // 5.1b: mode and percentage are required and checked
     [{ ...valid, commissionMode: undefined }],
     [{ ...valid, commissionMode: "percent" }],
@@ -97,6 +118,12 @@ describe("PUT /admin/update-store-admin-settings", () => {
     expect(res.body).toEqual({ ...saved, commissionMode: "PERCENT", commissionPercentBps: 3_000 });
   });
 
+  it("saves PLAN with the custom fields kept, so switching back restores them (P.6)", async () => {
+    ddb.on(UpdateCommand).resolves({});
+    const res = await put({ ...valid, commissionSource: "PLAN", commissionMode: "PERCENT", commissionPercentBps: 250 });
+    expect(res.body).toEqual({ ...saved, commissionSource: "PLAN", commissionMode: "PERCENT", commissionPercentBps: 250 });
+  });
+
   it("allows zero commission", async () => {
     ddb.on(UpdateCommand).resolves({});
     expect((await put({ ...valid, salesCommissions: { USD: 0, CAD: 0, AUD: 0 } })).status).toBe(200);
@@ -113,32 +140,43 @@ describe("PUT /admin/update-store-admin-settings", () => {
 describe("GET /admin/get-store-admin-settings/:storeId", () => {
   it("returns the saved block", async () => {
     ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: saved } });
-    expect((await getAdmin()).body).toEqual(saved);
+    expect((await getAdmin()).body).toEqual(read(saved));
   });
 
   it("returns a saved percentage block", async () => {
     const pct = { ...saved, commissionMode: "PERCENT", commissionPercentBps: 250 };
     ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: pct } });
-    expect((await getAdmin()).body).toEqual(pct);
+    expect((await getAdmin()).body).toEqual(read(pct));
   });
 
-  it("reads a pre-5.1b block (or a bad mode/percentage) as FIXED with 0%", async () => {
+  it("reads a pre-5.1b block (or a bad mode/percentage) as FIXED with 0%, following the plan (P.6)", async () => {
+    const expected = read({ ...saved, commissionSource: "PLAN" });
     ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: { salesCommissions: fees, suspended: true } } });
-    expect((await getAdmin()).body).toEqual(saved);
+    expect((await getAdmin()).body).toEqual(expected);
     ddb.on(GetCommand).resolves({
-      Item: { pk: "x", admin: { commissionMode: "TIERED", commissionPercentBps: 9_999, salesCommissions: fees, suspended: true } },
+      Item: {
+        pk: "x",
+        admin: { commissionSource: "OTHER", commissionMode: "TIERED", commissionPercentBps: 9_999, salesCommissions: fees, suspended: true },
+      },
     });
-    expect((await getAdmin()).body).toEqual(saved);
+    expect((await getAdmin()).body).toEqual(expected);
+  });
+
+  it("includes the store's plan and that plan's default fee (P.6)", async () => {
+    ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: saved, lifecycle: { status: "LIVE", plan: "SPARK" } } });
+    expect((await getAdmin()).body).toEqual(read(saved, "SPARK", { CAD: 195, AUD: 195, USD: 145 }));
+    ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: saved, lifecycle: { status: "DRAFT", plan: "NOVA" } } });
+    expect((await getAdmin()).body.planCommissions).toEqual({ CAD: 0, AUD: 0, USD: 0 });
   });
 
   it("turns a flat pre-5.1a commission into the same amount in every currency", async () => {
     ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: { salesCommission: 3, suspended: true } } });
-    expect((await getAdmin()).body).toEqual(block({ salesCommissions: { USD: 300, CAD: 300, AUD: 300 }, suspended: true }));
+    expect((await getAdmin()).body).toEqual(read(block({ salesCommissions: { USD: 300, CAD: 300, AUD: 300 }, suspended: true })));
   });
 
   it("fills in defaults for a store saved before the block existed", async () => {
     ddb.on(GetCommand).resolves({ Item: { pk: "x" } });
-    expect((await getAdmin()).body).toEqual(block({ salesCommissions: { USD: 125, CAD: 125, AUD: 125 }, suspended: false }));
+    expect((await getAdmin()).body).toEqual(read(block({ salesCommissions: { USD: 125, CAD: 125, AUD: 125 }, suspended: false })));
   });
 
   it("404 without a store; 403 for non-admins", async () => {
@@ -261,5 +299,68 @@ describe("platformFeeMinor (5.4c application fee)", () => {
       expect(platformFeeMinor(pct(9_999, 10), q())).toBe(10);
       expect(platformFeeMinor(pct(-500, 10), q())).toBe(10);
     });
+  });
+});
+
+describe("platformFeeForStore: the plan's fee unless an admin set a custom one (P.6)", () => {
+  const q = (o: Partial<FeeQuote> = {}): FeeQuote => ({
+    currency: "CAD",
+    subtotalMinor: 5000,
+    discountMinor: 0,
+    pricesIncludeTax: false,
+    taxPercent: 0,
+    totalMinor: 5000,
+    ...o,
+  });
+  const custom = {
+    commissionSource: "CUSTOM",
+    commissionMode: "PERCENT",
+    commissionPercentBps: 1_000,
+    salesCommissions: { USD: 50, CAD: 50, AUD: 50 },
+    suspended: false,
+  } as const;
+
+  it.each([
+    ["FREE", "CAD", 295],
+    ["FREE", "AUD", 295],
+    ["FREE", "USD", 245],
+    ["SPARK", "CAD", 195],
+    ["SPARK", "USD", 145],
+    ["NOVA", "CAD", 0],
+    ["NOVA", "USD", 0],
+  ] as const)("%s in %s: %i cents per order", (plan, currency, fee) => {
+    expect(platformFeeForStore(undefined, plan, q({ currency }))).toBe(fee);
+    // The admin's custom fields don't count while the source is PLAN.
+    expect(platformFeeForStore({ ...custom, commissionSource: "PLAN" }, plan, q({ currency }))).toBe(fee);
+  });
+
+  it("a CUSTOM deal overrides the plan, on every plan (NOVA included)", () => {
+    for (const plan of ["FREE", "SPARK", "NOVA"] as const) {
+      expect(platformFeeForStore(custom, plan, q())).toBe(500); // 10% of 50.00
+    }
+    expect(platformFeeForStore({ ...custom, commissionMode: "FIXED" }, "NOVA", q())).toBe(50);
+  });
+
+  it("stores saved before P.6 follow their plan; an unknown plan is read as FREE", () => {
+    expect(platformFeeForStore({ salesCommissions: { USD: 900, CAD: 900, AUD: 900 } } as any, "SPARK", q())).toBe(195);
+    expect(platformFeeForStore(undefined, "GOLD" as any, q())).toBe(295);
+  });
+
+  it("is never more than the order total", () => {
+    expect(platformFeeForStore(undefined, "FREE", q({ totalMinor: 100 }))).toBe(100);
+    expect(platformFeeForStore(undefined, "FREE", q({ totalMinor: 0 }))).toBe(0);
+  });
+
+  it("what an order copies gives the same fee later, whatever changes on the store", () => {
+    const copy = JSON.parse(JSON.stringify(commissionInEffect(undefined, "SPARK")));
+    expect(copy).toEqual({
+      source: "PLAN",
+      plan: "SPARK",
+      commissionMode: "FIXED",
+      commissionPercentBps: 0,
+      salesCommissions: { CAD: 195, AUD: 195, USD: 145 },
+    });
+    expect(feeFromCommission(copy, q())).toBe(195);
+    expect(commissionInEffect(custom, "FREE")).toMatchObject({ source: "CUSTOM", commissionMode: "PERCENT", commissionPercentBps: 1_000 });
   });
 });

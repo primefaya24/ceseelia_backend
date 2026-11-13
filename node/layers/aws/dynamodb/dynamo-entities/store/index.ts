@@ -656,17 +656,19 @@ export async function updateStoreSettings(
 export type StoreAdminSettings = StoreSettings["admin"];
 
 /* The store's admin block (platform commission mode/amounts, store live), or null if there's no such store. */
-export async function getStoreAdminSettings(storeId: string): Promise<StoreAdminSettings | null> {
+export async function getStoreAdminSettings(
+  storeId: string
+): Promise<{ admin: StoreAdminSettings; plan: StorePlan } | null> {
   const res = await dynamoDbDocumentClient.send(
     new GetCommand({
       TableName: DEFAULT_TABLE_NAME,
       Key: { pk: appConstants.DYNAMO_ENTITY_STORE + "#" + storeId, sk: appConstants.DYNAMO_ENTITY_SETTINGS },
-      ProjectionExpression: "#pk, #admin",
-      ExpressionAttributeNames: { "#pk": "pk", "#admin": "admin" },
+      ProjectionExpression: "#pk, #admin, #lc",
+      ExpressionAttributeNames: { "#pk": "pk", "#admin": "admin", "#lc": "lifecycle" },
     })
   );
   if (!res.Item) return null;
-  return normalizeAdminSettings(res.Item.admin);
+  return { admin: normalizeAdminSettings(res.Item.admin), plan: normalizeStoreLifecycle(res.Item.lifecycle).plan };
 }
 
 /* Replace the admin block. Only the admin route calls this; merchants' update-settings never does. */
@@ -676,6 +678,7 @@ export async function updateStoreAdminSettings(
 ): Promise<StoreAdminSettings> {
   // Only the known fields, so nothing else in the body can reach the admin block.
   const value: StoreAdminSettings = {
+    commissionSource: admin.commissionSource,
     commissionMode: admin.commissionMode,
     commissionPercentBps: admin.commissionPercentBps,
     salesCommissions: admin.salesCommissions,
