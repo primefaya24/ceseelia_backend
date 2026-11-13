@@ -2,7 +2,11 @@ import { Request, Response, Router } from "express";
 import { appConstants } from "../../../../constants";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { isUlid } from "../../../../layers/core/utils";
-import { isSalesCommissionsValid } from "../../../../layers/core/interfaces/store";
+import {
+  COMMISSION_MODES,
+  isCommissionPercentBpsValid,
+  isSalesCommissionsValid,
+} from "../../../../layers/core/interfaces/store";
 import {
   StoreRecordNotFoundError,
   updateStoreAdminSettings,
@@ -11,8 +15,12 @@ import { sendServerError } from "../route-errors";
 
 /*
  * PUT /admin/update-store-admin-settings (admin, progress.md 1.6)
- * Body: { storeId, salesCommissions, isStoreLive } → the saved { salesCommissions, isStoreLive }
- * salesCommissions: whole cents for every currency, e.g. { USD: 125, CAD: 125, AUD: 125 } (5.1a).
+ * Body: { storeId, commissionMode, commissionPercentBps, salesCommissions, isStoreLive } → the
+ * saved block (same fields without storeId). All fields are required (5.1b):
+ * - commissionMode: "FIXED" | "PERCENT".
+ * - commissionPercentBps: basis points 0–3,000 (250 = 2.5%), whole number; kept in FIXED mode too.
+ * - salesCommissions: whole cents for every currency, e.g. { USD: 125, CAD: 125, AUD: 125 } (5.1a):
+ *   the fee in FIXED mode, the per-order minimum in PERCENT mode.
  * 404 STORE_NOT_FOUND. Merchants can't change these: update-settings never writes `admin`.
  */
 export default function registerRoute(router: Router): void {
@@ -22,19 +30,37 @@ export default function registerRoute(router: Router): void {
 }
 
 function pureRequestParams(req: Request): boolean {
-  const { storeId, salesCommissions, isStoreLive } = req.body;
-  return isUlid(storeId) && typeof salesCommissions === "object" && typeof isStoreLive === "boolean";
+  const { storeId, commissionMode, commissionPercentBps, salesCommissions, isStoreLive } = req.body;
+  return (
+    isUlid(storeId) &&
+    typeof commissionMode === "string" &&
+    typeof commissionPercentBps === "number" &&
+    typeof salesCommissions === "object" &&
+    typeof isStoreLive === "boolean"
+  );
 }
 
 function validRequestParams(req: Request): boolean {
-  return isSalesCommissionsValid(req.body.salesCommissions);
+  const { commissionMode, commissionPercentBps, salesCommissions } = req.body;
+  return (
+    (COMMISSION_MODES as readonly string[]).includes(commissionMode) &&
+    isCommissionPercentBpsValid(commissionPercentBps) &&
+    isSalesCommissionsValid(salesCommissions)
+  );
 }
 
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
-    const { storeId, salesCommissions, isStoreLive } = req.body;
+    const { storeId, commissionMode, commissionPercentBps, salesCommissions, isStoreLive } = req.body;
     const { USD, CAD, AUD } = salesCommissions;
-    res.send(await updateStoreAdminSettings(storeId, { salesCommissions: { USD, CAD, AUD }, isStoreLive }));
+    res.send(
+      await updateStoreAdminSettings(storeId, {
+        commissionMode,
+        commissionPercentBps,
+        salesCommissions: { USD, CAD, AUD },
+        isStoreLive,
+      })
+    );
   } catch (e) {
     if (e instanceof StoreRecordNotFoundError) {
       res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: "Store not found", code: "STORE_NOT_FOUND" });

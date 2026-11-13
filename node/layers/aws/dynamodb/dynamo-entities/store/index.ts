@@ -568,7 +568,7 @@ export async function updateStoreSettings(
 ////////////////////////////////////////
 export type StoreAdminSettings = StoreSettings["admin"];
 
-/* The store's admin block (platform commission, store live), or null if there's no such store. */
+/* The store's admin block (platform commission mode/amounts, store live), or null if there's no such store. */
 export async function getStoreAdminSettings(storeId: string): Promise<StoreAdminSettings | null> {
   const res = await dynamoDbDocumentClient.send(
     new GetCommand({
@@ -587,7 +587,13 @@ export async function updateStoreAdminSettings(
   storeId: string,
   admin: StoreAdminSettings
 ): Promise<StoreAdminSettings> {
-  const value: StoreAdminSettings = { salesCommissions: admin.salesCommissions, isStoreLive: admin.isStoreLive };
+  // Only the known fields, so nothing else in the body can reach the admin block.
+  const value: StoreAdminSettings = {
+    commissionMode: admin.commissionMode,
+    commissionPercentBps: admin.commissionPercentBps,
+    salesCommissions: admin.salesCommissions,
+    isStoreLive: admin.isStoreLive,
+  };
   try {
     await dynamoDbDocumentClient.send(
       new UpdateCommand({

@@ -50,6 +50,8 @@ export const NUMBER_RANGE = {
   points: { min: 0, max: 1_000_000 },
   // Platform commission per order, minor units per currency (5.1a): up to 1,000.00
   salesCommissionMinor: { min: 0, max: 100_000 },
+  // Percentage commission in basis points (5.1b): 0–30%
+  commissionPercentBps: { min: 0, max: 3_000 },
 } as const;
 
 /* Max list sizes. The webapp has no caps of its own yet; these are generous. */

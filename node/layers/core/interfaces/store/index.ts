@@ -164,10 +164,20 @@ export interface StoreSettings {
   // Admin
   admin: {
     /**
-     * Platform commission per order (5.1a), a fixed amount in minor units for every currency in
-     * CURRENCY_CODES ({ USD: 125, CAD: 125, AUD: 125 } = 1.25 each). It's taken from the merchant
-     * as Stripe's `application_fee_amount`, never shown to shoppers. Read it with
-     * `normalizeAdminSettings` (stores saved before 5.1a have a flat `salesCommission`).
+     * How the platform commission is worked out (5.1b; missing = FIXED). It's taken from the
+     * merchant as Stripe's `application_fee_amount`, never shown to shoppers. Read the block with
+     * `normalizeAdminSettings` and the fee with `platformFeeMinor`.
+     * - FIXED: `salesCommissions` per order, in the order's currency.
+     * - PERCENT: `commissionPercentBps` of the items after discounts, without tax and delivery,
+     *   rounded half up, and at least `salesCommissions` (the per-currency minimum, 0 = none).
+     */
+    commissionMode: CommissionMode;
+    /** Basis points (250 = 2.5%), 0–3,000; only used in PERCENT mode. */
+    commissionPercentBps: number;
+    /**
+     * Minor units for every currency in CURRENCY_CODES ({ USD: 125, CAD: 125, AUD: 125 } = 1.25
+     * each): the fee in FIXED mode, the minimum in PERCENT mode (5.1a; stores saved before 5.1a
+     * have a flat `salesCommission`).
      */
     salesCommissions: Required<StoreItemPrices>;
     isStoreLive: boolean; // True
@@ -200,6 +210,10 @@ export interface StorePayments {
 /** Countries a store's Stripe account can be created in (5.2), matching the store currencies. */
 export const PAYMENT_COUNTRIES = ["CA", "US", "AU"] as const;
 export type PaymentCountry = (typeof PAYMENT_COUNTRIES)[number];
+
+/** How the platform commission is worked out (5.1b). */
+export const COMMISSION_MODES = ["FIXED", "PERCENT"] as const;
+export type CommissionMode = (typeof COMMISSION_MODES)[number];
 
 /** How a store charges tax (4.4). */
 export const TAX_MODES = ["FLAT", "CANADA"] as const;
@@ -252,6 +266,8 @@ export function initStoreSettings(): StoreSettings {
 
     // Admin
     admin: {
+      commissionMode: "FIXED",
+      commissionPercentBps: 0,
       salesCommissions: defaultSalesCommissions(),
       isStoreLive: true,
     },
@@ -277,8 +293,14 @@ export function isSalesCommissionsValid(v: unknown): v is Required<StoreItemPric
   );
 }
 
+/** A commission percentage in basis points: a whole number in range (5.1b). */
+export function isCommissionPercentBpsValid(v: unknown): v is number {
+  return Number.isInteger(v) && isInRange(v as number, NUMBER_RANGE.commissionPercentBps);
+}
+
 /*
- * The saved admin block with defaults filled in. Blocks saved before 5.1a have a flat
+ * The saved admin block with defaults filled in. A missing or unknown mode is FIXED and a missing
+ * or bad percentage is 0 (blocks saved before 5.1b). Blocks saved before 5.1a have a flat
  * `salesCommission` in major units with no currency; it becomes that amount in every currency.
  * Missing or bad per-currency values fall back to the default.
  */
@@ -295,21 +317,64 @@ export function normalizeAdminSettings(raw: unknown): StoreSettings["admin"] {
     if (Number.isInteger(v) && isInRange(v, NUMBER_RANGE.salesCommissionMinor)) salesCommissions[c] = v;
     else if (legacy !== null) salesCommissions[c] = legacy;
   }
-  return { salesCommissions, isStoreLive: r.isStoreLive !== false };
+  return {
+    commissionMode: r.commissionMode === "PERCENT" ? "PERCENT" : "FIXED",
+    commissionPercentBps: isCommissionPercentBpsValid(r.commissionPercentBps) ? r.commissionPercentBps : 0,
+    salesCommissions,
+    isStoreLive: r.isStoreLive !== false,
+  };
+}
+
+/** The parts of a quote (4.1 `Quote`) the platform fee is worked out from. */
+export interface FeeQuote {
+  currency: string;
+  /** Items before discounts. */
+  subtotalMinor: number;
+  discountMinor: number;
+  /** In FLAT mode with tax-inclusive prices, the items include tax at this rate. */
+  pricesIncludeTax: boolean;
+  taxPercent: number;
+  /** What the shopper pays. */
+  totalMinor: number;
 }
 
 /*
- * The platform fee for one order (5.4c `application_fee_amount`): the store's commission in the
- * charge's currency, never more than the order total (Stripe rejects a fee above the charge).
+ * The platform fee for one order (5.4c `application_fee_amount`), always from the server's own
+ * re-quote and the stored admin block, never from anything the client sends.
+ * FIXED: the store's amount in the order's currency. PERCENT: `commissionPercentBps` of
+ * `commissionBaseMinor`, rounded half up, raised to the currency's minimum. Either way never more
+ * than the order total (Stripe rejects a fee above the charge) and never below 0.
  */
-export function platformFeeMinor(
-  admin: StoreSettings["admin"] | undefined,
-  currency: string,
-  totalMinor: number
-): number {
-  const fees = normalizeAdminSettings(admin).salesCommissions;
-  const fee = fees[currency as keyof typeof fees] ?? appConstants.STORE_DEFAULT_SALES_COMMISSION_MINOR;
-  return Math.max(0, Math.min(fee, Math.floor(totalMinor)));
+export function platformFeeMinor(admin: StoreSettings["admin"] | undefined, quote: FeeQuote): number {
+  const a = normalizeAdminSettings(admin);
+  const fixed =
+    a.salesCommissions[quote.currency as keyof typeof a.salesCommissions] ??
+    appConstants.STORE_DEFAULT_SALES_COMMISSION_MINOR;
+  const fee =
+    a.commissionMode === "PERCENT"
+      ? Math.max(fixed, bpsOf(commissionBaseMinor(quote), a.commissionPercentBps))
+      : fixed;
+  return Math.max(0, Math.min(fee, Math.floor(quote.totalMinor)));
+}
+
+/*
+ * What a percentage commission is taken on (5.1b): the items after discounts, without delivery
+ * and without tax. Tax-inclusive prices have their tax taken out (half up), so the platform
+ * never takes a cut of the sales tax the merchant collects.
+ */
+export function commissionBaseMinor(quote: FeeQuote): number {
+  const items = Math.max(0, Math.floor(quote.subtotalMinor - quote.discountMinor));
+  if (!quote.pricesIncludeTax || !(quote.taxPercent > 0)) return items;
+  // items × 100 / (100 + rate), with the rate in thousandths of a percent (as percentOf does).
+  const milli = BigInt(Math.round(quote.taxPercent * 1000));
+  const den = BigInt(100_000) + milli;
+  return Number((BigInt(items) * BigInt(100_000) * BigInt(2) + den) / (den * BigInt(2)));
+}
+
+/** `bps` basis points of `amountMinor`, rounded half up, in BigInt so large orders stay exact. */
+function bpsOf(amountMinor: number, bps: number): number {
+  if (bps <= 0 || amountMinor <= 0) return 0;
+  return Number((BigInt(amountMinor) * BigInt(bps) + BigInt(5_000)) / BigInt(10_000));
 }
 
 const isObject = (v: unknown): v is Record<string, any> =>

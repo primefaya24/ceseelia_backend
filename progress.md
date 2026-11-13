@@ -24,7 +24,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > Backend fixes from QA: Q.16 (hide email/phone), Q.21 (`private, no-cache`), Q.23 (Canadian
 > delivery tax estimated from geo-IP, no postal code in the quote). **Stage 5 started:** 5.1 is
 > decided (Stripe Connect **Standard**, direct charges; commission is a fixed amount per order in
-> each currency, `admin.salesCommissions`) and 5.1a is done. 5.2 (onboarding routes, keys in
+> each currency, `admin.salesCommissions`) and 5.1a is done. 5.1b (2026-11-12) adds a per-store
+> `PERCENT` mode (see §7). 5.2 (onboarding routes, keys in
 > Secrets Manager) is done, and so is WA 5.4 (Payments card); onboarding was tested end to end
 > in the Stripe sandbox. **Next: 5.3** (order model). **Open for the owner:** pickup orders:
 > online payment only, or also "pay at pickup" (no Stripe, so no automatic platform fee)?
@@ -592,8 +593,18 @@ match the backend and webapp._
         validated by `isSalesCommissionsValid` (0–100,000 each). `normalizeAdminSettings` fills
         defaults and reads a flat pre-5.1a `salesCommission` (major units) as that amount in
         every currency; `get-data` returns the normalized block to admins.
-        `platformFeeMinor(admin, currency, total)` gives 5.4c's fee, capped at the order total.
+        `platformFeeMinor` gives 5.4c's fee, capped at the order total.
         The webapp's Admin settings form has a box per currency.
+  - [x] b. **Percentage commission (2026-11-12, owner):** `admin.commissionMode` (`FIXED` |
+        `PERCENT`, missing or unknown = `FIXED`) and `admin.commissionPercentBps` (whole basis
+        points 0–3,000, missing or bad = 0). `PERCENT` takes that share of the items after
+        discounts, **without tax and delivery** (`commissionBaseMinor`: tax-inclusive prices
+        have their tax taken out, half up), rounded half up, and at least `salesCommissions`
+        in the currency (the minimum per order, 0 = none). `platformFeeMinor(admin, quote)` now
+        takes the quote (`FeeQuote`: currency, subtotal, discount, tax-inclusive flag and rate,
+        total) and is still capped at the total. The admin PUT requires both new fields and
+        writes only the four known fields. Tests: validation, old blocks, rounding, minimum,
+        cap, included tax, large orders. WA 5.0b is the form.
 - [x] 5.2 Merchant onboarding (Standard account, then an `account_onboarding` Account Link).
       New accounts only, no OAuth linking of existing accounts (owner, 2026-11-11).
   - [x] a. `POST /store/payments/create-connect-account-link` `{storeId, country?}` (store
@@ -624,7 +635,10 @@ match the backend and webapp._
         estimate (QA Q.23); pickup uses the store's province.
   - [ ] b. Write `ORDER#<ts>#<id>` as `PENDING_PAYMENT`.
   - [ ] c. Create the Checkout Session **on the connected account** (direct charge) with
-        `payment_intent_data.application_fee_amount = platformFeeMinor(...)` (from the
+        `payment_intent_data.application_fee_amount = platformFeeMinor(admin, quote)` with the
+        **server's** re-quote from 5.4a, and copy `commissionMode`, `commissionPercentBps`, the
+        minimum/fixed amount and the fee onto the order (5.1b), so later admin changes don't
+        touch it and 8.4 can report it (from the
         merchant's share; the shopper's total is the quote's total), plus an idempotency key.
         **Tax:** charge exactly the quote's tax as its own line (or amounts), and **never** set
         `automatic_tax: { enabled: true }`. Merchants may opt in to Stripe Tax during onboarding
@@ -713,6 +727,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | 5.1b done: percentage commission. `admin.commissionMode` (`FIXED`/`PERCENT`) and `commissionPercentBps` (0–3,000); PERCENT = share of items after discounts, no tax or delivery, half up, at least the per-currency `salesCommissions`; `platformFeeMinor(admin, quote)`; 5.4c must snapshot the commission onto the order. Settles the open "percentage vs fixed" question: admins pick per store. |
 | 2026-11-11 | 5.2b: payments status adds `canManage`, `pastDue`, `pendingVerification`, `deadline`; `requirementsDue` counts currently_due ∪ past_due once (from the sandbox onboarding test). |
 | 2026-11-11 | Note for 5.4c (from the sandbox onboarding test): never enable Stripe `automatic_tax` in checkout; Ceseelia charges the quote's tax. Merchants can opt in to Stripe Tax during onboarding, so enabling it would double-tax shoppers. |
 | 2026-11-11 | 5.2 done: `create-connect-account-link` and `status` under `/store/payments`; Standard accounts in CA/US/AU; `payments` attribute on SETTINGS (private; public gets `paymentsEnabled`); Stripe keys read from Secrets Manager (`STRIPE_SECRET_ID`), live key refused in dev, prod won't start without one. Sandbox smoke test passed. |

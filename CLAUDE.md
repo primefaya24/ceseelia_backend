@@ -158,7 +158,7 @@ export default function registerRoute(router: Router): void {
 | Customer | `POST /customer/quote` `{storeId, currency, fulfilment?, lines:[{itemId, quantity, params?}]}` (no auth) | ✅ always 200 with `priceLines`' quote (per-line errors, delivery, tax parts in `taxLines`, `ok`); Canadian tax by province when `taxMode: CANADA` (`layers/core/tax/canada.ts`, 4.4); a delivery's province is an estimate from geo-IP, else the store's (`taxRegion.estimated`, QA Q.23); 400 malformed / > 50 lines; 60/IP/min → 429 (4.3, 4.2) |
 | Customer | `POST /customer/contact-store` `{storeId, name, email, message, website}` (no auth) | ✅ SES to the store, customer as Reply-To; honeypot; 5/IP/10 min + 30/store/h → 429; 409 `CONTACT_UNAVAILABLE` (3.4) |
 | Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
-| Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, salesCommissions, isStoreLive}` (`salesCommissions`: cents for every currency, 5.1a) | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
+| Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, commissionMode, commissionPercentBps, salesCommissions, isStoreLive}` (`FIXED`/`PERCENT`, basis points 0–3,000, cents for every currency; 5.1a/5.1b) | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
 | Admin | `POST /admin/assign-store-member` `{storeId, email, role?}` | ✅ existing account → member now (`ADDED`); no account → pending invite + SES email (`INVITED`, `emailSent`); 409 `ALREADY_MEMBER` |
 | Admin | `DELETE /admin/remove-store-member/:storeId/:userId`, `DELETE /admin/cancel-store-invite/:storeId/:email` | ✅ 404 `NOT_A_MEMBER` / `NOT_INVITED` |
 | User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |
@@ -292,11 +292,22 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     - Merchants can refund or cancel in their own dashboard, so the webhook must sync
       `charge.refunded` / `charge.dispute.*` onto the order; our own refund route (6.2) refunds
       on the connected account.
-    **Platform commission (decided 2026-11-11):** a **fixed amount per order in each currency**,
-    `admin.salesCommissions` (cents: `{ USD: 125, CAD: 125, AUD: 125 }`, default 1.25 each; flat
-    pre-5.1a `salesCommission` values are read as that amount in every currency by
-    `normalizeAdminSettings`). It is taken from the **merchant** as `application_fee_amount`
-    (`platformFeeMinor(admin, currency, total)`, capped at the order total) and never shown to or
+    **Platform commission (decided 2026-11-11, percentage added 2026-11-12 as 5.1b):** set per
+    store by platform admins, in one of two modes (`admin.commissionMode`, missing = `FIXED`):
+    - `FIXED`: `admin.salesCommissions` per order in the order's currency (cents:
+      `{ USD: 125, CAD: 125, AUD: 125 }`, default 1.25 each; flat pre-5.1a `salesCommission`
+      values are read as that amount in every currency by `normalizeAdminSettings`).
+    - `PERCENT`: `admin.commissionPercentBps` (basis points, 0–3,000 = 0–30%) of the **items
+      after discounts, without delivery and without tax** (`commissionBaseMinor`; tax-inclusive
+      prices have their tax taken out), rounded half up, and at least `salesCommissions` in that
+      currency (the minimum per order, 0 = none).
+    The fee is always worked out on the server by `platformFeeMinor(admin, quote)` from the
+    stored admin block and the server's own re-quote; nothing the client sends feeds it. It is
+    capped at the order total and never negative, and a bad stored mode or percentage is read as
+    `FIXED` / 0. Only the admin routes write the block (merchants' update-settings never does),
+    and the mode and percentage are copied onto each order when it's created (5.4), so a later
+    change never alters an order in progress. It is taken from the **merchant** as
+    `application_fee_amount` and never shown to or
     charged to the shopper: no "handling fee" line in the cart, quote or checkout. A mandatory
     per-order fee added after the price is shown is drip pricing (Canada's Competition Act,
     Australian Consumer Law, California SB 478). A merchant who wants to pass it on raises their
