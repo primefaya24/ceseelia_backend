@@ -5,6 +5,9 @@ import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import {appConstants} from "../../../../constants";
 import { isUlid } from "../../../../layers/core/utils";
 import { deleteStore } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { getStoreBillingState } from "../../../../layers/aws/dynamodb/dynamo-entities/billing";
+import { cancelSubscriptionNow } from "../../../../layers/payments/billing";
+import { sendPaymentsError } from "../payments/errors";
 dotenv.config();
 
 /*
@@ -46,6 +49,18 @@ function validRequestParams(req: Request): boolean {
 */
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
     try {
+        // P.5: stop the store's subscription first, so nobody is billed for a deleted store.
+        // If Stripe can't be reached, nothing is deleted (502; try again).
+        const billing = await getStoreBillingState(req.params.storeId as string);
+        const sub = billing?.subscription;
+        if (sub && !["canceled", "incomplete_expired"].includes(sub.status)) {
+            try {
+                await cancelSubscriptionNow(sub.subscriptionId);
+            } catch (e) {
+                sendPaymentsError(e, res, "In store/delete (cancelling the subscription)");
+                return;
+            }
+        }
         const found = await deleteStore(req.params.storeId as string);
         if (!found) {
             res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({message: "Store not found", code: "STORE_NOT_FOUND"});

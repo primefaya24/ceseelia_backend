@@ -15,21 +15,28 @@ import {
   runSmartStoreValidation,
   SmartStoreValidationResult,
 } from "../../../../../layers/core/store-validation";
-import { sendPaymentsError } from "../../payments/errors";
+import { getStoreBillingState } from "../../../../../layers/aws/dynamodb/dynamo-entities/billing";
+import { blocksNewSubscription } from "../../../../../layers/core/billing";
+import { billingCurrencyFor } from "../../../../../layers/core/go-live";
+import { isPaidPlan } from "../../../../../layers/core/plans";
+import { callerUserId, sendBillingError, startPlanCheckout } from "../../billing/shared";
 
 /*
  * POST /store/go-live { storeId, plan } (store ADMINs and platform admins, progress.md P.4b)
- * → 200 { status: "LIVE" | "IN_REVIEW", plan }
+ * → 200 { status: "LIVE" | "IN_REVIEW", plan }, or for SPARK / NOVA once everything passed
+ *   200 { status: "DRAFT", plan, checkoutUrl } (P.5): the store goes live from the billing
+ *   webhook once the subscription is paid. A flagged store goes to IN_REVIEW without a charge.
  *
  * Everything is checked again on the server, in this order; nothing the client says is trusted:
  *   409 STORE_SUSPENDED · 409 ALREADY_LIVE · 409 IN_REVIEW (only a DRAFT can go live)
- *   409 PLAN_NOT_AVAILABLE (SPARK / NOVA until subscriptions exist, P.5)
+ *   409 PLAN_NOT_AVAILABLE (SPARK / NOVA while PAID_PLANS_ENABLED is off)
+ *   409 ALREADY_SUBSCRIBED (paid: the store already has a subscription)
  *   409 CHECKLIST_INCOMPLETE { steps } (P.4a's checklist, with Stripe read live)
  *   409 FREE_PLAN_IN_USE (the caller already has another live FREE store; not for platform admins)
  * Then runSmartStoreValidation (P.4c, a TODO stub that passes every store for now): passed →
  * LIVE; flagged, or the check failed → IN_REVIEW with the reasons kept for admins. The write
  * is conditional on the store still being a DRAFT: 409 STATUS_CHANGED if it moved meanwhile.
- * 404 STORE_NOT_FOUND · 503 PAYMENTS_NOT_CONFIGURED · 502 STRIPE_ERROR
+ * 404 STORE_NOT_FOUND · 503 PAYMENTS_NOT_CONFIGURED / BILLING_NOT_CONFIGURED · 502 STRIPE_ERROR
  */
 export default function registerRoute(router: Router): void {
   router.post("/", (req: Request, res: Response): void => {
@@ -67,6 +74,11 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       return void conflict(res, "PLAN_NOT_AVAILABLE", "This plan isn't available yet. Go live on Free for now.");
     }
 
+    const billing = isPaidPlan(plan) ? await getStoreBillingState(storeId) : null;
+    if (billing && blocksNewSubscription(billing.subscription, Date.now())) {
+      return void conflict(res, "ALREADY_SUBSCRIBED", "This store already has a plan.");
+    }
+
     const stripe = await readStoreStripeAccount(storeId);
     const steps = goLiveChecklist(data, { chargesEnabled: stripe.connected && stripe.chargesEnabled });
     if (!steps.every((s) => s.ok)) {
@@ -88,6 +100,17 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       result = { ok: false, reasons: ["VALIDATION_UNAVAILABLE"] };
     }
 
+    if (result.ok && billing && stripe.connected) {
+      // Paid plan: nothing changes until the subscription is paid (the webhook takes it live).
+      const currency = billingCurrencyFor(stripe.account.country);
+      const userId = await callerUserId(res);
+      if (!currency || !userId) {
+        return void conflict(res, "PAYMENTS_NOT_CONNECTED", "Connect Stripe first: plans are billed in its currency.");
+      }
+      const checkoutUrl = await startPlanCheckout({ state: billing, plan, currency, userId });
+      return void res.send({ status: "DRAFT", plan, checkoutUrl });
+    }
+
     const saved = await setStoreStatusFromDraft(storeId, {
       status: result.ok ? "LIVE" : "IN_REVIEW",
       plan,
@@ -99,6 +122,6 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     if (e instanceof StoreStatusChangedError) {
       return void conflict(res, "STATUS_CHANGED", "This store's status just changed. Reload and try again.");
     }
-    sendPaymentsError(e, res, "In go-live");
+    sendBillingError(e, res, "In go-live");
   }
 }

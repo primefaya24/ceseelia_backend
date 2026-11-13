@@ -398,6 +398,7 @@ describe("parseStripeSecrets", () => {
     ).toEqual({
       secretKey: ok,
       webhookSecret: "whsec_1",
+      billingWebhookSecret: "",
     });
     expect(
       parseStripeSecrets(JSON.stringify({ secretKey: "rk_live_abc" }), false).webhookSecret

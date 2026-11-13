@@ -109,7 +109,9 @@ export default function registerRoute(router: Router): void {
   | Entity | pk | sk |
   |---|---|---|
   | Store overview (admin list) | `APP_STORE` | `STORE#<storeId>#OVERVIEW` |
-  | Store settings | `STORE#<storeId>` | `SETTINGS` (own attributes `payments` (5.2) and `lifecycle` (P.2): only their own routes write them) |
+  | Store settings | `STORE#<storeId>` | `SETTINGS` (own attributes `payments` (5.2), `lifecycle` (P.2), `review` (P.4), `subscription` and `billingCheckout` (P.5): only their own code writes them) |
+  | Billing customer | `USER#<userId>` | `BILLING#<CURRENCY>` (`stripeCustomerId`; P.5) |
+  | Stores in payment grace | `APP_BILLING_GRACE` | `STORE#<storeId>` (`graceEndsAt`; the hourly sweep's list, P.5) |
   | Category | `STORE#<storeId>` | `CATEGORY#<categoryId>` |
   | Item | `STORE#<storeId>` | `ITEM#<itemId>` |
   | User profile | `USER#<uuid>` | `PROFILE#INFO`, `PROFILE#COGNITO_DATA#<cognitoId>`, `PROFILE#NOTIFICATION_SETTINGS` (written by the CloudFormation sign-up Lambda) |
@@ -168,7 +170,8 @@ export default function registerRoute(router: Router): void {
 | Merchant | `GET /merchant/path` | ❌ template stub |
 | Customer | — | ❌ empty router |
 | Payments (5.2) | `POST /store/payments/create-connect-account-link` `{storeId, country?}` → `{url, expiresAt}` (store admins); `GET /store/payments/status/:storeId` (members) | ✅ Standard account created once per store (`country` CA/US/AU required the first time; idempotency key), fresh onboarding link per call returning to `/store/storefront/:storeId?payments=return\|refresh`; status reads Stripe, refreshes the cached flags, forgets a disconnected account. 503 `PAYMENTS_NOT_CONFIGURED`, 502 `STRIPE_ERROR`. `payments` lives in its own SETTINGS attribute; public responses get only `paymentsEnabled` |
-| Go Live (P.4) | `GET /store/go-live/checklist/:storeId` (members), `POST /store/go-live` `{storeId, plan}` (store ADMINs), `GET /store/public/plans` (no auth) | ✅ checklist steps STORE_NAME / ITEMS / FULFILMENT / PAYMENTS (Stripe live), plans in the billing currency; Go Live re-checks everything, then `runSmartStoreValidation` (**TODO stub, passes all**) → LIVE, or IN_REVIEW (admin-only `review`); paid plans 409 `PLAN_NOT_AVAILABLE` until P.5 |
+| Go Live (P.4) | `GET /store/go-live/checklist/:storeId` (members), `POST /store/go-live` `{storeId, plan}` (store ADMINs), `GET /store/public/plans` (no auth) | ✅ checklist steps STORE_NAME / ITEMS / FULFILMENT / PAYMENTS (Stripe live), plans in the billing currency; Go Live re-checks everything, then `runSmartStoreValidation` (**TODO stub, passes all**) → LIVE, or IN_REVIEW (admin-only `review`); paid plans return a Billing `checkoutUrl` (P.5), 409 `PLAN_NOT_AVAILABLE` while `PAID_PLANS_ENABLED` is off |
+| Billing (P.5) | `GET /store/billing/status/:storeId` (members), `POST /store/billing/checkout` `{storeId, plan}` (store ADMINs; LIVE FREE → SPARK/NOVA), `POST /store/billing/portal` `{storeId}` (the payer only), webhook `POST /api/v1/billing/stripe-webhook` | ✅ Stripe Billing on the platform account with `automatic_tax`; Go Live on a paid plan returns `checkoutUrl` and the webhook takes it live; every event re-syncs the subscription from Stripe (`layers/payments/subscription-sync`, rules in `layers/core/billing`); failed payment → 7 days' grace → FREE (or DRAFT + `pausedReason` when the account already has a live FREE store); hourly grace sweep; paid plans behind `PAID_PLANS_ENABLED` |
 | Payments | `POST /api/v1/website/listen-to-stripe-event/:websiteId` | ❌ returns 501 until Stage 5 (registered before `express.json()` so the raw body is available) |
 
 Infra helpers ready to reuse: SES `sendEmail` + templates, PDF invoice generator (`pdfkit`),

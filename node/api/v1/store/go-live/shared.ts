@@ -9,9 +9,9 @@ export interface GoLivePlanOption {
   commissionMinor: number | null;
   monthlyOrderLimit: number | null;
   customDomain: boolean;
-  /** Can be chosen now (paid plans wait for P.5). */
+  /** Can be chosen now (paid plans need PAID_PLANS_ENABLED, P.5). */
   available: boolean;
-  /** Why not, when it can't be: PLAN_NOT_AVAILABLE (paid plans before P.5), FREE_PLAN_IN_USE. */
+  /** Why not, when it can't be: PLAN_NOT_AVAILABLE (paid plans switched off), FREE_PLAN_IN_USE. */
   unavailableReason: "PLAN_NOT_AVAILABLE" | "FREE_PLAN_IN_USE" | null;
 }
 

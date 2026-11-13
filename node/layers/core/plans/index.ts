@@ -1,4 +1,5 @@
 import { CURRENCY_CODES } from "../../../constants/input-limits";
+import { PAID_PLANS_ENABLED } from "../../../config";
 
 /*
  * Store plans (progress.md P.1, decided with the owner 2026-11-12). Plans are per store, and an
@@ -57,14 +58,18 @@ export const PLANS: Readonly<Record<StorePlan, Readonly<PlanDefinition>>> = Obje
 });
 
 /**
- * Paid plans can be chosen at Go Live only once subscriptions exist (P.5). Until then SPARK and
- * NOVA are listed but refused with PLAN_NOT_AVAILABLE, and the webapp marks them "coming soon".
+ * Whether a plan can be picked today. SPARK and NOVA need Stripe Billing set up (P.5), switched
+ * on with PAID_PLANS_ENABLED; while it's off they're listed but refused with PLAN_NOT_AVAILABLE,
+ * and the webapp marks them "coming soon".
  */
-export const PAID_PLANS_AVAILABLE = false;
-
-/** Whether a plan can be picked at Go Live today. */
 export function isPlanAvailable(id: StorePlan): boolean {
-  return !isPaidPlan(id) || PAID_PLANS_AVAILABLE;
+  return !isPaidPlan(id) || paidPlansOn;
+}
+
+let paidPlansOn = PAID_PLANS_ENABLED;
+/** Tests only: switch paid plans on or off (PAID_PLANS_ENABLED otherwise). */
+export function setPaidPlansEnabledForTests(on: boolean): void {
+  paidPlansOn = on;
 }
 
 /** Grace after a failed subscription payment before the store drops to FREE (P.5). */
@@ -97,6 +102,17 @@ export function isPaidPlan(id: StorePlan): boolean {
  */
 export function planPriceLookupKey(id: StorePlan, currency: CurrencyCode): string | null {
   return isPaidPlan(id) ? `ceseelia_${id.toLowerCase()}_${currency.toLowerCase()}` : null;
+}
+
+/** The reverse of planPriceLookupKey: `ceseelia_spark_cad` → { plan: "SPARK", currency: "CAD" }. */
+export function planFromLookupKey(key: unknown): { plan: StorePlan; currency: CurrencyCode } | null {
+  if (typeof key !== "string") return null;
+  const m = /^ceseelia_([a-z]+)_([a-z]{3})$/.exec(key);
+  if (!m) return null;
+  const plan = m[1].toUpperCase();
+  const currency = m[2].toUpperCase();
+  if (!isStorePlan(plan) || !isPaidPlan(plan) || !(CURRENCY_CODES as readonly string[]).includes(currency)) return null;
+  return { plan, currency: currency as CurrencyCode };
 }
 
 /** The order count at which a plan's merchant is warned (P.7), or null without a limit. */

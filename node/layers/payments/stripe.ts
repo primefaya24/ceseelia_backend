@@ -18,7 +18,10 @@ export class PaymentsNotConfiguredError extends Error {
 
 export interface StripeSecrets {
   secretKey: string;
+  /** Connect endpoint (shopper orders, 5.4). */
   webhookSecret: string;
+  /** Platform endpoint for subscriptions (P.5); "" until it's set up. */
+  billingWebhookSecret: string;
 }
 
 const KEY_PATTERN = /^(sk|rk)_(test|live)_[A-Za-z0-9]+$/;
@@ -34,12 +37,13 @@ export function parseStripeSecrets(raw: string | undefined, inDev: boolean): Str
   const d = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
   const secretKey = typeof d.secretKey === "string" ? d.secretKey.trim() : "";
   const webhookSecret = typeof d.webhookSecret === "string" ? d.webhookSecret.trim() : "";
+  const billingWebhookSecret = typeof d.billingWebhookSecret === "string" ? d.billingWebhookSecret.trim() : "";
   if (!KEY_PATTERN.test(secretKey))
     throw new PaymentsNotConfiguredError("secretKey is missing or not a Stripe key");
   if (inDev && secretKey.includes("_live_")) {
     throw new PaymentsNotConfiguredError("dev must use a test-mode key, not a live one");
   }
-  return { secretKey, webhookSecret };
+  return { secretKey, webhookSecret, billingWebhookSecret };
 }
 
 let secretsPromise: Promise<StripeSecrets> | null = null;

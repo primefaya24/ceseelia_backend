@@ -3,6 +3,7 @@ import cors, { CorsOptions } from 'cors';
 import { CORS_ORIGINS, IN_DEV, TRUST_PROXY_HOPS } from './config';
 import { appConstants } from './constants';
 import { domainRouterWithLogger } from './middleware';
+import { handleBillingWebhook } from './layers/payments/billing-webhook';
 
 /*
 * CORS: explicit allow-list from CORS_ORIGINS; in dev with no list, reflect any origin.
@@ -38,6 +39,13 @@ export function createApp(): Express {
         (_req, res) => {
             res.status(appConstants.HTTP_STATUS_CODE_NOT_IMPLEMENTED).send({ message: "Not implemented" });
         }
+    );
+
+    // Subscriptions (P.5): the platform account's Billing events, signed with billingWebhookSecret.
+    app.post(
+        "/api/v1/billing/stripe-webhook",
+        express.raw({ type: "application/json", limit: "1mb" }),
+        (req, res) => void handleBillingWebhook(req, res)
     );
 
     app.use(express.json({ limit: "1mb" }));

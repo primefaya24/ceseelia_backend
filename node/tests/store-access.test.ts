@@ -35,6 +35,8 @@ type Method = "get" | "post" | "put" | "delete";
 // Store-member routes (progress.md 1.3): [method, path, body]. The store id is STORE in each.
 const MEMBER_ROUTES: Array<[Method, string, object | undefined]> = [
   ["get", `/store/go-live/checklist/${STORE}`, undefined],
+  ["get", `/store/billing/status/${STORE}`, undefined],
+  ["post", "/store/billing/portal", { storeId: STORE }],
   ["put", "/store/update-settings", { storeId: STORE }],
   ["get", `/store/get-logo-upload-url/${STORE}/png`, undefined],
   ["get", `/store/get-header-strip-image-upload-url/${STORE}/png`, undefined],

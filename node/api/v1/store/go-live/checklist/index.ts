@@ -46,6 +46,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const currency = stripe.connected ? billingCurrencyFor(stripe.account.country) : null;
     res.send({
       status: lifecycle.status,
+      pausedReason: lifecycle.pausedReason ?? null,
       plan: lifecycle.plan,
       suspended: normalizeAdminSettings(data.settings.admin).suspended,
       canGoLive: auth.isAdmin || auth.storeRole === "ADMIN",

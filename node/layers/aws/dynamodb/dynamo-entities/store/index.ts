@@ -212,8 +212,9 @@ export async function setStoreStatusFromDraft(
   }
 ): Promise<StoreLifecycle> {
   const now = Date.now();
+  const { pausedReason: _paused, ...previous } = change.previous;
   const lifecycle: StoreLifecycle = {
-    ...change.previous,
+    ...previous,
     status: change.status,
     plan: change.plan,
     statusChangedAt: now,
@@ -700,7 +701,14 @@ export async function updateStoreAdminSettings(
 
 /* The same data without the admin block, for merchants and the public storefront. */
 export function withoutAdminSettings(data: StoreInventoryData): StoreInventoryData {
-  const { admin: _admin, payments: _payments, review: _review, ...settings } = data.settings;
+  const {
+    admin: _admin,
+    payments: _payments,
+    review: _review,
+    subscription: _subscription,
+    billingCheckout: _checkout,
+    ...settings
+  } = data.settings;
   return { ...data, settings: settings as StoreSettings };
 }
 
@@ -776,7 +784,7 @@ export function toPublicSettings(settings: StoreSettings): StoreSettings {
   const info = settings.storeInfo ?? initStoreSettings().storeInfo;
   const email = (info.emailaddress ?? "").trim();
   const { contactFormAvailable: _ignored, ...rest } = info;
-  const { lifecycle, ...others } = settings;
+  const { lifecycle, subscription: _s, billingCheckout: _c, ...others } = settings;
   return {
     ...others,
     paymentsEnabled: settings.payments?.chargesEnabled === true,

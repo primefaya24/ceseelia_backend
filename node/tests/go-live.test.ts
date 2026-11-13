@@ -36,6 +36,7 @@ import { runSmartStoreValidation } from "../layers/core/store-validation";
 import { billingCurrencyFor, goLiveChecklist } from "../layers/core/go-live";
 import { initStoreCategory, initStoreSettings, StoreInventoryData, StoreItem } from "../layers/core/interfaces/store";
 import { planOptions } from "../api/v1/store/go-live/shared";
+import { setPaidPlansEnabledForTests } from "../layers/core/plans";
 import { createApp } from "../app";
 
 const ddb = mockClient(DynamoDBDocumentClient);
@@ -89,6 +90,7 @@ const written = () => ddb.commandCalls(UpdateCommand)[0]?.args[0].input;
 
 beforeEach(() => {
   ddb.reset();
+  setPaidPlansEnabledForTests(true);
   vi.mocked(getStoreInventoryData).mockReset().mockResolvedValue(readyStore());
   vi.mocked(findLiveFreeStoreAdministeredBy).mockReset().mockResolvedValue(null);
   vi.mocked(runSmartStoreValidation).mockReset().mockResolvedValue({ ok: true });
@@ -134,7 +136,8 @@ describe("goLiveChecklist (P.4a)", () => {
     expect(billingCurrencyFor(null)).toBeNull();
   });
 
-  it("plan options: paid plans wait for P.5, FREE can be in use, prices in the billing currency", () => {
+  it("plan options: paid plans only when switched on, FREE can be in use, prices in the billing currency", () => {
+    setPaidPlansEnabledForTests(false);
     const opts = planOptions("USD", true);
     expect(opts.map((o) => [o.id, o.available, o.unavailableReason])).toEqual([
       ["FREE", false, "FREE_PLAN_IN_USE"],
@@ -143,6 +146,8 @@ describe("goLiveChecklist (P.4a)", () => {
     ]);
     expect(opts[1]).toMatchObject({ monthlyPriceMinor: 1900, commissionMinor: 145 });
     expect(planOptions(null, false)[0]).toMatchObject({ available: true, monthlyPriceMinor: null, commissionMinor: null });
+    setPaidPlansEnabledForTests(true);
+    expect(planOptions("CAD", false).map((o) => o.available)).toEqual([true, true, true]);
   });
 });
 
@@ -198,7 +203,8 @@ describe("POST /store/go-live (P.4b)", () => {
     expect(ddb.commandCalls(UpdateCommand)).toHaveLength(0);
   });
 
-  it("409 PLAN_NOT_AVAILABLE for paid plans until subscriptions exist (P.5)", async () => {
+  it("409 PLAN_NOT_AVAILABLE for paid plans while they're switched off", async () => {
+    setPaidPlansEnabledForTests(false);
     for (const plan of ["SPARK", "NOVA"]) {
       const res = await goLive({ storeId: STORE, plan });
       expect([res.status, res.body.code]).toEqual([409, "PLAN_NOT_AVAILABLE"]);
@@ -254,6 +260,7 @@ describe("POST /store/go-live (P.4b)", () => {
 
 describe("GET /store/go-live/checklist/:storeId (P.4a)", () => {
   it("members see the steps, plans in the billing currency and whether they can go live", async () => {
+    setPaidPlansEnabledForTests(false);
     asRole("MERCHANT");
     vi.mocked(getStoreInventoryData).mockResolvedValue(readyStore((d) => (d.items = [])));
     const res = await checklist();
@@ -296,6 +303,7 @@ describe("P.4 data rules", () => {
   });
 
   it("GET /store/public/plans lists the catalogue with availability, no sign-in", async () => {
+    setPaidPlansEnabledForTests(false);
     const res = await request(app).get("/api/v1/store/public/plans").set("Host", "localhost");
     expect(res.status).toBe(200);
     expect(res.headers["cache-control"]).toBe("public, max-age=300");

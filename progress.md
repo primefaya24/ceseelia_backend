@@ -677,7 +677,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         store goes into an admin review queue (approve → LIVE, reject with a reason → DRAFT).
         (Go Live's IN_REVIEW write and the merchant's message are done; the admin queue is P.8.)
         Later, also worth deciding: re-run it when a live store adds or changes items.
-- [ ] P.5 Subscriptions (Stripe **Billing on the platform account**, separate from Connect): a
+- [x] P.5 Subscriptions (done 2026-11-12; Stripe setup below is the owner's) (Stripe **Billing on the platform account**, separate from Connect): a
       Stripe Customer per user account, a Subscription per store (metadata `storeId`). Billing
       Checkout (`mode: subscription`) for SPARK / NOVA; Customer Portal for card changes,
       upgrades, downgrades and cancelling. **Stripe Tax is on here** (`automatic_tax` for
@@ -685,10 +685,61 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       5.4c, which still never enables it. A platform webhook endpoint (its own signing secret)
       handles `checkout.session.completed`, `customer.subscription.*`, `invoice.paid`,
       `invoice.payment_failed`, idempotent like 5.5.
-  - [ ] Failed payment: Stripe's automatic retries, then **7 days' grace**, then the store drops
+  - [x] Failed payment: Stripe's automatic retries, then **7 days' grace**, then the store drops
         to FREE (not offline). Cancel: SPARK / NOVA until the period ends, then FREE. If the
         account already has a live FREE store, the store that dropped pauses (back to DRAFT,
         merchant told why). Custom domain goes when the plan does.
+  - Done:
+    - **Rules** (`layers/core/billing`, pure): active / trialing / past_due = the paid plan
+      (past_due = Stripe still retrying); unpaid, paused, or canceled with reason
+      `payment_failed` = 7 days' grace (its end fixed once started), then FREE; canceled for
+      any other reason = FREE; incomplete(_expired) = nothing. FREE while the payer has
+      another live FREE store = DRAFT with `lifecycle.pausedReason: "FREE_PLAN_IN_USE"`
+      (cleared when it goes live again). A paid draft goes LIVE (checkout runs the checklist
+      and validation first). One subscription per store: a second paid one is cancelled, an
+      older one's late events are ignored (`mayReplace`).
+    - **Sync** (`layers/payments/subscription-sync`): every event re-reads the subscription
+      from Stripe, so duplicates and out-of-order events give the same result (no event-id
+      table needed); writes are conditional on the lifecycle and subscription it read
+      (3 tries). The plan comes from the price's lookup key, so plan changes in the portal
+      follow. A subscription whose store was deleted is cancelled.
+    - **Data**: SETTINGS `subscription` (`StoreSubscription`, no card data) and
+      `billingCheckout` (the open checkout, reused by a second click, expired when another
+      plan is picked); `USER#id / BILLING#<CUR>` = the account's Stripe Customer per currency
+      (a customer holds one currency); `APP_BILLING_GRACE / STORE#id` = stores in grace, for
+      the hourly sweep (`index.ts`, `BILLING_GRACE_SWEEP_INTERVAL`). Members' and public data
+      never include `subscription` / `billingCheckout`.
+    - **Routes**: `POST /store/go-live` paid → `{status: "DRAFT", plan, checkoutUrl}` (flagged
+      → IN_REVIEW, no card taken; 409 `ALREADY_SUBSCRIBED`; 503 `BILLING_NOT_CONFIGURED`);
+      `POST /store/billing/checkout` (LIVE FREE store upgrading; store ADMINs);
+      `POST /store/billing/portal` (only the payer, 403 `NOT_PAYER`); `GET
+      /store/billing/status/:storeId` (members; no Stripe ids). Webhook `POST
+      /api/v1/billing/stripe-webhook` (raw body, `billingWebhookSecret`; Connect events
+      ignored; 500 on failure so Stripe retries). Checkout: `automatic_tax`, billing address
+      required, tax ID collection, returns to `/store/storefront/:id?billing=success|cancel`.
+      Store delete cancels the subscription first (502 and nothing deleted if Stripe fails).
+    - The price must match PLANS exactly (amount, currency, monthly) or nothing is charged.
+  - **Setup (owner, per Stripe mode; test first):**
+    1. `npm run build && node scripts/setup-billing-prices.mjs --write` (products + 6 prices).
+    2. Stripe Tax: turn it on, set the origin address and register for GST/HST (and any other
+       registrations); set the products' tax code (SaaS) in the dashboard.
+    3. Webhook endpoint `https://api.ceseelia.com/api/v1/billing/stripe-webhook` (platform,
+       not Connect) with `checkout.session.completed`, `checkout.session.expired`,
+       `customer.subscription.created|updated|deleted|paused|resumed`, `invoice.paid`,
+       `invoice.payment_failed`; put its signing secret in the Stripe secret as
+       `billingWebhookSecret`.
+    4. Billing › Revenue recovery: Smart Retries on; "if all retries fail" → **mark the
+       subscription unpaid** (or cancel: both start the grace).
+    5. Customer portal: allow card updates, invoice history, cancelling (at period end), and
+       switching between the Spark / Nova prices of the same currency.
+    6. Prod: `PAID_PLANS_ENABLED=true` (dev is on by default).
+  - Assumptions (§6a): **A3** the payer is the user who clicks Go live / Upgrade, and only they
+    can open the portal; **A4** validation runs when the checkout starts, not again when it's
+    paid; **A5** the grace sweep runs in the API process (one server today; with several,
+    each would sweep, which is safe because the sync is conditional).
+  - For P.8: approving an IN_REVIEW store that asked for a paid plan needs a way to pay
+    (e.g. it goes LIVE on FREE with an "Upgrade" prompt); rejecting a paying store must cancel
+    its subscription, or the next payment takes it LIVE again.
 - [ ] P.6 Fee from the plan: `platformFeeMinor` uses the store's **admin override** if one is set
       (the 5.1b mode / percentage / amounts, kept for negotiated deals), else the plan's default
       (NOVA = 0). Add `admin.commissionSource: PLAN | CUSTOM` (missing = PLAN) so a store follows
@@ -856,6 +907,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | P.5 done: Stripe Billing subscriptions (Go Live paid → Checkout, `/store/billing/{status,checkout,portal}`, webhook `/api/v1/billing/stripe-webhook`, sync from Stripe with grace + hourly sweep, one subscription per store, store delete cancels it), `PAID_PLANS_ENABLED`, `scripts/setup-billing-prices.mjs`; owner's Stripe setup listed under P.5. |
 | 2026-11-12 | P.4a/b done: `GET /store/go-live/checklist/:storeId`, `POST /store/go-live` (FREE; paid plans 409 `PLAN_NOT_AVAILABLE` until P.5), `GET /store/public/plans`; `runSmartStoreValidation` stub called on Go Live (**AI check still TODO**), fail-closed to IN_REVIEW with admin-only `review`; `readStoreStripeAccount` shared with payments/status. |
 | 2026-11-12 | P.3 done: `POST /merchant/create-store` (self-serve FREE draft, caller becomes ADMIN in the same transaction; 5-draft cap, 5/hour, 409 `SLUG_TAKEN` / `DRAFT_LIMIT_REACHED`). 8.2 join requests marked superseded. |
 | 2026-11-12 | P.1 + P.2 done: plan catalogue (`layers/core/plans`); `lifecycle` (DRAFT / IN_REVIEW / LIVE + plan) on SETTINGS, old stores read as LIVE on FREE; `admin.isStoreLive` → `admin.suspended`; not-live storefront is a "Coming soon" body, item/quote/contact 404 `STORE_NOT_LIVE`. |

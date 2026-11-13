@@ -73,10 +73,22 @@ export const COGNITO_FEDERATION_REDIRECT_URL: string = env("COGNITO_FEDERATION_R
 
 /*
 * Stripe (5.2). The keys live in AWS Secrets Manager, never in env files or git: a JSON secret
-* { "secretKey": "sk_…" | "rk_…", "webhookSecret": "whsec_…" } read once at startup by
-* layers/payments/stripe. Dev must use a test-mode key.
+* { "secretKey": "sk_…" | "rk_…", "webhookSecret": "whsec_…", "billingWebhookSecret": "whsec_…" }
+* read once at startup by layers/payments/stripe. Dev must use a test-mode key.
+* `billingWebhookSecret` signs the platform's subscription webhook (P.5); `webhookSecret` is
+* for the Connect (shopper orders) endpoint (5.4).
 */
 export const STRIPE_SECRET_ID: string = env("STRIPE_SECRET_ID", `ceseelia/${STAGE}/stripe`);
+
+/*
+* Paid plans (P.5): SPARK / NOVA can be picked only when this is on, which needs the Billing
+* prices to exist in Stripe (`scripts/setup-billing-prices.mjs`). On by default in dev; prod
+* must turn it on with PAID_PLANS_ENABLED=true once the prices, webhook and portal are set up.
+*/
+export const PAID_PLANS_ENABLED: boolean = env("PAID_PLANS_ENABLED", IN_DEV ? "true" : "false").toLowerCase() === "true";
+
+/* How often expired payment grace periods are checked (P.5). */
+export const BILLING_GRACE_SWEEP_INTERVAL: number = 60 * 60 * 1000;
 
 /*
 * S3

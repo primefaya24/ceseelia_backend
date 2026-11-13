@@ -200,6 +200,9 @@ export interface StoreSettings {
    * attribute; only admins see it (members' get-data and public data drop it).
    */
   review?: StoreReview;
+  /** Stripe Billing (P.5): own attributes, written only by the billing code; never in public data. */
+  subscription?: StoreSubscription;
+  billingCheckout?: StoreBillingCheckout;
   /** Public responses only: the store's status (P.2); not LIVE = "Coming soon" for shoppers. */
   storeStatus?: StoreStatus;
 
@@ -248,6 +251,47 @@ export interface StoreLifecycle {
   firstLiveAt?: number;
   /** The user who created it themselves (P.3); missing for stores an admin created. */
   createdByUserId?: string;
+  /**
+   * Why a store that was live is a DRAFT again (P.5): its paid plan ended while the same account
+   * already had a live FREE store. Cleared when it goes live again.
+   */
+  pausedReason?: StorePausedReason;
+}
+
+export const STORE_PAUSED_REASONS = ["FREE_PLAN_IN_USE"] as const;
+export type StorePausedReason = (typeof STORE_PAUSED_REASONS)[number];
+
+/**
+ * The store's Stripe Billing subscription (P.5), in the SETTINGS row's own `subscription`
+ * attribute. Written only by the subscription sync (webhook and grace sweep), always from the
+ * subscription as Stripe has it now, never from what a client sent.
+ */
+export interface StoreSubscription {
+  subscriptionId: string;
+  customerId: string;
+  /** The user who subscribed (pays, and is the only one who can open the billing portal). */
+  payerUserId: string;
+  /** The paid plan the subscription's price is for. */
+  plan: StorePlan;
+  currency: string;
+  /** Stripe's status: active, past_due, unpaid, canceled, incomplete, … */
+  status: string;
+  /** End of the period paid for (ms), or null. */
+  currentPeriodEnd: number | null;
+  /** It ends at the period's end (cancelled in the portal). */
+  cancelAtPeriodEnd: boolean;
+  /** Payment failed for good: the plan stays until then, then the store drops to FREE (ms). */
+  graceEndsAt: number | null;
+  syncedAt: number;
+}
+
+/** A Billing Checkout started for this store and not finished yet (P.5), so a second click reuses it. */
+export interface StoreBillingCheckout {
+  sessionId: string;
+  url: string;
+  plan: StorePlan;
+  userId: string;
+  expiresAt: number;
 }
 
 export interface StoreReview {
@@ -274,6 +318,9 @@ export function normalizeStoreLifecycle(raw: unknown): StoreLifecycle {
   if (isFiniteNumber(raw.statusChangedAt)) out.statusChangedAt = raw.statusChangedAt;
   if (isFiniteNumber(raw.firstLiveAt)) out.firstLiveAt = raw.firstLiveAt;
   if (typeof raw.createdByUserId === "string") out.createdByUserId = raw.createdByUserId;
+  if ((STORE_PAUSED_REASONS as readonly string[]).includes(raw.pausedReason)) {
+    out.pausedReason = raw.pausedReason as StorePausedReason;
+  }
   return out;
 }
 
