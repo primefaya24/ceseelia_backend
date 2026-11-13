@@ -32,6 +32,7 @@ import {
 } from "../../utils/validation";
 import { isUlid } from "../../utils";
 import { areVariantsValid, isStoreItemVariantPure } from "../../variants";
+import { isStorePlan, StorePlan } from "../../plans";
 
 // JOIN_REQUEST, REQUEST_ID
 export interface Merchant {
@@ -180,8 +181,22 @@ export interface StoreSettings {
      * have a flat `salesCommission`).
      */
     salesCommissions: Required<StoreItemPrices>;
-    isStoreLive: boolean; // True
+    /**
+     * An admin has suspended the store (P.2; was `isStoreLive: false` before P.2). Separate from
+     * the merchant's DRAFT / LIVE `lifecycle`: a suspended store is unavailable either way.
+     */
+    suspended: boolean;
   };
+
+  /**
+   * Draft / review / live and the plan (P.2). Its own SETTINGS attribute: neither the merchant's
+   * update-settings nor the admin form writes it; only the Go Live, billing and admin plan paths
+   * will (P.4, P.5, P.8). Read it with `normalizeStoreLifecycle`; members and admins get it,
+   * public responses get only `storeStatus`.
+   */
+  lifecycle?: StoreLifecycle;
+  /** Public responses only: the store's status (P.2); not LIVE = "Coming soon" for shoppers. */
+  storeStatus?: StoreStatus;
 
   /**
    * The store's Stripe account (5.2): a Standard connected account owned by the merchant. Kept
@@ -210,6 +225,42 @@ export interface StorePayments {
 /** Countries a store's Stripe account can be created in (5.2), matching the store currencies. */
 export const PAYMENT_COUNTRIES = ["CA", "US", "AU"] as const;
 export type PaymentCountry = (typeof PAYMENT_COUNTRIES)[number];
+
+/**
+ * A store's lifecycle (P.2). DRAFT: being built, shoppers see "Coming soon". IN_REVIEW: Go Live
+ * was asked for but `runSmartStoreValidation` flagged it (P.4c), waiting for an admin. LIVE:
+ * open to shoppers and checkout.
+ */
+export const STORE_STATUSES = ["DRAFT", "IN_REVIEW", "LIVE"] as const;
+export type StoreStatus = (typeof STORE_STATUSES)[number];
+
+export interface StoreLifecycle {
+  status: StoreStatus;
+  plan: StorePlan;
+  /** When the status last changed (ms). */
+  statusChangedAt?: number;
+  /** When the store first went live (ms). */
+  firstLiveAt?: number;
+}
+
+/** A new store: a FREE draft (P.3). */
+export function initStoreLifecycle(now = Date.now()): StoreLifecycle {
+  return { status: "DRAFT", plan: "FREE", statusChangedAt: now };
+}
+
+/*
+ * The saved lifecycle with defaults filled in. A store saved before P.2 has none and is read as
+ * LIVE on FREE (assumption A2), so nothing that was open disappears. A saved one with an unknown
+ * status is read as DRAFT (never live by accident), and an unknown plan as FREE.
+ */
+export function normalizeStoreLifecycle(raw: unknown): StoreLifecycle {
+  if (!isObject(raw)) return { status: "LIVE", plan: "FREE" };
+  const status = (STORE_STATUSES as readonly string[]).includes(raw.status) ? (raw.status as StoreStatus) : "DRAFT";
+  const out: StoreLifecycle = { status, plan: isStorePlan(raw.plan) ? raw.plan : "FREE" };
+  if (isFiniteNumber(raw.statusChangedAt)) out.statusChangedAt = raw.statusChangedAt;
+  if (isFiniteNumber(raw.firstLiveAt)) out.firstLiveAt = raw.firstLiveAt;
+  return out;
+}
 
 /** How the platform commission is worked out (5.1b). */
 export const COMMISSION_MODES = ["FIXED", "PERCENT"] as const;
@@ -269,8 +320,9 @@ export function initStoreSettings(): StoreSettings {
       commissionMode: "FIXED",
       commissionPercentBps: 0,
       salesCommissions: defaultSalesCommissions(),
-      isStoreLive: true,
+      suspended: false,
     },
+    lifecycle: initStoreLifecycle(),
   };
 }
 
@@ -299,7 +351,8 @@ export function isCommissionPercentBpsValid(v: unknown): v is number {
 }
 
 /*
- * The saved admin block with defaults filled in. A missing or unknown mode is FIXED and a missing
+ * The saved admin block with defaults filled in. `isStoreLive` (before P.2) becomes `suspended`.
+ * A missing or unknown mode is FIXED and a missing
  * or bad percentage is 0 (blocks saved before 5.1b). Blocks saved before 5.1a have a flat
  * `salesCommission` in major units with no currency; it becomes that amount in every currency.
  * Missing or bad per-currency values fall back to the default.
@@ -321,7 +374,8 @@ export function normalizeAdminSettings(raw: unknown): StoreSettings["admin"] {
     commissionMode: r.commissionMode === "PERCENT" ? "PERCENT" : "FIXED",
     commissionPercentBps: isCommissionPercentBpsValid(r.commissionPercentBps) ? r.commissionPercentBps : 0,
     salesCommissions,
-    isStoreLive: r.isStoreLive !== false,
+    // Before P.2 a suspension was `isStoreLive: false`.
+    suspended: r.suspended === true || (r.suspended === undefined && r.isStoreLive === false),
   };
 }
 

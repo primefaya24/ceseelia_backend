@@ -1,3 +1,4 @@
+import { liveStoreSettings } from "./fixtures";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
@@ -8,7 +9,7 @@ import { ulid } from "ulid";
 import { createApp } from "../app";
 import { contactLimits } from "../api/v1/customer/contact-store";
 import { createRateLimiter } from "../layers/core/http/rate-limit";
-import { initStoreSettings } from "../layers/core/interfaces/store";
+
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const ses = mockClient(SESClient);
@@ -16,7 +17,7 @@ const app = createApp();
 const STORE = ulid();
 
 function store(email = "owner@hoop.test", extra: object = {}) {
-  const s = initStoreSettings();
+  const s = liveStoreSettings();
   ddb.on(GetCommand).resolves({
     Item: {
       pk: `STORE#${STORE}`,
@@ -106,7 +107,7 @@ describe("POST /customer/contact-store (3.4)", () => {
   it("unknown and suspended stores get the storefront's 404s", async () => {
     ddb.on(GetCommand).resolves({});
     expect((await post(body())).body.code).toBe("STORE_NOT_FOUND");
-    store("owner@hoop.test", { admin: { isStoreLive: false } });
+    store("owner@hoop.test", { admin: { suspended: true } });
     expect((await post(body())).body.code).toBe("STORE_UNAVAILABLE");
   });
 

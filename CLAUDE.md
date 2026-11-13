@@ -109,7 +109,7 @@ export default function registerRoute(router: Router): void {
   | Entity | pk | sk |
   |---|---|---|
   | Store overview (admin list) | `APP_STORE` | `STORE#<storeId>#OVERVIEW` |
-  | Store settings | `STORE#<storeId>` | `SETTINGS` |
+  | Store settings | `STORE#<storeId>` | `SETTINGS` (own attributes `payments` (5.2) and `lifecycle` (P.2): only their own routes write them) |
   | Category | `STORE#<storeId>` | `CATEGORY#<categoryId>` |
   | Item | `STORE#<storeId>` | `ITEM#<itemId>` |
   | User profile | `USER#<uuid>` | `PROFILE#INFO`, `PROFILE#COGNITO_DATA#<cognitoId>`, `PROFILE#NOTIFICATION_SETTINGS` (written by the CloudFormation sign-up Lambda) |
@@ -148,7 +148,7 @@ export default function registerRoute(router: Router): void {
 | Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing; prices are `storeItemPrices` in whole cents per currency (2.5); variants (2.7): `storeItemVariants` = one row per combination of the single-choice params' options (stock, prices, sold), item stock/prices worked out from them by `withVariantTotals` (`layers/core/variants`) |
 | Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ −1 on its category, then deletes its images |
 | Inventory | `GET /store/inventory/get-data/:storeId` (auth) | ✅ categories + items + settings |
-| Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ active items in active categories only (counts match), no admin block, `storeId`, geo-IP default currency if the store offers it; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (suspended) |
+| Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ active items in active categories only (counts match), no admin block, `storeId`, geo-IP default currency if the store offers it; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (suspended); a DRAFT / IN_REVIEW store is a 200 "Coming soon" body (`settings.storeStatus`, name and look only, no items; P.2), and its item links, quotes and Contact us are 404 `STORE_NOT_LIVE` |
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount` | ✅ 1–10 in total; 404 unless the item exists |
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug; 409 if the slug is taken) | ✅ |
@@ -158,7 +158,7 @@ export default function registerRoute(router: Router): void {
 | Customer | `POST /customer/quote` `{storeId, currency, fulfilment?, lines:[{itemId, quantity, params?}]}` (no auth) | ✅ always 200 with `priceLines`' quote (per-line errors, delivery, tax parts in `taxLines`, `ok`); Canadian tax by province when `taxMode: CANADA` (`layers/core/tax/canada.ts`, 4.4); a delivery's province is an estimate from geo-IP, else the store's (`taxRegion.estimated`, QA Q.23); 400 malformed / > 50 lines; 60/IP/min → 429 (4.3, 4.2) |
 | Customer | `POST /customer/contact-store` `{storeId, name, email, message, website}` (no auth) | ✅ SES to the store, customer as Reply-To; honeypot; 5/IP/10 min + 30/store/h → 429; 409 `CONTACT_UNAVAILABLE` (3.4) |
 | Admin | `GET /admin/get-store-members/:storeId` | ✅ `{members, invites}` |
-| Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, commissionMode, commissionPercentBps, salesCommissions, isStoreLive}` (`FIXED`/`PERCENT`, basis points 0–3,000, cents for every currency; 5.1a/5.1b) | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
+| Admin | `GET /admin/get-store-admin-settings/:storeId`, `PUT /admin/update-store-admin-settings` `{storeId, commissionMode, commissionPercentBps, salesCommissions, suspended}` (`suspended` replaced `isStoreLive` in P.2) (`FIXED`/`PERCENT`, basis points 0–3,000, cents for every currency; 5.1a/5.1b) | ✅ the only way to read/write the `admin` block; `get-data` returns it to platform admins only, `get-data-public` never |
 | Admin | `POST /admin/assign-store-member` `{storeId, email, role?}` | ✅ existing account → member now (`ADDED`); no account → pending invite + SES email (`INVITED`, `emailSent`); 409 `ALREADY_MEMBER` |
 | Admin | `DELETE /admin/remove-store-member/:storeId/:userId`, `DELETE /admin/cancel-store-invite/:storeId/:email` | ✅ 404 `NOT_A_MEMBER` / `NOT_INVITED` |
 | User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |

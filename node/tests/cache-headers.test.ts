@@ -1,3 +1,4 @@
+import { liveStoreSettings } from "./fixtures";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
@@ -7,7 +8,7 @@ import { ulid } from "ulid";
 
 import { createApp } from "../app";
 import { contactLimits } from "../api/v1/customer/contact-store";
-import { initStoreCategory, initStoreSettings } from "../layers/core/interfaces/store";
+import { initStoreCategory } from "../layers/core/interfaces/store";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const ses = mockClient(SESClient);
@@ -18,7 +19,7 @@ const ITEM = ulid();
 const get = (path: string) => request(app).get(`/api/v1${path}`).set("Host", "localhost");
 
 function liveStore() {
-  const settings = { ...initStoreSettings(), storeInfo: { ...initStoreSettings().storeInfo, emailaddress: "o@x.test" } };
+  const settings = { ...liveStoreSettings(), storeInfo: { ...liveStoreSettings().storeInfo, emailaddress: "o@x.test" } };
   const item = { storeItemId: ITEM, storeItemName: "Tea", storeItemCategoryId: CAT, storeItemIsActive: true, storeItemPrices: { USD: 100 } };
   const category = { ...initStoreCategory(CAT, "Drinks"), storeCategoriyId: CAT, storeCategoryIsActive: true };
   ddb.on(GetCommand).callsFake((input) => {
@@ -76,7 +77,7 @@ describe("Cache-Control on public endpoints (3.2)", () => {
     ["a missing item", () => {
       liveStore();
       ddb.on(GetCommand).callsFake((input) =>
-        (input.Key as { sk: string }).sk === "SETTINGS" ? { Item: { ...input.Key, ...initStoreSettings() } } : {}
+        (input.Key as { sk: string }).sk === "SETTINGS" ? { Item: { ...input.Key, ...liveStoreSettings() } } : {}
       );
     }, `/store/public/item/${STORE}/${ITEM}`],
     ["a server error", () => ddb.on(GetCommand).rejects(new Error("x")), `/store/inventory/get-data-public/${STORE}`],

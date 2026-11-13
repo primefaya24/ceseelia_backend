@@ -1,3 +1,4 @@
+import { liveStoreSettings } from "./fixtures";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
@@ -5,7 +6,7 @@ import { DynamoDBDocumentClient, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { ulid } from "ulid";
 
 import { createApp } from "../app";
-import { initStoreCategory, initStoreSettings, StoreCurrency } from "../layers/core/interfaces/store";
+import { initStoreCategory, StoreCurrency } from "../layers/core/interfaces/store";
 
 // STAGE=dev: the shopper looks Australian (AUD).
 const ddb = mockClient(DynamoDBDocumentClient);
@@ -24,7 +25,7 @@ const currency = (code: string, isDefault: boolean): StoreCurrency => ({
 type Rows = { settings?: object | null; item?: object | null; category?: object | null };
 function rows({ settings, item, category }: Rows = {}) {
   const s =
-    settings === undefined ? { ...initStoreSettings(), currencies: [currency("USD", true), currency("AUD", false)] } : settings;
+    settings === undefined ? { ...liveStoreSettings(), currencies: [currency("USD", true), currency("AUD", false)] } : settings;
   const i =
     item === undefined
       ? {
@@ -85,7 +86,7 @@ describe("GET /store/public/item/:storeId/:itemId (3.3)", () => {
   });
 
   it("a suspended store: 404 STORE_UNAVAILABLE, even for a visible item", async () => {
-    rows({ settings: { ...initStoreSettings(), admin: { isStoreLive: false } } });
+    rows({ settings: { ...liveStoreSettings(), admin: { suspended: true } } });
     expect((await get()).body.code).toBe("STORE_UNAVAILABLE");
   });
 

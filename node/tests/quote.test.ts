@@ -1,3 +1,4 @@
+import { liveStoreSettings } from "./fixtures";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
@@ -6,7 +7,7 @@ import { ulid } from "ulid";
 
 import { createApp } from "../app";
 import { quoteLimit } from "../api/v1/customer/quote";
-import { initStoreCategory, initStoreSettings } from "../layers/core/interfaces/store";
+import { initStoreCategory } from "../layers/core/interfaces/store";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const app = createApp();
@@ -34,7 +35,7 @@ const baseItem = (id: string, patch: object = {}) => ({
 });
 
 function liveStore(settingsPatch: object = {}) {
-  const s = initStoreSettings();
+  const s = liveStoreSettings();
   const settings = {
     ...s,
     currencies: [{ currencyCode: "USD", currencySign: "$", currencyIsDefault: true }],
@@ -134,7 +135,7 @@ describe("POST /customer/quote (4.3)", () => {
   it("unknown and suspended stores get the storefront's 404s", async () => {
     ddb.on(GetCommand).resolves({});
     expect((await quote(body([]))).body.code).toBe("STORE_NOT_FOUND");
-    liveStore({ admin: { isStoreLive: false } });
+    liveStore({ admin: { suspended: true } });
     expect((await quote(body([]))).body.code).toBe("STORE_UNAVAILABLE");
   });
 
@@ -148,7 +149,7 @@ describe("POST /customer/quote (4.3)", () => {
   });
 
   it("prices delivery and tax from the store's settings, and accepts a fulfilment choice (4.2)", async () => {
-    const s = initStoreSettings();
+    const s = liveStoreSettings();
     liveStore({ general: { ...s.general, discountPercent: 0, taxPercent: 10, deliveryEnabled: true, deliveryFees: { USD: 500 } } });
     const cake = { itemId: CAKE, quantity: 3 };
     const pickup = await quote(body([cake]));
@@ -159,7 +160,7 @@ describe("POST /customer/quote (4.3)", () => {
   });
 
   it("estimates Canadian delivery tax from the shopper's location, never from the body (QA Q.23)", async () => {
-    const s = initStoreSettings();
+    const s = liveStoreSettings();
     liveStore({
       general: {
         ...s.general,

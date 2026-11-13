@@ -1,3 +1,4 @@
+import { liveStoreSettings } from "./fixtures";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
@@ -6,7 +7,7 @@ import { ulid } from "ulid";
 
 import { createApp } from "../app";
 import { toPublicInventory, toPublicSettings } from "../layers/aws/dynamodb/dynamo-entities/store";
-import { initStoreCategory, initStoreSettings, StoreItem } from "../layers/core/interfaces/store";
+import { initStoreCategory, StoreItem } from "../layers/core/interfaces/store";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const app = createApp();
@@ -31,7 +32,7 @@ const item = (name: string, categoryId: string, active = true, storeItemPrices: 
   }) as StoreItem;
 
 const inventory = () => ({
-  settings: initStoreSettings(),
+  settings: liveStoreSettings(),
   categories: [category(A, true), category(OFF, false)],
   items: [
     item("shown", A),
@@ -80,7 +81,7 @@ describe("toPublicInventory (2.4b)", () => {
 
 describe("store email on the storefront (showEmail)", () => {
   const withEmail = (showEmail?: boolean) => {
-    const base = initStoreSettings();
+    const base = liveStoreSettings();
     return { ...base, storeInfo: { ...base.storeInfo, emailaddress: "hi@hoop.test", ...(showEmail === undefined ? {} : { showEmail }) } };
   };
 
@@ -97,13 +98,13 @@ describe("store email on the storefront (showEmail)", () => {
   });
 
   it("no email: no Contact us; a contactFormAvailable sent in is not trusted", () => {
-    const base = initStoreSettings();
+    const base = liveStoreSettings();
     const forged = { ...base, storeInfo: { ...base.storeInfo, contactFormAvailable: true } };
     expect(toPublicSettings(forged).storeInfo.contactFormAvailable).toBe(false);
   });
 
   it("the phone number can be hidden on its own, or both together", () => {
-    const base = initStoreSettings();
+    const base = liveStoreSettings();
     const info = (extra: object) =>
       toPublicSettings({ ...base, storeInfo: { ...base.storeInfo, emailaddress: "hi@hoop.test", phoneNumber: "+1 416 555 0142", ...extra } })
         .storeInfo;
@@ -124,7 +125,7 @@ describe("store email on the storefront (showEmail)", () => {
 
 describe("toPublicInventory prices (2.5)", () => {
   const withCurrencies = (codes: string[], prices: object[]) => {
-    const settings = initStoreSettings();
+    const settings = liveStoreSettings();
     settings.currencies = codes.map((c, i) => ({ ...settings.currencies[0], currencyCode: c, currencyIsDefault: i === 0 }));
     return {
       settings,
@@ -151,7 +152,7 @@ describe("toPublicInventory prices (2.5)", () => {
 
 describe("GET /store/inventory/get-data-public/:storeId (2.4c)", () => {
   it("a live store: 200 with only what a shopper may see", async () => {
-    store({ ...initStoreSettings() });
+    store({ ...liveStoreSettings() });
     const res = await get();
     expect(res.status).toBe(200);
     expect(res.body.items.map((i: StoreItem) => i.storeItemName)).toEqual(["shown", "also shown"]);
@@ -168,7 +169,7 @@ describe("GET /store/inventory/get-data-public/:storeId (2.4c)", () => {
   });
 
   it("a suspended store: 404 STORE_UNAVAILABLE, without querying its rows", async () => {
-    store({ ...initStoreSettings(), admin: { isStoreLive: false } });
+    store({ ...liveStoreSettings(), admin: { suspended: true } });
     const res = await get();
     expect(res.status).toBe(404);
     expect(res.body).toEqual({ code: "STORE_UNAVAILABLE", message: "Store unavailable" });
@@ -176,7 +177,7 @@ describe("GET /store/inventory/get-data-public/:storeId (2.4c)", () => {
   });
 
   it("settings saved before the admin block existed count as live", async () => {
-    const { admin: _admin, ...legacy } = initStoreSettings();
+    const { admin: _admin, ...legacy } = liveStoreSettings();
     store(legacy);
     expect((await get()).status).toBe(200);
   });

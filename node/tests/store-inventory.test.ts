@@ -40,7 +40,8 @@ describe("getStoreInventoryData", () => {
     expect(data.items[0]).not.toHaveProperty("pk");
     expect(data.settings).toEqual({
       templateId: "t0",
-      admin: { commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: { USD: 125, CAD: 125, AUD: 125 }, isStoreLive: true }, // defaults filled in (5.1a)
+      admin: { commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: { USD: 125, CAD: 125, AUD: 125 }, suspended: false }, // defaults filled in (5.1a)
+      lifecycle: { status: "LIVE", plan: "FREE" }, // no lifecycle saved: live on FREE (P.2, A2)
     });
   });
 

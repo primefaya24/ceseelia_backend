@@ -28,8 +28,8 @@ const put = (body: object) =>
 const getAdmin = () =>
   request(app).get(`/api/v1/admin/get-store-admin-settings/${STORE}`).set("Host", "localhost").set("Authorization", "Bearer t");
 const fees = { USD: 250, CAD: 300, AUD: 0 };
-const valid = { storeId: STORE, commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, isStoreLive: false };
-const saved = { commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, isStoreLive: false };
+const valid = { storeId: STORE, commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, suspended: true };
+const saved = { commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, suspended: true };
 /** What a read returns: the defaults for 5.1b's fields plus these. */
 const block = (b: object) => ({ commissionMode: "FIXED", commissionPercentBps: 0, ...b });
 
@@ -68,7 +68,9 @@ describe("PUT /admin/update-store-admin-settings", () => {
     [{ ...valid, salesCommissions: { ...fees, EUR: 100 } }],
     [{ ...valid, salesCommissions: 125 }],
     [{ ...valid, salesCommission: 1.25, salesCommissions: undefined }],
-    [{ ...valid, isStoreLive: "yes" }],
+    [{ ...valid, suspended: "yes" }],
+    // P.2: the old field name is refused, not silently read
+    [{ storeId: STORE, commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, isStoreLive: true }],
     [{ storeId: STORE, salesCommissions: fees }],
     // 5.1b: mode and percentage are required and checked
     [{ ...valid, commissionMode: undefined }],
@@ -121,22 +123,22 @@ describe("GET /admin/get-store-admin-settings/:storeId", () => {
   });
 
   it("reads a pre-5.1b block (or a bad mode/percentage) as FIXED with 0%", async () => {
-    ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: { salesCommissions: fees, isStoreLive: false } } });
+    ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: { salesCommissions: fees, suspended: true } } });
     expect((await getAdmin()).body).toEqual(saved);
     ddb.on(GetCommand).resolves({
-      Item: { pk: "x", admin: { commissionMode: "TIERED", commissionPercentBps: 9_999, salesCommissions: fees, isStoreLive: false } },
+      Item: { pk: "x", admin: { commissionMode: "TIERED", commissionPercentBps: 9_999, salesCommissions: fees, suspended: true } },
     });
     expect((await getAdmin()).body).toEqual(saved);
   });
 
   it("turns a flat pre-5.1a commission into the same amount in every currency", async () => {
-    ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: { salesCommission: 3, isStoreLive: false } } });
-    expect((await getAdmin()).body).toEqual(block({ salesCommissions: { USD: 300, CAD: 300, AUD: 300 }, isStoreLive: false }));
+    ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: { salesCommission: 3, suspended: true } } });
+    expect((await getAdmin()).body).toEqual(block({ salesCommissions: { USD: 300, CAD: 300, AUD: 300 }, suspended: true }));
   });
 
   it("fills in defaults for a store saved before the block existed", async () => {
     ddb.on(GetCommand).resolves({ Item: { pk: "x" } });
-    expect((await getAdmin()).body).toEqual(block({ salesCommissions: { USD: 125, CAD: 125, AUD: 125 }, isStoreLive: true }));
+    expect((await getAdmin()).body).toEqual(block({ salesCommissions: { USD: 125, CAD: 125, AUD: 125 }, suspended: false }));
   });
 
   it("404 without a store; 403 for non-admins", async () => {
@@ -151,7 +153,7 @@ describe("the admin block is hidden outside the admin area (1.6b)", () => {
   const withSettings = () => {
     ddb.on(QueryCommand).resolves({ Items: [] });
     ddb.on(GetCommand).resolves({
-      Item: { pk: "p", sk: "s", currencies: [], general: {}, admin: { salesCommission: 9, isStoreLive: true } },
+      Item: { pk: "p", sk: "s", currencies: [], general: {}, admin: { salesCommission: 9, suspended: false } },
     });
   };
   const getData = (path: string, auth = true) => {
@@ -171,7 +173,7 @@ describe("the admin block is hidden outside the admin area (1.6b)", () => {
   it("platform admins still do", async () => {
     withSettings();
     const res = await getData("get-data");
-    expect(res.body.settings.admin).toEqual(block({ salesCommissions: { USD: 900, CAD: 900, AUD: 900 }, isStoreLive: true }));
+    expect(res.body.settings.admin).toEqual(block({ salesCommissions: { USD: 900, CAD: 900, AUD: 900 }, suspended: false }));
   });
 
   it("the public storefront never does", async () => {
@@ -194,7 +196,7 @@ describe("platformFeeMinor (5.4c application fee)", () => {
   });
 
   describe("FIXED", () => {
-    const admin = block({ salesCommissions: { USD: 125, CAD: 200, AUD: 0 }, isStoreLive: true }) as any;
+    const admin = block({ salesCommissions: { USD: 125, CAD: 200, AUD: 0 }, suspended: false }) as any;
     it("is the store's commission in the charge's currency", () => {
       expect(platformFeeMinor(admin, q())).toBe(200);
       expect(platformFeeMinor(admin, q({ currency: "AUD" }))).toBe(0);
@@ -214,7 +216,7 @@ describe("platformFeeMinor (5.4c application fee)", () => {
 
   describe("PERCENT", () => {
     const pct = (bps: number, min = 0) =>
-      ({ commissionMode: "PERCENT", commissionPercentBps: bps, salesCommissions: { USD: min, CAD: min, AUD: min }, isStoreLive: true }) as any;
+      ({ commissionMode: "PERCENT", commissionPercentBps: bps, salesCommissions: { USD: min, CAD: min, AUD: min }, suspended: false }) as any;
 
     it("is the percentage of the items after discounts, not of delivery or added tax", () => {
       // 100.00 of items, 10.00 off, 15.00 delivery, 13% HST on top → base 90.00

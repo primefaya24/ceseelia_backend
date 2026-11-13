@@ -1,3 +1,4 @@
+import { liveStoreSettings } from "./fixtures";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
@@ -6,7 +7,7 @@ import { ulid } from "ulid";
 
 import { createApp } from "../app";
 import { withShopperCurrency } from "../layers/core/http/public-storefront";
-import { initStoreCategory, initStoreSettings, StoreCurrency } from "../layers/core/interfaces/store";
+import { initStoreCategory, StoreCurrency } from "../layers/core/interfaces/store";
 
 // Tests run as STAGE=dev, where getClientIp returns an Australian IP: the shopper's currency is AUD.
 const ddb = mockClient(DynamoDBDocumentClient);
@@ -26,7 +27,7 @@ function store(opts: { slugOwner?: string | null; settings?: Record<string, unkn
   const { slugOwner = STORE, codes = ["USD"] } = opts;
   const settings =
     opts.settings === undefined
-      ? { ...initStoreSettings(), currencies: codes.map((c, i) => currency(c, i === 0)) }
+      ? { ...liveStoreSettings(), currencies: codes.map((c, i) => currency(c, i === 0)) }
       : opts.settings;
   ddb.on(GetCommand).callsFake((input) => {
     if (String(input.Key.pk).startsWith("SLUG#")) {
@@ -92,7 +93,7 @@ describe("GET /store/public/storefront/:slug (3.1)", () => {
   });
 
   it("a suspended store: 404 STORE_UNAVAILABLE", async () => {
-    store({ settings: { ...initStoreSettings(), admin: { isStoreLive: false } } });
+    store({ settings: { ...liveStoreSettings(), admin: { suspended: true } } });
     const res = await get("northern-hoop");
     expect(res.status).toBe(404);
     expect(res.body.code).toBe("STORE_UNAVAILABLE");

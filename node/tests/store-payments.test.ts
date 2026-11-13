@@ -1,3 +1,4 @@
+import { liveStoreSettings } from "./fixtures";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import Stripe from "stripe";
@@ -41,7 +42,7 @@ import {
   PaymentsNotConfiguredError,
 } from "../layers/payments/stripe";
 import { createApp } from "../app";
-import { initStoreSettings } from "../layers/core/interfaces/store";
+
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const app = createApp();
@@ -357,7 +358,7 @@ describe("payments stay private", () => {
   const settingsRow = (chargesEnabled: boolean) => ({
     pk: "p",
     sk: "s",
-    ...initStoreSettings(),
+    ...liveStoreSettings(),
     payments: { stripeAccountId: ACCT, chargesEnabled },
   });
 

@@ -15,7 +15,7 @@ import { sendServerError } from "../route-errors";
 
 /*
  * PUT /admin/update-store-admin-settings (admin, progress.md 1.6)
- * Body: { storeId, commissionMode, commissionPercentBps, salesCommissions, isStoreLive } → the
+ * Body: { storeId, commissionMode, commissionPercentBps, salesCommissions, suspended } → the
  * saved block (same fields without storeId). All fields are required (5.1b):
  * - commissionMode: "FIXED" | "PERCENT".
  * - commissionPercentBps: basis points 0–3,000 (250 = 2.5%), whole number; kept in FIXED mode too.
@@ -30,13 +30,13 @@ export default function registerRoute(router: Router): void {
 }
 
 function pureRequestParams(req: Request): boolean {
-  const { storeId, commissionMode, commissionPercentBps, salesCommissions, isStoreLive } = req.body;
+  const { storeId, commissionMode, commissionPercentBps, salesCommissions, suspended } = req.body;
   return (
     isUlid(storeId) &&
     typeof commissionMode === "string" &&
     typeof commissionPercentBps === "number" &&
     typeof salesCommissions === "object" &&
-    typeof isStoreLive === "boolean"
+    typeof suspended === "boolean"
   );
 }
 
@@ -51,14 +51,14 @@ function validRequestParams(req: Request): boolean {
 
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
-    const { storeId, commissionMode, commissionPercentBps, salesCommissions, isStoreLive } = req.body;
+    const { storeId, commissionMode, commissionPercentBps, salesCommissions, suspended } = req.body;
     const { USD, CAD, AUD } = salesCommissions;
     res.send(
       await updateStoreAdminSettings(storeId, {
         commissionMode,
         commissionPercentBps,
         salesCommissions: { USD, CAD, AUD },
-        isStoreLive,
+        suspended,
       })
     );
   } catch (e) {

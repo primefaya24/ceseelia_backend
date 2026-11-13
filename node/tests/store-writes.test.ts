@@ -59,6 +59,15 @@ describe("store settings writes", () => {
     expect(ddb.commandCalls(UpdateCommand)[0].args[0].input.ConditionExpression).toBe("attribute_exists(pk)");
   });
 
+  it("the merchant's settings save never writes the lifecycle, admin block or payments (P.2)", async () => {
+    ddb.on(UpdateCommand).resolves({});
+    const forged = { ...initStoreSettings(), lifecycle: { status: "LIVE", plan: "NOVA" } } as any;
+    await updateStoreSettings("S1", forged);
+    const input = ddb.commandCalls(UpdateCommand)[0].args[0].input;
+    const written = JSON.stringify([input.UpdateExpression, input.ExpressionAttributeNames, input.ExpressionAttributeValues]);
+    for (const key of ["lifecycle", "admin", "payments", "NOVA"]) expect(written).not.toContain(key);
+  });
+
   it("reports a missing store as StoreRecordNotFoundError", async () => {
     ddb.on(UpdateCommand).rejects(conditionFailed());
     await expect(updateStoreSettings("S1", initStoreSettings())).rejects.toThrow(StoreRecordNotFoundError);

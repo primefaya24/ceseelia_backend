@@ -7,7 +7,7 @@ import { sendServerError } from "../route-errors";
 
 /*
  * GET /admin/get-store-admin-settings/:storeId (admin, progress.md 1.6)
- * → { commissionMode, commissionPercentBps, salesCommissions, isStoreLive } (5.1a/5.1b, defaults
+ * → { commissionMode, commissionPercentBps, salesCommissions, suspended } (5.1a/5.1b, defaults
  *   filled in by normalizeAdminSettings) · 404 STORE_NOT_FOUND
  */
 export default function registerRoute(router: Router): void {

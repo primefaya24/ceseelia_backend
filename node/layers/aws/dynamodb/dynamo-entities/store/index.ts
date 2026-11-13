@@ -19,6 +19,7 @@ import {
   initStore,
   initStoreSettings,
   normalizeAdminSettings,
+  normalizeStoreLifecycle,
   StoreCategory,
   StoreInventoryData,
   StoreItem,
@@ -490,7 +491,11 @@ export async function getStoreInventoryData(
     let settings: StoreSettings = initStoreSettings();
     if (settingsResult.Item) {
       const { pk: _pk, sk: _sk, ...rest } = settingsResult.Item;
-      settings = { ...rest, admin: normalizeAdminSettings(rest.admin) } as StoreSettings;
+      settings = {
+        ...rest,
+        admin: normalizeAdminSettings(rest.admin),
+        lifecycle: normalizeStoreLifecycle(rest.lifecycle),
+      } as StoreSettings;
     }
 
     return {
@@ -592,7 +597,7 @@ export async function updateStoreAdminSettings(
     commissionMode: admin.commissionMode,
     commissionPercentBps: admin.commissionPercentBps,
     salesCommissions: admin.salesCommissions,
-    isStoreLive: admin.isStoreLive,
+    suspended: admin.suspended,
   };
   try {
     await dynamoDbDocumentClient.send(
@@ -621,12 +626,63 @@ export function withoutAdminSettings(data: StoreInventoryData): StoreInventoryDa
 ////////////////////////////////////////
 // Public storefront data (progress.md 2.4)
 ////////////////////////////////////////
-/* The store exists but an admin has suspended it (`admin.isStoreLive === false`). */
+/* The store exists but an admin has suspended it (`admin.suspended`, P.2). */
 export class StoreUnavailableError extends Error {
   constructor() {
     super("Store unavailable");
     this.name = "StoreUnavailableError";
   }
+}
+
+/*
+ * The store exists and isn't suspended, but it isn't LIVE yet (DRAFT or IN_REVIEW, P.2). Carries
+ * what a "Coming soon" page may show (`comingSoonSettings`). Shoppers can't see its items, get a
+ * quote, open an item link or use Contact us.
+ */
+export class StoreNotLiveError extends Error {
+  constructor(readonly settings: StoreSettings) {
+    super("Store not live");
+    this.name = "StoreNotLiveError";
+  }
+}
+
+/*
+ * Throws StoreUnavailableError (suspended) or StoreNotLiveError (not LIVE) for a SETTINGS row.
+ * Suspension wins: a suspended draft is just unavailable.
+ */
+function assertStoreOpen(row: Record<string, any>): void {
+  if (normalizeAdminSettings(row.admin).suspended) throw new StoreUnavailableError();
+  if (normalizeStoreLifecycle(row.lifecycle).status !== "LIVE") {
+    const { pk: _pk, sk: _sk, ...settings } = row;
+    throw new StoreNotLiveError(comingSoonSettings(settings as StoreSettings));
+  }
+}
+
+/*
+ * What a "Coming soon" page may show for a store that isn't live (P.2): its name, slogan, logo,
+ * look and currencies. No contact details, links or pickup address: a draft hasn't been through
+ * Go Live's checks (P.4c), so nothing in it is offered to shoppers yet.
+ */
+export function comingSoonSettings(settings: StoreSettings): StoreSettings {
+  const { admin: _a, lifecycle: _l, ...base } = initStoreSettings();
+  const info = settings.storeInfo ?? base.storeInfo;
+  const { admin: _admin, payments: _p, lifecycle, ...rest } = settings;
+  return {
+    ...base,
+    templateId: rest.templateId ?? base.templateId,
+    themeId: rest.themeId ?? base.themeId,
+    customize: rest.customize ?? {},
+    currencies: rest.currencies ?? base.currencies,
+    storeInfo: {
+      ...base.storeInfo,
+      storeName: info.storeName ?? "",
+      slogan: info.slogan ?? "",
+      logoUri: info.logoUri ?? "",
+      contactFormAvailable: false,
+    },
+    paymentsEnabled: false,
+    storeStatus: normalizeStoreLifecycle(lifecycle).status,
+  } as StoreSettings;
 }
 
 /*
@@ -639,9 +695,11 @@ export function toPublicSettings(settings: StoreSettings): StoreSettings {
   const info = settings.storeInfo ?? initStoreSettings().storeInfo;
   const email = (info.emailaddress ?? "").trim();
   const { contactFormAvailable: _ignored, ...rest } = info;
+  const { lifecycle, ...others } = settings;
   return {
-    ...settings,
+    ...others,
     paymentsEnabled: settings.payments?.chargesEnabled === true,
+    storeStatus: normalizeStoreLifecycle(lifecycle).status,
     storeInfo: {
       ...rest,
       emailaddress: info.showEmail === false ? "" : info.emailaddress,
@@ -685,24 +743,24 @@ export function toPublicInventory(data: StoreInventoryData): StoreInventoryData 
 }
 
 /*
- * The public storefront's data. Throws StoreRecordNotFoundError when the store doesn't exist and
- * StoreUnavailableError when it's suspended; settings saved before the admin block existed count
- * as live.
+ * The public storefront's data. Throws StoreRecordNotFoundError when the store doesn't exist,
+ * StoreUnavailableError when it's suspended and StoreNotLiveError when it isn't LIVE (P.2);
+ * settings saved before the admin block or the lifecycle existed count as live.
  */
 export async function getPublicStoreInventoryData(storeId: string): Promise<StoreInventoryData> {
   await getPublicStoreSettings(storeId);
   return toPublicInventory(await getStoreInventoryData(storeId));
 }
 
-/* A live store's settings without the admin block; throws like getPublicStoreInventoryData. */
+/* A live store's public settings; throws like getPublicStoreInventoryData. */
 export async function getPublicStoreSettings(storeId: string): Promise<StoreSettings> {
   const settings = await dynamoDbDocumentClient.send(
     new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS) })
   );
   if (!settings.Item) throw new StoreRecordNotFoundError("Store");
-  if (settings.Item.admin?.isStoreLive === false) throw new StoreUnavailableError();
-  const { pk: _pk, sk: _sk, admin: _admin, payments, ...rest } = settings.Item;
-  return { ...rest, paymentsEnabled: payments?.chargesEnabled === true } as StoreSettings;
+  assertStoreOpen(settings.Item);
+  const { pk: _pk, sk: _sk, admin: _admin, payments, lifecycle: _lifecycle, ...rest } = settings.Item;
+  return { ...rest, paymentsEnabled: payments?.chargesEnabled === true, storeStatus: "LIVE" } as StoreSettings;
 }
 
 /*
@@ -722,7 +780,7 @@ export async function getPublicStoreItem(
     dynamoDbDocumentClient.send(new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: itemKey(storeId, itemId) })),
   ]);
   if (!settingsRes.Item) throw new StoreRecordNotFoundError("Store");
-  if (settingsRes.Item.admin?.isStoreLive === false) throw new StoreUnavailableError();
+  assertStoreOpen(settingsRes.Item);
   if (!itemRes.Item) return null;
   const { pk: _ip, sk: _is, ...item } = itemRes.Item;
   const categoryRes = await dynamoDbDocumentClient.send(

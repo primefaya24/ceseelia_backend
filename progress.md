@@ -597,15 +597,36 @@ change): **(A1)** a subscription is billed in the currency of the store's Stripe
 No free trials. Payments are **online only** (owner, 2026-11-12): no "pay at pickup"; every order,
 pickup or delivery, goes through Stripe Checkout (5.4).
 
-- [ ] P.1 Plan catalogue in one place (`layers/core/plans`): `FREE | SPARK | NOVA`, monthly price
+- [x] P.1 Plan catalogue in one place (`layers/core/plans`): `FREE | SPARK | NOVA`, monthly price
       per currency in cents, default commission per currency in cents (FIXED mode), monthly order
       limit (FREE 30, else none), `customDomain` flag. Stripe Products/Prices on the platform
       account found by lookup key (`ceseelia_spark_cad`, …), never by ids in code.
-- [ ] P.2 Store lifecycle on SETTINGS: `status: DRAFT | IN_REVIEW | LIVE` and `plan` (+ subscription
+      Done 2026-11-12: `PLANS` (frozen), `getPlan` (unknown = FREE, never a paid plan),
+      `isPaidPlan`, `planPriceLookupKey`, `orderLimitWarningAt` (24 of 30), and the grace /
+      draft-cap constants. No route serves it yet: P.4 adds it for the webapp's plan picker.
+- [x] P.2 Store lifecycle on SETTINGS: `status: DRAFT | IN_REVIEW | LIVE` and `plan` (+ subscription
       fields). Admin suspension stays separate: rename `admin.isStoreLive` to `admin.suspended`
       (read the old field in `normalizeAdminSettings`). Public storefront: DRAFT / IN_REVIEW →
       shoppers get "Coming soon" (no items, `checkoutEnabled: false`); store members get the full
       data as a preview. Checkout needs LIVE + not suspended + `paymentsEnabled`. Migration per A2.
+      Done 2026-11-12:
+  - `lifecycle` `{status, plan, statusChangedAt?, firstLiveAt?}` is its own SETTINGS attribute
+    (merchant update-settings and the admin form can't write it; tested). New stores
+    (`initStoreSettings`, so `POST /store/create` too) are FREE drafts. `normalizeStoreLifecycle`:
+    none saved = LIVE on FREE (A2, no migration script needed); unknown status = DRAFT; unknown
+    plan = FREE. Members' get-data includes it; public responses get only `storeStatus`.
+  - `admin.suspended` replaces `isStoreLive` (old `false` read as suspended). The admin PUT
+    takes `suspended` and refuses a body with only `isStoreLive`.
+  - Public storefront of a DRAFT / IN_REVIEW store: 200, `no-store`, `settings.storeStatus`, only
+    name / slogan / logo / look / currencies (`comingSoonSettings`: no contact details, links or
+    pickup address, `paymentsEnabled: false`), no categories or items (never read). Item links,
+    quotes and Contact us: 404 `STORE_NOT_LIVE`. Suspension wins over draft (`STORE_UNAVAILABLE`).
+  - The subscription fields come with P.5; `checkoutEnabled` is left to 5.4 (create-order
+    refuses unless LIVE, not suspended, under the limit and `paymentsEnabled`).
+  - Tests: `tests/plans-lifecycle.test.ts`; public-route tests start from
+    `tests/fixtures.ts` `liveStoreSettings()`.
+  - **Dev note:** stores created from now on are drafts with Coming soon until Go Live (P.4)
+    exists; stores created before (Northern Hoop) stay live.
 - [ ] P.3 Self-serve store creation: `POST /merchant/create-store` `{storeName, slug}` for any
       signed-in user with a verified email. Creates the store (DRAFT, FREE), its slug reservation
       and an ADMIN membership in one go (reuse 1.2 / 1.8). Cap drafts per account (5) and
@@ -804,6 +825,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | P.1 + P.2 done: plan catalogue (`layers/core/plans`); `lifecycle` (DRAFT / IN_REVIEW / LIVE + plan) on SETTINGS, old stores read as LIVE on FREE; `admin.isStoreLive` → `admin.suspended`; not-live storefront is a "Coming soon" body, item/quote/contact 404 `STORE_NOT_LIVE`. |
 | 2026-11-12 | Stage P planned (§6a) with the owner: plans per store (FREE / SPARK $25 CAD·AUD, $19 USD / NOVA $49 CAD·AUD, $39 USD), one live FREE store per account, plan commissions, FREE 30 orders/month with 7 days' grace, self-serve store creation, Go Live with `runSmartStoreValidation` (AI fraud check, **TODO: empty stub for now**), Stripe Billing on the platform account, admin commission override kept. Payments online only: no pay at pickup. |
 | 2026-11-12 | 5.1b done: percentage commission. `admin.commissionMode` (`FIXED`/`PERCENT`) and `commissionPercentBps` (0–3,000); PERCENT = share of items after discounts, no tax or delivery, half up, at least the per-currency `salesCommissions`; `platformFeeMinor(admin, quote)`; 5.4c must snapshot the commission onto the order. Settles the open "percentage vs fixed" question: admins pick per store. |
 | 2026-11-11 | 5.2b: payments status adds `canManage`, `pastDue`, `pendingVerification`, `deadline`; `requirementsDue` counts currently_due ∪ past_due once (from the sandbox onboarding test). |
