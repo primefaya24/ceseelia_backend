@@ -21,6 +21,7 @@ import {
   normalizeAdminSettings,
   normalizeStoreLifecycle,
   initStoreLifecycle,
+  StoreLifecycle,
   StoreCategory,
   StoreInventoryData,
   StoreItem,
@@ -33,6 +34,7 @@ import { getStorageImageUrl } from "../../../../core/utils";
 import { publicVariants, variantsReady } from "../../../../core/variants";
 import { reserveSlugPut, SlugTakenError, slugKey, transactionFailedAt } from "../slug";
 import { newStoreMembershipItems } from "../membership";
+import { StorePlan } from "../../../../core/plans";
 import { TransactWriteCommandInput } from "@aws-sdk/lib-dynamodb";
 
 // Initialize DynamoDB Document Client
@@ -140,6 +142,8 @@ export async function createStore(
     const storeOverview: StoreOverview = initStore(storeId, storeName, storeSlug);
     const storeSettings: StoreSettings = initStoreSettings();
     storeSettings.lifecycle = { ...initStoreLifecycle(now), ...(owner ? { createdByUserId: owner.userId } : {}) };
+    // The storefront shows storeInfo.storeName, so a new store starts with the name it was given.
+    storeSettings.storeInfo = { ...storeSettings.storeInfo, storeName };
     try {
       await dynamoDbDocumentClient.send(
         new TransactWriteCommand({
@@ -182,6 +186,66 @@ export async function createStore(
     if (!(e instanceof SlugTakenError) && !(e instanceof StoreOwnerNotFoundError)) console.error("In createStore", e);
     throw e;
   }
+}
+
+/* The store left DRAFT before this Go Live finished (another request, or an admin) (P.4b). */
+export class StoreStatusChangedError extends Error {
+  constructor() {
+    super("The store's status changed");
+    this.name = "StoreStatusChangedError";
+  }
+}
+
+/*
+ * Go Live's write (P.4b): DRAFT → LIVE, or DRAFT → IN_REVIEW when runSmartStoreValidation flagged
+ * the store. Conditional on the store still being a DRAFT, so two Go Lives (or an admin change)
+ * can't both win. IN_REVIEW keeps the reasons and the requested plan in the SETTINGS row's own
+ * `review` attribute, which only admins see (members' get-data and public data drop it).
+ */
+export async function setStoreStatusFromDraft(
+  storeId: string,
+  change: {
+    status: "LIVE" | "IN_REVIEW";
+    plan: StorePlan;
+    previous: StoreLifecycle;
+    review?: { reasons: string[]; requestedByUserId: string | null };
+  }
+): Promise<StoreLifecycle> {
+  const now = Date.now();
+  const lifecycle: StoreLifecycle = {
+    ...change.previous,
+    status: change.status,
+    plan: change.plan,
+    statusChangedAt: now,
+    ...(change.status === "LIVE" && !change.previous.firstLiveAt ? { firstLiveAt: now } : {}),
+  };
+  const names: Record<string, string> = { "#lc": "lifecycle", "#st": "status" };
+  const values: Record<string, unknown> = { ":lc": lifecycle, ":draft": "DRAFT" };
+  let update = "SET #lc = :lc";
+  if (change.review) {
+    names["#review"] = "review";
+    values[":review"] = { ...change.review, requestedPlan: change.plan, requestedAt: now };
+    update += ", #review = :review";
+  } else {
+    names["#review"] = "review";
+    update += " REMOVE #review";
+  }
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS),
+        UpdateExpression: update,
+        ConditionExpression: "#lc.#st = :draft",
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      })
+    );
+  } catch (e) {
+    if (isConditionalCheckFailure(e)) throw new StoreStatusChangedError();
+    throw e;
+  }
+  return lifecycle;
 }
 
 /* createStore's owner has no PROFILE#INFO row (P.3). */
@@ -636,7 +700,7 @@ export async function updateStoreAdminSettings(
 
 /* The same data without the admin block, for merchants and the public storefront. */
 export function withoutAdminSettings(data: StoreInventoryData): StoreInventoryData {
-  const { admin: _admin, payments: _payments, ...settings } = data.settings;
+  const { admin: _admin, payments: _payments, review: _review, ...settings } = data.settings;
   return { ...data, settings: settings as StoreSettings };
 }
 
@@ -683,7 +747,7 @@ function assertStoreOpen(row: Record<string, any>): void {
 export function comingSoonSettings(settings: StoreSettings): StoreSettings {
   const { admin: _a, lifecycle: _l, ...base } = initStoreSettings();
   const info = settings.storeInfo ?? base.storeInfo;
-  const { admin: _admin, payments: _p, lifecycle, ...rest } = settings;
+  const { admin: _admin, payments: _p, review: _r, lifecycle, ...rest } = settings;
   return {
     ...base,
     templateId: rest.templateId ?? base.templateId,
@@ -776,7 +840,7 @@ export async function getPublicStoreSettings(storeId: string): Promise<StoreSett
   );
   if (!settings.Item) throw new StoreRecordNotFoundError("Store");
   assertStoreOpen(settings.Item);
-  const { pk: _pk, sk: _sk, admin: _admin, payments, lifecycle: _lifecycle, ...rest } = settings.Item;
+  const { pk: _pk, sk: _sk, admin: _admin, payments, lifecycle: _lifecycle, review: _review, ...rest } = settings.Item;
   return { ...rest, paymentsEnabled: payments?.chargesEnabled === true, storeStatus: "LIVE" } as StoreSettings;
 }
 

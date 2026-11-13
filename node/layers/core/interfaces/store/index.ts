@@ -195,6 +195,11 @@ export interface StoreSettings {
    * public responses get only `storeStatus`.
    */
   lifecycle?: StoreLifecycle;
+  /**
+   * Why Go Live sent the store to IN_REVIEW (P.4c), for the admin review queue. Its own
+   * attribute; only admins see it (members' get-data and public data drop it).
+   */
+  review?: StoreReview;
   /** Public responses only: the store's status (P.2); not LIVE = "Coming soon" for shoppers. */
   storeStatus?: StoreStatus;
 
@@ -243,6 +248,13 @@ export interface StoreLifecycle {
   firstLiveAt?: number;
   /** The user who created it themselves (P.3); missing for stores an admin created. */
   createdByUserId?: string;
+}
+
+export interface StoreReview {
+  reasons: string[];
+  requestedPlan: StorePlan;
+  requestedAt: number;
+  requestedByUserId: string | null;
 }
 
 /** A new store: a FREE draft (P.3). */

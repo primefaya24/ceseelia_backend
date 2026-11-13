@@ -1,16 +1,10 @@
 import { Request, Response, Router } from "express";
-import Stripe from "stripe";
 import {
   getAuth,
   storeMember,
   validateAndExecuteHttpApiRoute,
 } from "../../../../../layers/core/http";
-import {
-  clearStoreStripeAccount,
-  getStorePayments,
-  updateStorePaymentsStatus,
-} from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
-import { getStripe } from "../../../../../layers/payments/stripe";
+import { readStoreStripeAccount } from "../../../../../layers/payments/account-status";
 import { sendPaymentsError } from "../errors";
 
 /*
@@ -42,48 +36,20 @@ export default function registerRoute(router: Router): void {
   });
 }
 
-/* Stripe's answer when the platform no longer has access to the account. */
-export function isAccountGone(e: unknown): boolean {
-  if (e instanceof Stripe.errors.StripePermissionError) return true;
-  if (e instanceof Stripe.errors.StripeInvalidRequestError) {
-    return e.code === "account_invalid" || e.code === "resource_missing";
-  }
-  return false;
-}
+export { isAccountGone } from "../../../../../layers/payments/account-status";
 
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     const storeId = req.params.storeId as string;
     const auth = getAuth(res);
     const canManage = auth.isAdmin || auth.storeRole === "ADMIN";
-    const payments = await getStorePayments(storeId);
-    const accountId = payments.stripeAccountId;
-    if (!accountId) {
-      res.send({ canManage, connected: false });
+    const read = await readStoreStripeAccount(storeId);
+    if (!read.connected) {
+      res.send(read.disconnected ? { canManage, connected: false, disconnected: true } : { canManage, connected: false });
       return;
     }
-    const stripe = await getStripe();
-    let account: Stripe.Account;
-    try {
-      account = await stripe.accounts.retrieve(accountId);
-    } catch (e) {
-      if (!isAccountGone(e)) throw e;
-      await clearStoreStripeAccount(storeId, accountId);
-      res.send({ canManage, connected: false, disconnected: true });
-      return;
-    }
-    const flags = {
-      chargesEnabled: account.charges_enabled === true,
-      payoutsEnabled: account.payouts_enabled === true,
-      detailsSubmitted: account.details_submitted === true,
-    };
-    if (
-      flags.chargesEnabled !== payments.chargesEnabled ||
-      flags.payoutsEnabled !== payments.payoutsEnabled ||
-      flags.detailsSubmitted !== payments.detailsSubmitted
-    ) {
-      await updateStorePaymentsStatus(storeId, accountId, flags);
-    }
+    const { account, chargesEnabled, payoutsEnabled, detailsSubmitted } = read;
+    const flags = { chargesEnabled, payoutsEnabled, detailsSubmitted };
     const needs = account.requirements;
     const deadline =
       needs?.current_deadline ?? account.future_requirements?.current_deadline ?? null;

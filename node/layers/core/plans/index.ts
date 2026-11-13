@@ -56,6 +56,17 @@ export const PLANS: Readonly<Record<StorePlan, Readonly<PlanDefinition>>> = Obje
   }),
 });
 
+/**
+ * Paid plans can be chosen at Go Live only once subscriptions exist (P.5). Until then SPARK and
+ * NOVA are listed but refused with PLAN_NOT_AVAILABLE, and the webapp marks them "coming soon".
+ */
+export const PAID_PLANS_AVAILABLE = false;
+
+/** Whether a plan can be picked at Go Live today. */
+export function isPlanAvailable(id: StorePlan): boolean {
+  return !isPaidPlan(id) || PAID_PLANS_AVAILABLE;
+}
+
 /** Grace after a failed subscription payment before the store drops to FREE (P.5). */
 export const PLAN_PAYMENT_GRACE_DAYS = 7;
 /** Grace after a FREE store reaches its order limit before new checkouts pause (P.7). */

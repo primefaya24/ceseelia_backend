@@ -642,14 +642,32 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       `DRAFT_LIMIT_REACHED` (a read, not atomic; the 5-per-account-per-hour rate limit, 429
       `RATE_LIMITED`, bounds the race). 409 `SLUG_TAKEN`. Body fields beyond name and slug are
       ignored (no picking status, plan or owner). Tests: `tests/merchant-create-store.test.ts`.
-- [ ] P.4 Go Live:
-  - [ ] a. `GET /store/go-live/checklist/:storeId` (members): name set, ≥ 1 active item with a
+- [ ] P.4 Go Live (a and b done 2026-11-12; c's AI check is still the owner's TODO):
+  - [x] a. `GET /store/go-live/checklist/:storeId` (members): name set, ≥ 1 active item with a
         price, pickup or delivery on, Stripe `chargesEnabled` (5.2), plan chosen, and for FREE
         no other live FREE store owned by the same account. Each with ok / what's missing.
-  - [ ] b. `POST /store/go-live` `{storeId, plan}` (store ADMIN): re-checks the list on the
+        Done: `goLiveChecklist` (`layers/core/go-live`, pure; steps STORE_NAME, ITEMS (what
+        shoppers would see: `toPublicInventory` non-empty), FULFILMENT (delivery, or pickup **with
+        an address**), PAYMENTS (Stripe `charges_enabled` read live via `readStoreStripeAccount`,
+        shared with payments/status)). Response adds `canGoLive`, `suspended`, `billingCurrency`
+        (A1: CA/US/AU → CAD/USD/AUD) and `plans` priced in it, with `available` /
+        `unavailableReason` (`FREE_PLAN_IN_USE` via `findLiveFreeStoreAdministeredBy`;
+        `PLAN_NOT_AVAILABLE` for SPARK/NOVA while `PAID_PLANS_AVAILABLE` is false, until P.5).
+        Also `GET /store/public/plans` (the catalogue, no auth, `public, max-age=300`). New stores
+        now start with `storeInfo.storeName` = their name.
+  - [x] b. `POST /store/go-live` `{storeId, plan}` (store ADMIN): re-checks the list on the
         server; FREE goes straight to validation; SPARK / NOVA return a Billing Checkout URL and
         go live from the webhook (P.5) once the subscription is active.
-  - [ ] c. **`runSmartStoreValidation(storeId)`** in `layers/core/store-validation`: called on
+        Done for FREE: order of checks 409 `STORE_SUSPENDED` → `ALREADY_LIVE` / `IN_REVIEW` →
+        `PLAN_NOT_AVAILABLE` (paid, until P.5) → `CHECKLIST_INCOMPLETE {steps}` (Stripe live) →
+        `FREE_PLAN_IN_USE` (not for platform admins) → `runSmartStoreValidation` → write.
+        `setStoreStatusFromDraft` is conditional on `lifecycle.status = DRAFT` (409
+        `STATUS_CHANGED`), sets `firstLiveAt` the first time, and keeps IN_REVIEW's reasons in
+        the SETTINGS row's own `review` attribute (admins only; members' and public data drop
+        it). A validation that throws fails closed (IN_REVIEW, `VALIDATION_UNAVAILABLE`).
+        **P.5 still to do here:** the SPARK / NOVA branch (Billing Checkout URL).
+  - [ ] c. **`runSmartStoreValidation({storeId, data})`** in `layers/core/store-validation`
+        (stub in place and called by Go Live, 2026-11-12; result `{ok: true} | {ok: false, reasons}`): called on
         every Go Live (and plan re-activation) before the store becomes LIVE. Purpose: use AI
         to go through the store's items, names, descriptions and images and make sure nothing
         sketchy is going on (fraud, prohibited goods, scams) on Ceseelia.
@@ -657,6 +675,8 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         store. Come back to it and build the AI check.** When it's built and flags a store:
         status `IN_REVIEW` (not LIVE), the merchant sees "We're reviewing your store", and the
         store goes into an admin review queue (approve → LIVE, reject with a reason → DRAFT).
+        (Go Live's IN_REVIEW write and the merchant's message are done; the admin queue is P.8.)
+        Later, also worth deciding: re-run it when a live store adds or changes items.
 - [ ] P.5 Subscriptions (Stripe **Billing on the platform account**, separate from Connect): a
       Stripe Customer per user account, a Subscription per store (metadata `storeId`). Billing
       Checkout (`mode: subscription`) for SPARK / NOVA; Customer Portal for card changes,
@@ -836,6 +856,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | P.4a/b done: `GET /store/go-live/checklist/:storeId`, `POST /store/go-live` (FREE; paid plans 409 `PLAN_NOT_AVAILABLE` until P.5), `GET /store/public/plans`; `runSmartStoreValidation` stub called on Go Live (**AI check still TODO**), fail-closed to IN_REVIEW with admin-only `review`; `readStoreStripeAccount` shared with payments/status. |
 | 2026-11-12 | P.3 done: `POST /merchant/create-store` (self-serve FREE draft, caller becomes ADMIN in the same transaction; 5-draft cap, 5/hour, 409 `SLUG_TAKEN` / `DRAFT_LIMIT_REACHED`). 8.2 join requests marked superseded. |
 | 2026-11-12 | P.1 + P.2 done: plan catalogue (`layers/core/plans`); `lifecycle` (DRAFT / IN_REVIEW / LIVE + plan) on SETTINGS, old stores read as LIVE on FREE; `admin.isStoreLive` → `admin.suspended`; not-live storefront is a "Coming soon" body, item/quote/contact 404 `STORE_NOT_LIVE`. |
 | 2026-11-12 | Stage P planned (§6a) with the owner: plans per store (FREE / SPARK $25 CAD·AUD, $19 USD / NOVA $49 CAD·AUD, $39 USD), one live FREE store per account, plan commissions, FREE 30 orders/month with 7 days' grace, self-serve store creation, Go Live with `runSmartStoreValidation` (AI fraud check, **TODO: empty stub for now**), Stripe Billing on the platform account, admin commission override kept. Payments online only: no pay at pickup. |

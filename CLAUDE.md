@@ -168,6 +168,7 @@ export default function registerRoute(router: Router): void {
 | Merchant | `GET /merchant/path` | ❌ template stub |
 | Customer | — | ❌ empty router |
 | Payments (5.2) | `POST /store/payments/create-connect-account-link` `{storeId, country?}` → `{url, expiresAt}` (store admins); `GET /store/payments/status/:storeId` (members) | ✅ Standard account created once per store (`country` CA/US/AU required the first time; idempotency key), fresh onboarding link per call returning to `/store/storefront/:storeId?payments=return\|refresh`; status reads Stripe, refreshes the cached flags, forgets a disconnected account. 503 `PAYMENTS_NOT_CONFIGURED`, 502 `STRIPE_ERROR`. `payments` lives in its own SETTINGS attribute; public responses get only `paymentsEnabled` |
+| Go Live (P.4) | `GET /store/go-live/checklist/:storeId` (members), `POST /store/go-live` `{storeId, plan}` (store ADMINs), `GET /store/public/plans` (no auth) | ✅ checklist steps STORE_NAME / ITEMS / FULFILMENT / PAYMENTS (Stripe live), plans in the billing currency; Go Live re-checks everything, then `runSmartStoreValidation` (**TODO stub, passes all**) → LIVE, or IN_REVIEW (admin-only `review`); paid plans 409 `PLAN_NOT_AVAILABLE` until P.5 |
 | Payments | `POST /api/v1/website/listen-to-stripe-event/:websiteId` | ❌ returns 501 until Stage 5 (registered before `express.json()` so the raw body is available) |
 
 Infra helpers ready to reuse: SES `sendEmail` + templates, PDF invoice generator (`pdfkit`),
