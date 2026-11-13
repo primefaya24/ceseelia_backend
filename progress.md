@@ -27,8 +27,9 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > each currency, `admin.salesCommissions`) and 5.1a is done. 5.1b (2026-11-12) adds a per-store
 > `PERCENT` mode (see §7). 5.2 (onboarding routes, keys in
 > Secrets Manager) is done, and so is WA 5.4 (Payments card); onboarding was tested end to end
-> in the Stripe sandbox. **Next: 5.3** (order model). **Open for the owner:** pickup orders:
-> online payment only, or also "pay at pickup" (no Stripe, so no automatic platform fee)?
+> in the Stripe sandbox. **Next: Stage P** (§6a, plans FREE/SPARK/NOVA, self-serve stores, Go
+> Live with `runSmartStoreValidation`, a TODO stub for now), then 5.3. Payments are online only
+> (no pay at pickup, owner 2026-11-12).
 > Both repos are committed on `dev_v1.0.0_customer_store_front`; nothing pushed.
 
 > **Pick up here (2026-11-09):** Stage S (except S.2, S.14–S.17) and Stage 1.1–1.4, 1.6–1.8
@@ -578,6 +579,80 @@ match the backend and webapp._
 
 ---
 
+## 6a. Stage P — Plans, self-serve stores & Go Live (before 5.3)
+
+Decided with the owner 2026-11-12. Done before the rest of Stage 5, because Go Live and the plan
+decide whether checkout is on and what the platform fee is. Two assumptions (flagged, owner can
+change): **(A1)** a subscription is billed in the currency of the store's Stripe account country
+(CA → CAD, US → USD, AU → AUD); **(A2)** stores that exist before P.2 are read as LIVE on FREE.
+
+**Plans (per store; at most one live FREE store per account):**
+
+| Plan | Monthly (CAD / AUD / USD) | Commission per order (CAD / AUD / USD) | Orders | Custom domain |
+|---|---|---|---|---|
+| FREE | none | 2.95 / 2.95 / 2.45 | 30 paid orders per calendar month | No |
+| SPARK | 25 / 25 / 19 | 1.95 / 1.95 / 1.45 | Unlimited | Yes ("coming soon" until 9.8) |
+| NOVA | 49 / 49 / 39 | none | Unlimited | Yes ("coming soon" until 9.8) |
+
+No free trials. Payments are **online only** (owner, 2026-11-12): no "pay at pickup"; every order,
+pickup or delivery, goes through Stripe Checkout (5.4).
+
+- [ ] P.1 Plan catalogue in one place (`layers/core/plans`): `FREE | SPARK | NOVA`, monthly price
+      per currency in cents, default commission per currency in cents (FIXED mode), monthly order
+      limit (FREE 30, else none), `customDomain` flag. Stripe Products/Prices on the platform
+      account found by lookup key (`ceseelia_spark_cad`, …), never by ids in code.
+- [ ] P.2 Store lifecycle on SETTINGS: `status: DRAFT | IN_REVIEW | LIVE` and `plan` (+ subscription
+      fields). Admin suspension stays separate: rename `admin.isStoreLive` to `admin.suspended`
+      (read the old field in `normalizeAdminSettings`). Public storefront: DRAFT / IN_REVIEW →
+      shoppers get "Coming soon" (no items, `checkoutEnabled: false`); store members get the full
+      data as a preview. Checkout needs LIVE + not suspended + `paymentsEnabled`. Migration per A2.
+- [ ] P.3 Self-serve store creation: `POST /merchant/create-store` `{storeName, slug}` for any
+      signed-in user with a verified email. Creates the store (DRAFT, FREE), its slug reservation
+      and an ADMIN membership in one go (reuse 1.2 / 1.8). Cap drafts per account (5) and
+      rate-limit, against abuse. Supersedes 8.2's join-request approval (no admin step before
+      building; the check happens at Go Live).
+- [ ] P.4 Go Live:
+  - [ ] a. `GET /store/go-live/checklist/:storeId` (members): name set, ≥ 1 active item with a
+        price, pickup or delivery on, Stripe `chargesEnabled` (5.2), plan chosen, and for FREE
+        no other live FREE store owned by the same account. Each with ok / what's missing.
+  - [ ] b. `POST /store/go-live` `{storeId, plan}` (store ADMIN): re-checks the list on the
+        server; FREE goes straight to validation; SPARK / NOVA return a Billing Checkout URL and
+        go live from the webhook (P.5) once the subscription is active.
+  - [ ] c. **`runSmartStoreValidation(storeId)`** in `layers/core/store-validation`: called on
+        every Go Live (and plan re-activation) before the store becomes LIVE. Purpose: use AI
+        to go through the store's items, names, descriptions and images and make sure nothing
+        sketchy is going on (fraud, prohibited goods, scams) on Ceseelia.
+        **TODO (owner, 2026-11-12): body left empty for now, returns `{ ok: true }` for every
+        store. Come back to it and build the AI check.** When it's built and flags a store:
+        status `IN_REVIEW` (not LIVE), the merchant sees "We're reviewing your store", and the
+        store goes into an admin review queue (approve → LIVE, reject with a reason → DRAFT).
+- [ ] P.5 Subscriptions (Stripe **Billing on the platform account**, separate from Connect): a
+      Stripe Customer per user account, a Subscription per store (metadata `storeId`). Billing
+      Checkout (`mode: subscription`) for SPARK / NOVA; Customer Portal for card changes,
+      upgrades, downgrades and cancelling. **Stripe Tax is on here** (`automatic_tax` for
+      Ceseelia's own GST/HST on the subscription): the opposite of the shopper-checkout rule in
+      5.4c, which still never enables it. A platform webhook endpoint (its own signing secret)
+      handles `checkout.session.completed`, `customer.subscription.*`, `invoice.paid`,
+      `invoice.payment_failed`, idempotent like 5.5.
+  - [ ] Failed payment: Stripe's automatic retries, then **7 days' grace**, then the store drops
+        to FREE (not offline). Cancel: SPARK / NOVA until the period ends, then FREE. If the
+        account already has a live FREE store, the store that dropped pauses (back to DRAFT,
+        merchant told why). Custom domain goes when the plan does.
+- [ ] P.6 Fee from the plan: `platformFeeMinor` uses the store's **admin override** if one is set
+      (the 5.1b mode / percentage / amounts, kept for negotiated deals), else the plan's default
+      (NOVA = 0). Add `admin.commissionSource: PLAN | CUSTOM` (missing = PLAN) so a store follows
+      its plan unless an admin sets a custom commission. 5.4c still copies what was used onto
+      the order.
+- [ ] P.7 FREE order limit: count paid orders per store per calendar month (UTC), bumped in 5.6.
+      Warn the merchant at 24 (80%). At 30, **7 days' grace** (orders still go through), then new
+      checkouts pause until they upgrade or the month turns. Checked only in `create-order`
+      (5.4), so a shopper already in Stripe Checkout is never stopped.
+- [ ] P.8 Admin: plan, status and subscription on Admin › Stores; admins can set the plan or a
+      custom commission; the review queue from P.4c (with Stage 8).
+- [ ] P.9 Custom domains: listed on SPARK / NOVA as "coming soon" at launch; built in 9.8.
+
+---
+
 ## 7. Stage 5 — Checkout, orders & payments
 
 - [x] 5.1 Decision (2026-11-11): **Stripe Connect, Standard accounts**, direct charges. Recorded
@@ -633,7 +708,9 @@ match the backend and webapp._
   - [ ] a. Re-quote with 4.1. Never trust client prices. Tax a delivery on the **delivery
         address's postal code** (`priceLines(..., { postalCode })`), never the cart's geo-IP
         estimate (QA Q.23); pickup uses the store's province.
-  - [ ] b. Write `ORDER#<ts>#<id>` as `PENDING_PAYMENT`.
+  - [ ] b. Write `ORDER#<ts>#<id>` as `PENDING_PAYMENT`. Pickup orders too: payments are online
+        only (no pay at pickup). Refuse unless the store is LIVE, not suspended, under its plan's
+        order limit (P.7) and `paymentsEnabled`.
   - [ ] c. Create the Checkout Session **on the connected account** (direct charge) with
         `payment_intent_data.application_fee_amount = platformFeeMinor(admin, quote)` with the
         **server's** re-quote from 5.4a, and copy `commissionMode`, `commissionPercentBps`, the
@@ -727,6 +804,7 @@ match the backend and webapp._
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | Stage P planned (§6a) with the owner: plans per store (FREE / SPARK $25 CAD·AUD, $19 USD / NOVA $49 CAD·AUD, $39 USD), one live FREE store per account, plan commissions, FREE 30 orders/month with 7 days' grace, self-serve store creation, Go Live with `runSmartStoreValidation` (AI fraud check, **TODO: empty stub for now**), Stripe Billing on the platform account, admin commission override kept. Payments online only: no pay at pickup. |
 | 2026-11-12 | 5.1b done: percentage commission. `admin.commissionMode` (`FIXED`/`PERCENT`) and `commissionPercentBps` (0–3,000); PERCENT = share of items after discounts, no tax or delivery, half up, at least the per-currency `salesCommissions`; `platformFeeMinor(admin, quote)`; 5.4c must snapshot the commission onto the order. Settles the open "percentage vs fixed" question: admins pick per store. |
 | 2026-11-11 | 5.2b: payments status adds `canManage`, `pastDue`, `pendingVerification`, `deadline`; `requirementsDue` counts currently_due ∪ past_due once (from the sandbox onboarding test). |
 | 2026-11-11 | Note for 5.4c (from the sandbox onboarding test): never enable Stripe `automatic_tax` in checkout; Ceseelia charges the quote's tax. Merchants can opt in to Stripe Tax during onboarding, so enabling it would double-tax shoppers. |

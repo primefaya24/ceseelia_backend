@@ -279,6 +279,22 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 4.3 ✅ Tax & delivery configuration in store settings (`general.taxRate`, pickup/delivery options,
     delivery fee/zones) — extend `StoreSettings` + `initStoreSettings` + validators.
 
+### Stage P — Plans, self-serve stores & Go Live (before 5.3; decided 2026-11-12)
+Full plan in `progress.md` §6a. Key rules:
+- Plans are **per store**: FREE (no fee; commission 2.95 CAD/AUD, 2.45 USD; 30 paid orders a
+  month), SPARK (25 CAD/AUD, 19 USD a month; commission 1.95 CAD/AUD, 1.45 USD; unlimited),
+  NOVA (49 CAD/AUD, 39 USD a month; no commission; unlimited). Custom domains on SPARK/NOVA are
+  "coming soon" until 9.8. No trials. At most one live FREE store per account.
+- Anyone signed in can create a store (DRAFT, FREE) and build it; only LIVE stores take orders.
+  `admin.isStoreLive` becomes `admin.suspended` (admin suspension is separate from DRAFT/LIVE).
+- Go Live re-checks the checklist on the server and calls **`runSmartStoreValidation(storeId)`**
+  (AI fraud check of the store's items). **It's an empty TODO stub that passes every store for
+  now**; once built, a flagged store goes to IN_REVIEW and an admin queue instead of LIVE.
+- Subscriptions use Stripe **Billing on the platform account** (not Connect), with Stripe Tax on
+  for Ceseelia's own GST/HST. Failed payment → retries → 7 days' grace → FREE (not offline).
+- The platform fee is the store's admin override (5.1b) if set, else the plan's default.
+- Payments are **online only**: no pay at pickup.
+
 ### Stage 5 — Checkout, orders & payments
 5.1 ✅ Payment provider (decided 2026-11-11): **Stripe Connect with Standard accounts** (owner's
     choice over Express). Merchants never hand us their secret keys (the legacy code stores
