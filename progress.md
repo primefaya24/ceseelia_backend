@@ -627,11 +627,21 @@ pickup or delivery, goes through Stripe Checkout (5.4).
     `tests/fixtures.ts` `liveStoreSettings()`.
   - **Dev note:** stores created from now on are drafts with Coming soon until Go Live (P.4)
     exists; stores created before (Northern Hoop) stay live.
-- [ ] P.3 Self-serve store creation: `POST /merchant/create-store` `{storeName, slug}` for any
+- [x] P.3 Self-serve store creation: `POST /merchant/create-store` `{storeName, slug}` for any
       signed-in user with a verified email. Creates the store (DRAFT, FREE), its slug reservation
       and an ADMIN membership in one go (reuse 1.2 / 1.8). Cap drafts per account (5) and
       rate-limit, against abuse. Supersedes 8.2's join-request approval (no admin step before
       building; the check happens at Go Live).
+      Done 2026-11-12: `POST /merchant/create-store` `{storeName, storeSlug}` (any signed-in
+      user) → `{storeId, storeName, storeSlug, status: "DRAFT", plan: "FREE"}`. `createStore`
+      takes an optional owner and writes overview + SETTINGS (`lifecycle.createdByUserId`) + slug +
+      the owner's PROFILE#INFO check + both ADMIN membership rows in **one transaction**
+      (`newStoreMembershipItems`). An account with user rows has a confirmed email (the sign-up
+      Lambda runs after confirmation), so that's the "verified" check: else 404
+      `PROFILE_NOT_FOUND`; deactivated 403. Cap: `countDraftStoresAdministeredBy` ≥ 5 → 409
+      `DRAFT_LIMIT_REACHED` (a read, not atomic; the 5-per-account-per-hour rate limit, 429
+      `RATE_LIMITED`, bounds the race). 409 `SLUG_TAKEN`. Body fields beyond name and slug are
+      ignored (no picking status, plan or owner). Tests: `tests/merchant-create-store.test.ts`.
 - [ ] P.4 Go Live:
   - [ ] a. `GET /store/go-live/checklist/:storeId` (members): name set, ≥ 1 active item with a
         price, pickup or delivery on, Stripe `chargesEnabled` (5.2), plan chosen, and for FREE
@@ -795,7 +805,8 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 - [ ] 8.1 Fill in the real admin overview (`quickStats`, `salesActivity`, store counts). Today
       they're empty objects. (WA 8.1)
-- [ ] 8.2 Merchant join requests:
+- [ ] 8.2 Merchant join requests (**superseded by P.3**, 2026-11-12: anyone can create a store;
+      checks happen at Go Live. Keep only if the owner still wants an application form):
   - [ ] a. Public `POST /merchant/join-request` (rate-limited, bot check)
   - [ ] b. Admin list, approve and deny
   - [ ] c. Approval creates the store and membership (1.4)
@@ -825,6 +836,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-12 | P.3 done: `POST /merchant/create-store` (self-serve FREE draft, caller becomes ADMIN in the same transaction; 5-draft cap, 5/hour, 409 `SLUG_TAKEN` / `DRAFT_LIMIT_REACHED`). 8.2 join requests marked superseded. |
 | 2026-11-12 | P.1 + P.2 done: plan catalogue (`layers/core/plans`); `lifecycle` (DRAFT / IN_REVIEW / LIVE + plan) on SETTINGS, old stores read as LIVE on FREE; `admin.isStoreLive` → `admin.suspended`; not-live storefront is a "Coming soon" body, item/quote/contact 404 `STORE_NOT_LIVE`. |
 | 2026-11-12 | Stage P planned (§6a) with the owner: plans per store (FREE / SPARK $25 CAD·AUD, $19 USD / NOVA $49 CAD·AUD, $39 USD), one live FREE store per account, plan commissions, FREE 30 orders/month with 7 days' grace, self-serve store creation, Go Live with `runSmartStoreValidation` (AI fraud check, **TODO: empty stub for now**), Stripe Billing on the platform account, admin commission override kept. Payments online only: no pay at pickup. |
 | 2026-11-12 | 5.1b done: percentage commission. `admin.commissionMode` (`FIXED`/`PERCENT`) and `commissionPercentBps` (0–3,000); PERCENT = share of items after discounts, no tax or delivery, half up, at least the per-currency `salesCommissions`; `platformFeeMinor(admin, quote)`; 5.4c must snapshot the commission onto the order. Settles the open "percentage vs fixed" question: admins pick per store. |

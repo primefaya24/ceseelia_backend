@@ -20,6 +20,7 @@ import {
   initStoreSettings,
   normalizeAdminSettings,
   normalizeStoreLifecycle,
+  initStoreLifecycle,
   StoreCategory,
   StoreInventoryData,
   StoreItem,
@@ -31,6 +32,7 @@ import {
 import { getStorageImageUrl } from "../../../../core/utils";
 import { publicVariants, variantsReady } from "../../../../core/variants";
 import { reserveSlugPut, SlugTakenError, slugKey, transactionFailedAt } from "../slug";
+import { newStoreMembershipItems } from "../membership";
 import { TransactWriteCommandInput } from "@aws-sdk/lib-dynamodb";
 
 // Initialize DynamoDB Document Client
@@ -128,12 +130,16 @@ async function writeStoreChild(
  */
 export async function createStore(
   storeName: string,
-  storeSlug: string
+  storeSlug: string,
+  /** Self-serve (P.3): the signed-in user who becomes the store's ADMIN, in the same transaction. */
+  owner?: { userId: string }
 ): Promise<StoreOverview> {
   try {
     const storeId: string = ULID.ulid();
+    const now = Date.now();
     const storeOverview: StoreOverview = initStore(storeId, storeName, storeSlug);
     const storeSettings: StoreSettings = initStoreSettings();
+    storeSettings.lifecycle = { ...initStoreLifecycle(now), ...(owner ? { createdByUserId: owner.userId } : {}) };
     try {
       await dynamoDbDocumentClient.send(
         new TransactWriteCommand({
@@ -161,17 +167,28 @@ export async function createStore(
               },
             },
             reserveSlugPut(storeSlug, storeId),
+            // 3: the owner's PROFILE#INFO check, then their two membership rows
+            ...(owner ? newStoreMembershipItems(storeId, owner.userId, "ADMIN", now) : []),
           ],
         })
       );
     } catch (e) {
       if (transactionFailedAt(e, 2)) throw new SlugTakenError(storeSlug);
+      if (owner && transactionFailedAt(e, 3)) throw new StoreOwnerNotFoundError();
       throw e;
     }
     return storeOverview;
   } catch (e) {
-    if (!(e instanceof SlugTakenError)) console.error("In createStore", e);
+    if (!(e instanceof SlugTakenError) && !(e instanceof StoreOwnerNotFoundError)) console.error("In createStore", e);
     throw e;
+  }
+}
+
+/* createStore's owner has no PROFILE#INFO row (P.3). */
+export class StoreOwnerNotFoundError extends Error {
+  constructor() {
+    super("Profile not found");
+    this.name = "StoreOwnerNotFoundError";
   }
 }
 

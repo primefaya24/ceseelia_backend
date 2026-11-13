@@ -241,6 +241,8 @@ export interface StoreLifecycle {
   statusChangedAt?: number;
   /** When the store first went live (ms). */
   firstLiveAt?: number;
+  /** The user who created it themselves (P.3); missing for stores an admin created. */
+  createdByUserId?: string;
 }
 
 /** A new store: a FREE draft (P.3). */
@@ -259,6 +261,7 @@ export function normalizeStoreLifecycle(raw: unknown): StoreLifecycle {
   const out: StoreLifecycle = { status, plan: isStorePlan(raw.plan) ? raw.plan : "FREE" };
   if (isFiniteNumber(raw.statusChangedAt)) out.statusChangedAt = raw.statusChangedAt;
   if (isFiniteNumber(raw.firstLiveAt)) out.firstLiveAt = raw.firstLiveAt;
+  if (typeof raw.createdByUserId === "string") out.createdByUserId = raw.createdByUserId;
   return out;
 }
 

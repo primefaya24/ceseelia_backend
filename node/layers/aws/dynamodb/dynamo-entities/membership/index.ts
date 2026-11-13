@@ -18,6 +18,7 @@ import { appConstants } from "../../../../../constants";
 import { DB_TABLE_NAME } from "../../../../../config";
 import { dynamGetManyItems } from "../../dynamo-batch-ops";
 import { queryAllWithPrefix } from "../../dynamo-query";
+import { normalizeStoreLifecycle } from "../../../../core/interfaces/store";
 
 const dynamoDbDocumentClient = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: appConstants.DEFAULT_REGION })
@@ -97,6 +98,62 @@ function failedConditionIndex(e: unknown): number {
   const err = e as { name?: string; CancellationReasons?: Array<{ Code?: string }> };
   if (err?.name !== "TransactionCanceledException") return -1;
   return (err.CancellationReasons ?? []).findIndex((r) => r?.Code === "ConditionalCheckFailed");
+}
+
+/*
+ * Transaction parts that make `userId` a member of a brand-new store (P.3): a check that the
+ * user's PROFILE#INFO exists, then both membership rows. The store's own rows are written in the
+ * same transaction by createStore, so there's no store check here.
+ */
+export function newStoreMembershipItems(storeId: string, userId: string, role: StoreRole, now = Date.now()) {
+  return [
+    {
+      ConditionCheck: {
+        TableName: TABLE,
+        Key: profileInfoKey(userId),
+        ConditionExpression: "attribute_exists(pk)",
+      },
+    },
+    {
+      Put: {
+        TableName: TABLE,
+        Item: {
+          pk: storePk(storeId),
+          sk: memberSk(userId),
+          storeMemberId: userId,
+          storeMemberPermission: role,
+          storeMemberCreatedAt: now,
+          storeMemberUpdatedAt: now,
+        },
+        ConditionExpression: "attribute_not_exists(pk)",
+      },
+    },
+    {
+      Put: {
+        TableName: TABLE,
+        Item: {
+          pk: userPk(userId),
+          sk: userStoreSk(storeId),
+          storeId,
+          storeMemberPermission: role,
+          storeMemberCreatedAt: now,
+        },
+      },
+    },
+  ];
+}
+
+/*
+ * How many DRAFT stores `userId` is a store ADMIN of (P.3's cap). Read, not counted atomically:
+ * two creates at the same instant could pass together, which the per-user rate limit keeps to
+ * a stray extra draft at worst.
+ */
+export async function countDraftStoresAdministeredBy(userId: string): Promise<number> {
+  const rows = await queryAllWithPrefix(userPk(userId), `${appConstants.DYNAMO_ENTITY_STORE}#`, TABLE);
+  const adminOf = rows.filter((r) => r.storeMemberPermission === "ADMIN").map((r) => String(r.storeId));
+  if (adminOf.length === 0) return 0;
+  const settings = await dynamGetManyItems(TABLE, adminOf.map(settingsKey));
+  return settings.filter((row) => normalizeStoreLifecycle(row.lifecycle).status === "DRAFT").length;
 }
 
 /*

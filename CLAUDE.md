@@ -164,6 +164,7 @@ export default function registerRoute(router: Router): void {
 | User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |
 | User | `PUT /user/update-profile` `{userFirstName, userLastName}` (trimmed, 1–50 chars), `PUT /user/update-fcm-token` | ✅ |
 | User | `DELETE /user/delete-user` | ⛔ disabled (501) until a full delete exists (after 1.2) |
+| Merchant | `POST /merchant/create-store` `{storeName, storeSlug}` (any signed-in user, P.3) | ✅ FREE draft + the caller as ADMIN in one transaction; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED`, 409 `SLUG_TAKEN` / `DRAFT_LIMIT_REACHED` (5 drafts), 5/account/hour → 429 |
 | Merchant | `GET /merchant/path` | ❌ template stub |
 | Customer | — | ❌ empty router |
 | Payments (5.2) | `POST /store/payments/create-connect-account-link` `{storeId, country?}` → `{url, expiresAt}` (store admins); `GET /store/payments/status/:storeId` (members) | ✅ Standard account created once per store (`country` CA/US/AU required the first time; idempotency key), fresh onboarding link per call returning to `/store/storefront/:storeId?payments=return\|refresh`; status reads Stripe, refreshes the cached flags, forgets a disconnected account. 503 `PAYMENTS_NOT_CONFIGURED`, 502 `STRIPE_ERROR`. `payments` lives in its own SETTINGS attribute; public responses get only `paymentsEnabled` |
