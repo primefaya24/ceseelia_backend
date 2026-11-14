@@ -27,7 +27,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > each currency, `admin.salesCommissions`) and 5.1a is done. 5.1b (2026-11-12) adds a per-store
 > `PERCENT` mode (see §7). 5.2 (onboarding routes, keys in
 > Secrets Manager) is done, and so is WA 5.4 (Payments card); onboarding was tested end to end
-> in the Stripe sandbox. **Next: Stage P** (§6a, plans FREE/SPARK/NOVA, self-serve stores, Go
+> in the Stripe sandbox. **Next: Stage P** (§6a, plans SPARK/NOVA (FREE dropped 2026-11-13, P.10), self-serve stores, Go
 > Live with `runSmartStoreValidation`, a TODO stub for now), then 5.3. Payments are online only
 > (no pay at pickup, owner 2026-11-12).
 > Both repos are committed on `dev_v1.0.0_customer_store_front`; nothing pushed.
