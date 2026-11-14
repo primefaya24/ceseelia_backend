@@ -13,6 +13,7 @@ import route_get_header_strip_image_upload_url from './get-header-strip-image-up
 import route_get_logo_upload_url from './get-logo-upload-url/index';
 import route_get_promo_image_upload_urls from './get-promo-image-upload-urls/index';
 import route_update_settings from './update-settings/index';
+import route_update_info from './update-info/index';
 dotenv.config();
 
 // User Router
@@ -25,6 +26,7 @@ route_get_header_strip_image_upload_url(storeRouter);
 route_get_logo_upload_url(storeRouter);
 route_get_promo_image_upload_urls(storeRouter);
 route_update_settings(storeRouter);
+route_update_info(storeRouter);
 // Paths
 storeRouter.use("/category", storeCategoryRouter);
 storeRouter.use("/inventory", storeInventoryRouter);

@@ -24,7 +24,8 @@ import { sendMembershipError, sendServerError } from "../route-errors";
  * → { result: "ADDED", userId, role }              the email has an account: member now
  * → { result: "INVITED", email, role, emailSent }  no account: pending invite + invite email;
  *                                                  joins on their first sign-in (1.4c)
- * 404 STORE_NOT_FOUND · 409 ALREADY_MEMBER
+ * 404 STORE_NOT_FOUND · 409 ALREADY_MEMBER · 409 ALREADY_IN_A_STORE (the account belongs to another
+ * store, or the email is invited to one: one store per account, P.11)
  */
 export default function registerRoute(router: Router): void {
   router.post("/assign-store-member", (req: Request, res: Response): void => {

@@ -67,8 +67,6 @@ export function setPaidPlansEnabledForTests(on: boolean): void {
 
 /** Grace after a failed subscription payment before the plan ends and the store goes back to a draft (P.5). */
 export const PLAN_PAYMENT_GRACE_DAYS = 7;
-/** Draft stores one account may have at a time (P.3), against abuse. */
-export const MAX_DRAFT_STORES_PER_ACCOUNT = 5;
 
 export function isStorePlan(v: unknown): v is StorePlan {
   return typeof v === "string" && (STORE_PLANS as readonly string[]).includes(v);

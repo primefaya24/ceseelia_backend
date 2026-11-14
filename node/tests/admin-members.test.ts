@@ -99,6 +99,19 @@ describe("POST /admin/assign-store-member", () => {
     expect(res.body.code).toBe("ALREADY_MEMBER");
   });
 
+  it("409 ALREADY_IN_A_STORE (one store per account, P.11): an account in another store, or an email invited to one", async () => {
+    vi.mocked(peekUserByEmail).mockResolvedValue([{ pk: `USER#${USER}` }]);
+    m.addStoreMember.mockRejectedValue(new MembershipError("ALREADY_IN_A_STORE", "one store"));
+    const added = await call("post", "/assign-store-member", { storeId: STORE, email: "a@b.co" });
+    expect([added.status, added.body.code]).toEqual([409, "ALREADY_IN_A_STORE"]);
+
+    vi.mocked(peekUserByEmail).mockResolvedValue([]);
+    m.inviteStoreMember.mockRejectedValue(new MembershipError("ALREADY_IN_A_STORE", "one store"));
+    const invited = await call("post", "/assign-store-member", { storeId: STORE, email: "new@x.co" });
+    expect([invited.status, invited.body.code]).toEqual([409, "ALREADY_IN_A_STORE"]);
+    expect(sendEmail).not.toHaveBeenCalled();
+  });
+
   it("invites an email with no account and sends the invite email", async () => {
     vi.mocked(peekUserByEmail).mockResolvedValue([]);
     vi.mocked(sendEmail).mockResolvedValue({ MessageId: "1" } as any);

@@ -8,6 +8,7 @@ const STATUS: Record<MembershipError["reason"], number> = {
   NOT_A_MEMBER: appConstants.HTTP_STATUS_CODE_NOT_FOUND,
   NOT_INVITED: appConstants.HTTP_STATUS_CODE_NOT_FOUND,
   ALREADY_MEMBER: appConstants.HTTP_STATUS_CODE_CONFLICT,
+  ALREADY_IN_A_STORE: appConstants.HTTP_STATUS_CODE_CONFLICT,
 };
 
 /* Answer a MembershipError with its status and `code` (the reason). Returns true if it responded. */

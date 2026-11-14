@@ -120,33 +120,40 @@ describe("updateStoreInfo moves the reservation (1.8b)", () => {
 
     expect(result).toMatchObject({ storeId: STORE, storeName: "New", storeSlug: "new-name" });
     const items = transactItems();
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(4);
     expect(items[0].Update!.Key).toEqual(OVERVIEW_KEY);
     expect(items[0].Update!.ExpressionAttributeValues![":oldSlug"]).toBe("old-name");
     expect(items[1].Put!.Item).toMatchObject({ pk: "SLUG#new-name", sk: "STORE", storeId: STORE });
     expect(items[1].Put!.ConditionExpression).toBe("attribute_not_exists(pk) OR storeId = :storeId");
-    expect(items[2].Delete!.Key).toEqual({ pk: "SLUG#old-name", sk: "STORE" });
-    expect(items[2].Delete!.ConditionExpression).toBe("storeId = :storeId");
+    // P.11: the storefront name follows, in the same transaction
+    expect(items[2].Update).toMatchObject({
+      Key: { pk: `STORE#${STORE}`, sk: "SETTINGS" },
+      UpdateExpression: "SET #storeInfo.#storeName = :storeName",
+      ExpressionAttributeValues: { ":storeName": "New" },
+      ConditionExpression: "attribute_exists(pk)",
+    });
+    expect(items[3].Delete!.Key).toEqual({ pk: "SLUG#old-name", sk: "STORE" });
+    expect(items[3].Delete!.ConditionExpression).toBe("storeId = :storeId");
   });
 
   it("same slug (name-only change): re-reserves it, releases nothing", async () => {
     world({ owners: { "old-name": STORE } });
     ddb.on(TransactWriteCommand).resolves({});
     await updateStoreInfo(STORE, "Renamed", "old-name");
-    expect(transactItems().map((t) => Object.keys(t)[0])).toEqual(["Update", "Put"]);
+    expect(transactItems().map((t) => Object.keys(t)[0])).toEqual(["Update", "Put", "Update"]);
   });
 
   it("doesn't release an old slug that another store holds (or nobody does)", async () => {
     world({ owners: { "old-name": OTHER } });
     ddb.on(TransactWriteCommand).resolves({});
     await updateStoreInfo(STORE, "New", "new-name");
-    expect(transactItems()).toHaveLength(2);
+    expect(transactItems()).toHaveLength(3);
 
     ddb.reset();
     world({ owners: {} });
     ddb.on(TransactWriteCommand).resolves({});
     await updateStoreInfo(STORE, "New", "new-name");
-    expect(transactItems()).toHaveLength(2);
+    expect(transactItems()).toHaveLength(3);
   });
 
   it("throws SlugTakenError when the new slug is held by another store", async () => {
@@ -176,6 +183,22 @@ describe("updateStoreInfo moves the reservation (1.8b)", () => {
     ddb.on(GetCommand).resolves({});
     await expect(updateStoreInfo(STORE, "New", "new-name")).rejects.toBeInstanceOf(StoreRecordNotFoundError);
     expect(ddb.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("throws StoreRecordNotFoundError when the SETTINGS row is gone (P.11)", async () => {
+    world({ owners: { "old-name": STORE } });
+    ddb.on(TransactWriteCommand).rejects(cancelled(["None", "None", "ConditionalCheckFailed", "None"]));
+    await expect(updateStoreInfo(STORE, "New", "new-name")).rejects.toBeInstanceOf(StoreRecordNotFoundError);
+  });
+
+  it("retries when the old slug's release fails (taken from us in between)", async () => {
+    world({ owners: { "old-name": STORE } });
+    ddb
+      .on(TransactWriteCommand)
+      .rejectsOnce(cancelled(["None", "None", "None", "ConditionalCheckFailed"]))
+      .resolves({});
+    await updateStoreInfo(STORE, "New", "new-name");
+    expect(ddb.commandCalls(TransactWriteCommand)).toHaveLength(2);
   });
 
   it("route maps them to 409 / 404 / 200", async () => {

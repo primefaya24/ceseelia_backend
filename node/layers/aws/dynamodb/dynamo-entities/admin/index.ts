@@ -90,9 +90,10 @@ export async function getAllStores() {
 }
 
 /*
- * Rename a store and/or change its slug (1.8). In one transaction: update the overview row (only
- * if its slug is still the one we read), reserve the new slug, and release the old one when it
- * was ours. Throws StoreRecordNotFoundError (404) or SlugTakenError (409).
+ * Rename a store and/or change its slug (1.8; store admins too since P.11). In one transaction:
+ * update the overview row (only if its slug is still the one we read), reserve the new slug, set
+ * the storefront name (SETTINGS storeInfo.storeName) to the same name, and release the old slug
+ * when it was ours. Throws StoreRecordNotFoundError (404) or SlugTakenError (409).
  */
 export async function updateStoreInfo(
   storeId: string,
@@ -128,9 +129,24 @@ export async function updateStoreInfo(
           },
         },
         reserveSlugPut(storeSlug, storeId),
+        // The storefront shows storeInfo.storeName: one name for the store everywhere (P.11)
+        {
+          Update: {
+            TableName: DEFAULT_TABLE_NAME,
+            Key: {
+              pk: `${appConstants.DYNAMO_ENTITY_STORE}#${storeId}`,
+              sk: appConstants.DYNAMO_ENTITY_SETTINGS,
+            },
+            ConditionExpression: "attribute_exists(pk)",
+            UpdateExpression: "SET #storeInfo.#storeName = :storeName",
+            ExpressionAttributeNames: { "#storeInfo": "storeInfo", "#storeName": "storeName" },
+            ExpressionAttributeValues: { ":storeName": storeName },
+          },
+        },
       ];
       // Release the old slug only if it's ours (before the backfill, or for stores that shared a
-      // slug, it may be unreserved or held by another store).
+      // slug, it may be unreserved or held by another store). Once released, anyone may take it:
+      // old links stop working (owner, 2026-11-13, P.11).
       if (oldSlug && oldSlug !== storeSlug && (await getSlugOwner(oldSlug)) === storeId) {
         transactItems.push(releaseSlugDelete(oldSlug, storeId));
       }
@@ -139,7 +155,8 @@ export async function updateStoreInfo(
         await dynamoDbDocumentClient.send(new TransactWriteCommand({ TransactItems: transactItems }));
       } catch (e) {
         if (transactionFailedAt(e, 1)) throw new SlugTakenError(storeSlug);
-        if (transactionFailedAt(e, 0) || transactionFailedAt(e, 2)) continue; // changed under us
+        if (transactionFailedAt(e, 2)) throw new StoreRecordNotFoundError("Store");
+        if (transactionFailedAt(e, 0) || transactionFailedAt(e, 3)) continue; // changed under us
         throw e;
       }
 

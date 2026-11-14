@@ -30,7 +30,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > in the Stripe sandbox. **Next: Stage P** (§6a, plans SPARK/NOVA (FREE dropped 2026-11-13, P.10), self-serve stores, Go
 > Live with `runSmartStoreValidation`, a TODO stub for now), then 5.3. Payments are online only
 > (no pay at pickup, owner 2026-11-12).
-> Both repos are committed on `dev_v1.0.0_customer_store_front`; nothing pushed.
+> Both repos are on `dev_v1.0.0_customer_store_front`, pushed to origin.
 
 > **2026-11-13: no Free plan any more (P.10).** Only Spark and Nova. A new store is a draft with
 > no plan (`plan: "NONE"`), visible to its members only; going live and subscribing are one step
@@ -40,7 +40,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > order limit) is dropped. `scripts/migrate-free-plan.mjs --write` was run on dev (2026-11-13:
 > the 4 dev stores are now drafts with no plan).
 >
-> **Pick up here (2026-11-12):** Stages S, 0–4 and **Stage P (P.1–P.6, P.8, P.10)** are done in both
+> **Pick up here (2026-11-12):** Stages S, 0–4 and **Stage P (P.1–P.6, P.8, P.10, P.11)** are done in both
 > repos, plus 5.1 (Stripe Connect Standard, commission rules) and 5.2 (merchant onboarding).
 > Latest commits: see `git log` (P.8 is the last one). **Next steps, in order:**
 > 0. **Owner's Stage P QA in the UI** (`../ceseelia_webapp/progress.md` §1b) before checkout.
@@ -830,6 +830,23 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         without a plan takes no orders anyway). Admin settings GET: `planCommissions: null` on NONE.
       - `scripts/migrate-free-plan.mjs` rewrites stored lifecycles to the new shape (dry run by
         default; `--write`). Needed because conditional writes compare the stored plan/status.
+- [x] P.11 **One store per account; store admins rename their store** (owner, 2026-11-13, from
+      Stage P QA). Done 2026-11-13:
+      - One store per account, any role: `POST /merchant/create-store` → 409 `ALREADY_IN_A_STORE`
+        when the caller has a USER#/STORE# row (replaces P.3's 5-draft cap;
+        `MAX_DRAFT_STORES_PER_ACCOUNT` / `countDraftStoresAdministeredBy` removed). A second store
+        needs a second account. `addStoreMember` refuses a user in another store and
+        `inviteStoreMember` an email invited to another store (`MembershipError`
+        `ALREADY_IN_A_STORE`, 409 on `/admin/assign-store-member`); `claimStoreInvites` claims
+        one invite at most and removes the rest. Read-then-write, like the old cap (rate limits
+        keep a same-instant double rare). Accounts that already had several stores keep them.
+      - `POST /store/update-info` `{storeId, storeName, storeSlug}` for the store's ADMINs (and
+        platform admins): reuses `updateStoreInfo`, which now also sets SETTINGS
+        `storeInfo.storeName` in the same transaction (one name everywhere). 409 `SLUG_TAKEN`,
+        404 `STORE_NOT_FOUND`, 10 saves per store per hour (429). The old slug is released at
+        once (owner): old links and QR codes stop working, anyone may take it.
+      - `/store/update-settings` copies a non-empty `storeInfo.storeName` to the overview row
+        after saving (best effort), so Profile / Overview / Admin › Stores follow the storefront.
 
 ---
 
@@ -985,6 +1002,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-13 | P.11 (owner, from Stage P QA): one store per account in any role (`ALREADY_IN_A_STORE` on create-store, assign member, invite; 5-draft cap removed); `POST /store/update-info` lets store admins change name and link (old slug freed at once); settings save keeps the overview name in step with the storefront name. |
 | 2026-11-13 | P.10: Free plan dropped (owner). Only Spark / Nova; new stores are DRAFT with plan NONE; Go Live = checkout; a plan that ends (cancel at period end, payment lost after grace, admin removal) sends a live store back to DRAFT (`PLAN_ENDED`). `/store/billing/checkout` removed, P.7 dropped, migration script `scripts/migrate-free-plan.mjs` added and run on dev (4 stores → DRAFT / NONE). |
 | 2026-11-12 | "Pick up here" refreshed for the next session: Stage 5 checkout (5.3–5.4) next, then P.7; owner TODOs listed (AI check, Stripe Billing setup). |
 | 2026-11-12 | P.8 done: admin store list with status / plan / billing, review queue (`APP_REVIEW`, get-review-queue, review-store approve/reject), set-store-plan (gift a plan, no checkout needed at Go Live); store delete cleans the admin-list rows. |

@@ -12,13 +12,17 @@
 //   INVITE#<email>   / STORE#<storeId>  { storeId, storeMemberPermission, created }
 // The first lists a store's invites, the second finds them when that email signs up.
 // claimStoreInvites turns them into memberships on the user's first get-my-profile.
+//
+// One store per account (owner, 2026-11-13, P.11): an account belongs to at most one store, in
+// any role. Someone who wants a second store makes a second account. Checked by reading the
+// user's STORE# rows before writing (create-store, addStoreMember, invites, claims), like P.3's
+// old draft cap: two writes at the same instant could both pass, which the rate limits keep rare.
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient, GetCommand, QueryCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
 import { appConstants } from "../../../../../constants";
 import { DB_TABLE_NAME } from "../../../../../config";
 import { dynamGetManyItems } from "../../dynamo-batch-ops";
 import { queryAllWithPrefix } from "../../dynamo-query";
-import { normalizeStoreLifecycle } from "../../../../core/interfaces/store";
 
 const dynamoDbDocumentClient = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: appConstants.DEFAULT_REGION })
@@ -65,7 +69,13 @@ export interface StoreInvite {
 
 export class MembershipError extends Error {
   constructor(
-    readonly reason: "STORE_NOT_FOUND" | "USER_NOT_FOUND" | "ALREADY_MEMBER" | "NOT_A_MEMBER" | "NOT_INVITED",
+    readonly reason:
+      | "STORE_NOT_FOUND"
+      | "USER_NOT_FOUND"
+      | "ALREADY_MEMBER"
+      | "ALREADY_IN_A_STORE"
+      | "NOT_A_MEMBER"
+      | "NOT_INVITED",
     message: string
   ) {
     super(message);
@@ -144,25 +154,34 @@ export function newStoreMembershipItems(storeId: string, userId: string, role: S
 }
 
 /*
- * How many DRAFT stores `userId` is a store ADMIN of (P.3's cap). Read, not counted atomically:
- * two creates at the same instant could pass together, which the per-user rate limit keeps to
- * a stray extra draft at worst.
+ * The stores `userId` belongs to (any role), from their USER#/STORE# rows. Store delete removes
+ * those rows, so a deleted store doesn't count. One store per account (P.11): at most one id.
  */
-export async function countDraftStoresAdministeredBy(userId: string): Promise<number> {
+export async function userStoreIds(userId: string): Promise<string[]> {
   const rows = await queryAllWithPrefix(userPk(userId), `${appConstants.DYNAMO_ENTITY_STORE}#`, TABLE);
-  const adminOf = rows.filter((r) => r.storeMemberPermission === "ADMIN").map((r) => String(r.storeId));
-  if (adminOf.length === 0) return 0;
-  const settings = await dynamGetManyItems(TABLE, adminOf.map(settingsKey));
-  return settings.filter((row) => normalizeStoreLifecycle(row.lifecycle).status === "DRAFT").length;
+  return rows.map((r) => String(r.storeId));
 }
+
+/* The stores `email` has a pending invite to (P.11: an email may be invited to one store only). */
+export async function pendingInviteStoreIds(rawEmail: string): Promise<string[]> {
+  const email = normalizeEmail(rawEmail);
+  const rows = await queryAllWithPrefix(invitePk(email), `${appConstants.DYNAMO_ENTITY_STORE}#`, TABLE);
+  return rows.map((r) => String(r.storeId));
+}
+
+export const ALREADY_IN_A_STORE_MESSAGE = "This account already belongs to a store. Each account can have one store.";
 
 /*
  * Make a user a member of a store. Both the store (SETTINGS row) and the user (PROFILE#INFO) must
- * exist. Throws MembershipError if either is missing or the user is already a member.
+ * exist. Throws MembershipError if either is missing, the user is already a member, or they
+ * belong to another store (ALREADY_IN_A_STORE, P.11).
  */
 export async function addStoreMember(storeId: string, userId: string, role: StoreRole): Promise<Membership> {
   if (!STORE_ROLES.includes(role)) {
     throw new Error(`Unknown store role: ${role}`);
+  }
+  if ((await userStoreIds(userId)).some((id) => id !== storeId)) {
+    throw new MembershipError("ALREADY_IN_A_STORE", ALREADY_IN_A_STORE_MESSAGE);
   }
   const now = Date.now();
   try {
@@ -328,13 +347,17 @@ export async function getStoreOverviewRow(storeId: string): Promise<Record<strin
 /*
  * Invite an email that has no account yet. Inviting the same email to the same store again
  * replaces the invite (new role, new date), so an admin can simply resend it.
- * Throws MembershipError STORE_NOT_FOUND if the store doesn't exist.
+ * Throws MembershipError STORE_NOT_FOUND if the store doesn't exist, ALREADY_IN_A_STORE if the
+ * email already has an invite to another store (P.11: the account it becomes joins one store).
  */
 export async function inviteStoreMember(storeId: string, rawEmail: string, role: StoreRole): Promise<StoreInvite> {
   if (!STORE_ROLES.includes(role)) {
     throw new Error(`Unknown store role: ${role}`);
   }
   const email = normalizeEmail(rawEmail);
+  if ((await pendingInviteStoreIds(email)).some((id) => id !== storeId)) {
+    throw new MembershipError("ALREADY_IN_A_STORE", "This email already has an invite to another store.");
+  }
   const now = Date.now();
   try {
     await dynamoDbDocumentClient.send(
@@ -420,7 +443,9 @@ export async function listStoreInvites(storeId: string): Promise<StoreInvite[]> 
  * the email must be the user's verified one, from their profile, never from a request).
  * Each invite is claimed in its own transaction: invite rows deleted and membership rows written
  * together. An invite to a store that's gone, or one the user already belongs to, is just
- * removed. Returns the store IDs joined.
+ * removed. One store per account (P.11): once the user belongs to a store, any other invite is
+ * removed instead of claimed (invites are refused up front, so that's only older ones).
+ * Returns the store IDs joined.
  */
 export async function claimStoreInvites(userId: string, rawEmail: string): Promise<string[]> {
   const email = normalizeEmail(rawEmail ?? "");
@@ -433,11 +458,18 @@ export async function claimStoreInvites(userId: string, rawEmail: string): Promi
       ExpressionAttributeValues: { ":pk": invitePk(email) },
     })
   );
+  const invites = res.Items ?? [];
+  if (invites.length === 0) return [];
   const joined: string[] = [];
-  for (const invite of res.Items ?? []) {
+  let hasStore = (await userStoreIds(userId)).length > 0;
+  for (const invite of invites) {
     const storeId: string = invite.storeId;
     const role: StoreRole = invite.storeMemberPermission;
     const now = Date.now();
+    if (hasStore) {
+      await dynamoDbDocumentClient.send(new TransactWriteCommand({ TransactItems: inviteDeletes(storeId, email, false) }));
+      continue;
+    }
     try {
       await dynamoDbDocumentClient.send(
         new TransactWriteCommand({
@@ -468,6 +500,7 @@ export async function claimStoreInvites(userId: string, rawEmail: string): Promi
         })
       );
       joined.push(storeId);
+      hasStore = true;
     } catch (e) {
       const failed = failedConditionIndex(e);
       if (failed === 0 || failed === 3) {

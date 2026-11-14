@@ -4,9 +4,8 @@ import { MAX_LENGTH } from "../../../../constants/input-limits";
 import { isValidSlug } from "../../../../constants/slug";
 import { getAuth, validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { createRateLimiter } from "../../../../layers/core/http/rate-limit";
-import { MAX_DRAFT_STORES_PER_ACCOUNT } from "../../../../layers/core/plans";
 import { createStore, StoreOwnerNotFoundError } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
-import { countDraftStoresAdministeredBy } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
+import { ALREADY_IN_A_STORE_MESSAGE, userStoreIds } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
 import { SlugTakenError } from "../../../../layers/aws/dynamodb/dynamo-entities/slug";
 import { findUserIdByCognitoId, UserDeactivatedError } from "../../../../layers/aws/dynamodb/dynamo-entities/user";
 import { ACCOUNT_DEACTIVATED, PROFILE_NOT_FOUND } from "../../user/user-errors";
@@ -23,7 +22,9 @@ import { ACCOUNT_DEACTIVATED, PROFILE_NOT_FOUND } from "../../user/user-errors";
  * - The account must have its user rows (the sign-up Lambda writes them after the email is
  *   confirmed, so an account with rows has a verified email): else 404 PROFILE_NOT_FOUND.
  *   Deactivated: 403 ACCOUNT_DEACTIVATED.
- * - At most MAX_DRAFT_STORES_PER_ACCOUNT (5) drafts the caller is ADMIN of: 409 DRAFT_LIMIT_REACHED.
+ * - One store per account (owner, 2026-11-13, P.11; replaces P.3's 5-draft cap): if the caller
+ *   already belongs to a store, in any role, 409 ALREADY_IN_A_STORE. A second store needs a
+ *   second account.
  * - 5 creates per account per hour: 429 RATE_LIMITED with Retry-After.
  * - Slug already reserved: 409 SLUG_TAKEN. Same name / slug rules as the admin's /store/create.
  */
@@ -65,11 +66,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    if ((await countDraftStoresAdministeredBy(userId)) >= MAX_DRAFT_STORES_PER_ACCOUNT) {
+    if ((await userStoreIds(userId)).length > 0) {
       res.status(appConstants.HTTP_STATUS_CODE_CONFLICT).send({
-        message: `You can have up to ${MAX_DRAFT_STORES_PER_ACCOUNT} stores that aren't live yet.`,
-        code: "DRAFT_LIMIT_REACHED",
-        limit: MAX_DRAFT_STORES_PER_ACCOUNT,
+        message: ALREADY_IN_A_STORE_MESSAGE,
+        code: "ALREADY_IN_A_STORE",
       });
       return;
     }

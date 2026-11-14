@@ -671,6 +671,35 @@ export async function updateStoreSettings(
     if (isConditionalCheckFailure(e)) throw new StoreRecordNotFoundError("Store");
     throw e;
   }
+  await syncOverviewStoreName(storeId, storeSettings.storeInfo?.storeName);
+}
+
+/*
+ * One name for the store (P.11): the editor's store name (storeInfo.storeName) is also the name
+ * on the overview row, which Profile, Merchant › Overview and Admin › Stores show. Best effort
+ * after the settings save: a failure is logged, never reported (the storefront has the new name;
+ * the next save tries again). An empty name isn't copied (Go Live asks for one).
+ */
+async function syncOverviewStoreName(storeId: string, rawName: unknown): Promise<void> {
+  const storeName = typeof rawName === "string" ? rawName.trim() : "";
+  if (!storeName) return;
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        Key: {
+          pk: appConstants.DYNAMO_ENTITY_APP_STORE,
+          sk: `${appConstants.DYNAMO_ENTITY_STORE}#${storeId}#${appConstants.DYNAMO_ENTITY_OVERVIEW}`,
+        },
+        UpdateExpression: "SET #storeName = :storeName",
+        ConditionExpression: "attribute_exists(pk) AND #storeName <> :storeName",
+        ExpressionAttributeNames: { "#storeName": "storeName" },
+        ExpressionAttributeValues: { ":storeName": storeName },
+      })
+    );
+  } catch (e) {
+    if (!isConditionalCheckFailure(e)) console.error("In syncOverviewStoreName", e);
+  }
 }
 
 ////////////////////////////////////////

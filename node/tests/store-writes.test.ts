@@ -72,6 +72,33 @@ describe("store settings writes", () => {
     ddb.on(UpdateCommand).rejects(conditionFailed());
     await expect(updateStoreSettings("S1", initStoreSettings())).rejects.toThrow(StoreRecordNotFoundError);
   });
+
+  it("copies the storefront name to the overview row (P.11), only when it changed and isn't empty", async () => {
+    ddb.on(UpdateCommand).resolves({});
+    const settings = initStoreSettings();
+    settings.storeInfo.storeName = "  Northern Hoop ";
+    await updateStoreSettings("S1", settings);
+    const sync = ddb.commandCalls(UpdateCommand)[1].args[0].input;
+    expect(sync).toMatchObject({
+      Key: { pk: "APP_STORE", sk: "STORE#S1#OVERVIEW" },
+      UpdateExpression: "SET #storeName = :storeName",
+      ConditionExpression: "attribute_exists(pk) AND #storeName <> :storeName",
+      ExpressionAttributeValues: { ":storeName": "Northern Hoop" },
+    });
+
+    ddb.reset();
+    ddb.on(UpdateCommand).resolves({});
+    settings.storeInfo.storeName = "   ";
+    await updateStoreSettings("S1", settings);
+    expect(ddb.commandCalls(UpdateCommand)).toHaveLength(1);
+  });
+
+  it("a failed name copy never fails the settings save", async () => {
+    ddb.on(UpdateCommand).resolvesOnce({}).rejects(new Error("throttled"));
+    const settings = initStoreSettings();
+    settings.storeInfo.storeName = "Hoop";
+    await expect(updateStoreSettings("S1", settings)).resolves.toBeUndefined();
+  });
 });
 
 describe.each([
