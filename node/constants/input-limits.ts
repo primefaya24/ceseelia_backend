@@ -26,6 +26,11 @@ export const MAX_LENGTH = {
   templateId: 40,
   currencySign: 5,
   contactMessage: 2000,
+  // Checkout (5.4): the shopper's delivery address and a note to the store
+  addressLine: 120,
+  city: 60,
+  region: 60,
+  orderNote: 500,
 } as const;
 
 /*

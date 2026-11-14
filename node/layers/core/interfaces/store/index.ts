@@ -1138,42 +1138,83 @@ export interface StoreMember {
 }
 
 /*
- * Store Orders
+ * Store Orders (5.3). STORE#<storeId> / ORDER#<createdAt>#<orderId>, plus a pointer row
+ * ORDER#<orderId> / ORDER → { storeId, sk } so the webhook and the shopper's status link find an
+ * order by its id. Guest checkout (owner, 2026-11-13): no shopper account; the shopper follows
+ * the order with a status token (only its SHA-256 is stored). Amounts are minor units in
+ * `storeOrderCurrency`, copied from the server's re-quote at checkout and never recomputed.
  */
-// STORE#STORE_ID, ORDER#CREATE_AT_TIMESTAMP (For Sales acitivty graph), (TEST_ORDER#ORDER_ID)
-export interface StoreOrder {
-  storeOrderId: string;
-  storeOrderCode: string;
-  storeOrderType: "DELIVERY" | "PICKUP";
-  storeOrderStatus: boolean;
-  storeOrderStoreName: string;
-  storeOrderCustomerName: string;
-  storeOrderCustomerEmailAddress: string;
-  storeOrderCustomerPhoneNumber: string;
-  storeOrderCustomerShippingCountry: string;
-  storeOrderCustomerShippingState: string;
-  storeOrderCustomerShippingCity: string;
-  storeOrderCustomerShippingAddressStreetNumber: string;
-  storeOrderCustomerAuthenticatedUserId: string;
-  storeOrderStatusCustomerUpdate: boolean;
-  storeOrderItems: StoreOrderItem[];
-  storeOrderNote: string;
-  storeOrderSubtotalAmount: number;
-  storeOrderDeliveryAmount: number;
-  storeOrderHandlingAmount: number;
-  storeOrderTaxAmount: number;
-  storeOrderCreatedAt: number;
-  storeOrderUpdatedAt: number;
+export const STORE_ORDER_STATUSES = [
+  "PENDING_PAYMENT",
+  "PAID",
+  "PREPARING",
+  "READY",
+  "SHIPPED",
+  "COMPLETED",
+  "CANCELLED",
+  "REFUNDED",
+] as const;
+export type StoreOrderStatus = (typeof STORE_ORDER_STATUSES)[number];
+export type StoreOrderType = "DELIVERY" | "PICKUP";
+
+/** Why an order was cancelled (5.5 / 5.7 / 6.x). */
+export type StoreOrderCancelReason = "PAYMENT_EXPIRED" | "PAYMENT_FAILED" | "OUT_OF_STOCK" | "MERCHANT";
+
+export interface StoreOrderAddress {
+  line1: string;
+  line2: string;
+  city: string;
+  /** Province / state code or name. */
+  region: string;
+  postalCode: string;
+  /** ISO 3166-1 alpha-2: CA, US or AU. */
+  country: string;
 }
 
-export interface StoreOrderItem {
-  id: string;
-  price: number;
-  parameters: {
-    id: string;
-    label: string;
-    value: string;
-  }[];
+/** A priced line as the order keeps it (from `PricedLine`). */
+export interface StoreOrderLine {
+  itemId: string;
+  itemName: string;
+  quantity: number;
+  params: { label: string; values: string[] }[];
+  unitPriceMinor: number;
+  discountPercent: number;
+  subtotalMinor: number;
+  discountMinor: number;
+  totalMinor: number;
+}
+
+export interface StoreOrder {
+  storeOrderId: string;
+  storeId: string;
+  /** Short code for people (receipts, the merchant's list), e.g. "K7Q2XM". Not unique-checked. */
+  storeOrderCode: string;
+  storeOrderStatus: StoreOrderStatus;
+  storeOrderCancelReason?: StoreOrderCancelReason;
+  storeOrderType: StoreOrderType;
+  storeOrderCurrency: string;
+  storeOrderCustomer: { name: string; email: string; phone: string };
+  /** DELIVERY only. */
+  storeOrderAddress: StoreOrderAddress | null;
+  storeOrderNote: string;
+  storeOrderLines: StoreOrderLine[];
+  storeOrderSubtotalMinor: number;
+  storeOrderDiscountMinor: number;
+  storeOrderDeliveryMinor: number;
+  storeOrderTaxMinor: number;
+  storeOrderTaxLines: { code: string; label: string; percent: number; minor: number }[];
+  storeOrderTaxRegion: { province: string; name: string; estimated: boolean } | null;
+  storeOrderPricesIncludeTax: boolean;
+  storeOrderTotalMinor: number;
+  /** The commission in effect when the order was placed (P.6 / 5.1b), and the fee it gave. */
+  storeOrderCommission: CommissionInEffect;
+  storeOrderPlatformFeeMinor: number;
+  storeOrderStripe: { accountId: string; checkoutSessionId: string; paymentIntentId: string };
+  /** SHA-256 (hex) of the shopper's status token. Never returned. */
+  storeOrderStatusTokenHash: string;
+  storeOrderCreatedAt: number;
+  storeOrderUpdatedAt: number;
+  storeOrderPaidAt?: number;
 }
 
 // APP, ORDER#CREATE_AT_TIMESTAMP#STORE#STORE_ID (For Sales acitivty graph)

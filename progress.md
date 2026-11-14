@@ -45,8 +45,10 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > Latest commits: see `git log` (P.8 is the last one). **Next steps, in order:**
 > 0. ~~Owner's Stage P QA in the UI~~ done 2026-11-13 (`../ceseelia_webapp/progress.md` §1b,
 >    all passed, paid plans included; P.11 came out of it).
-> 1. **Stage 5 checkout: 5.3 `POST /customer/create-order` + 5.4 Checkout Session and the
->    Connect webhook** (WA 5.1 checkout page, 5.2 redirect/return). Rules already decided:
+> 1. **Stage 5 checkout.** 5.3 (order model) and 5.4 (`POST /customer/create-order`, guest
+>    checkout, Checkout Session on the connected account) are **done 2026-11-13**. Next: **5.5
+>    the Connect webhook** (paid / expired / failed onto the order) and 5.6 on-paid, with WA 5.1
+>    checkout page and 5.2 redirect/return. Rules already decided:
 >    re-quote on the server with the delivery postal code; refuse unless the store is LIVE, not
 >    suspended and `paymentsEnabled`; fee = `platformFeeForStore(admin, lifecycle.plan, quote)`
 >    and save `commissionInEffect(...)` on the order (P.6); direct charge on the connected
@@ -900,16 +902,29 @@ pickup or delivery, goes through Stripe Checkout (5.4).
   - [ ] e. Prod: create `ceseelia/prod/stripe` with a **restricted** live key (`rk_live_…`,
         IP-allowlisted) and give the EC2 instance role `secretsmanager:GetSecretValue` on that
         secret only. Before launch (Stage 9).
-- [ ] 5.3 Order model: `StoreOrderStatus` enum replaces the boolean
-      (`PENDING_PAYMENT → PAID → PREPARING → READY/SHIPPED → COMPLETED`, `CANCELLED`, `REFUNDED`).
-- [ ] 5.4 `POST /customer/create-order`:
-  - [ ] a. Re-quote with 4.1. Never trust client prices. Tax a delivery on the **delivery
+- [x] 5.3 Order model (done 2026-11-13): `StoreOrderStatus` enum replaces the boolean
+      (`PENDING_PAYMENT → PAID → PREPARING → READY/SHIPPED → COMPLETED`, `CANCELLED`, `REFUNDED`;
+      `storeOrderCancelReason` PAYMENT_EXPIRED / PAYMENT_FAILED / OUT_OF_STOCK / MERCHANT).
+      `STORE#id / ORDER#<createdAt>#<orderId>` plus a pointer `ORDER#<orderId> / ORDER`
+      `{storeId, orderSk}` (`dynamo-entities/order`: `createOrderRecords`, `getOrderById`).
+      **Guest checkout** (owner, 2026-11-13): customer name / email / phone, address only for
+      delivery (CA / US / AU; CA only for a Canada-taxed store), typed on **our** checkout form
+      (owner) so the server's quote is final before Stripe. A random status token is returned
+      once; the order keeps its SHA-256. 6-character order code for people.
+- [x] 5.4 `POST /customer/create-order` (done 2026-11-13; details in the route's header). The
+      client sends `expectedTotalMinor` (the total it showed): a different server total is 409
+      `PRICE_CHANGED` with the new quote. Also 409 `CART_INVALID {quote}`, `PAYMENTS_UNAVAILABLE`,
+      `DELIVERY_COUNTRY`, `BELOW_MINIMUM` (Stripe's 0.50); 10/IP/10 min. The session is created
+      first (idempotency key per order id) and the order saved with its id; a failed save
+      expires the session. `layers/payments/order-checkout.ts` builds the session: one line per
+      order line (its total, quantity 1), delivery, each tax part; tested to sum to the quote.
+  - [x] a. Re-quote with 4.1. Never trust client prices. Tax a delivery on the **delivery
         address's postal code** (`priceLines(..., { postalCode })`), never the cart's geo-IP
         estimate (QA Q.23); pickup uses the store's province.
-  - [ ] b. Write `ORDER#<ts>#<id>` as `PENDING_PAYMENT`. Pickup orders too: payments are online
-        only (no pay at pickup). Refuse unless the store is LIVE, not suspended, under its plan's
-        order limit (P.7) and `paymentsEnabled`.
-  - [ ] c. Create the Checkout Session **on the connected account** (direct charge) with
+  - [x] b. Write `ORDER#<ts>#<id>` as `PENDING_PAYMENT`. Pickup orders too: payments are online
+        only (no pay at pickup). Refuse unless the store is LIVE, not suspended and
+        `paymentsEnabled` (P.7's order limit was dropped with the Free plan).
+  - [x] c. Create the Checkout Session **on the connected account** (direct charge) with
         `payment_intent_data.application_fee_amount = platformFeeMinor(admin, quote)` with the
         **server's** re-quote from 5.4a, and copy `commissionMode`, `commissionPercentBps`, the
         minimum/fixed amount and the fee onto the order (5.1b), so later admin changes don't
@@ -921,7 +936,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         (double tax) and bill the merchant Stripe Tax fees. Add a test that the session params
         have no `automatic_tax` / `tax_id_collection` and that the session total equals the
         quote total.
-  - [ ] d. Return the URL and an order-status token. (WA 5.2)
+  - [x] d. Return the URL and an order-status token. (WA 5.2)
 - [ ] 5.5 Webhook rewrite:
   - [ ] a. A **Connect** webhook endpoint (direct charges' events come from the connected
         account; `event.account` → store). Verify with its signing secret, keeping the raw body.
@@ -1003,6 +1018,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-13 | 5.3 + 5.4 done: order model (status enum, pointer row, guest customer, status token hash), `POST /customer/create-order` (re-quote with the delivery postal code, `PRICE_CHANGED` guard, direct-charge Checkout Session with `application_fee_amount`, no `automatic_tax`, session total = quote total). Owner: guest checkout, address on our form. Next: 5.5 Connect webhook. |
 | 2026-11-13 | Stage P QA done by the owner (WA §1b): everything passed, paid plans included. Next: 5.3 / 5.4 checkout. |
 | 2026-11-13 | P.11 (owner, from Stage P QA): one store per account in any role (`ALREADY_IN_A_STORE` on create-store, assign member, invite; 5-draft cap removed); `POST /store/update-info` lets store admins change name and link (old slug freed at once); settings save keeps the overview name in step with the storefront name. |
 | 2026-11-13 | P.10: Free plan dropped (owner). Only Spark / Nova; new stores are DRAFT with plan NONE; Go Live = checkout; a plan that ends (cancel at period end, payment lost after grace, admin removal) sends a live store back to DRAFT (`PLAN_ENDED`). `/store/billing/checkout` removed, P.7 dropped, migration script `scripts/migrate-free-plan.mjs` added and run on dev (4 stores → DRAFT / NONE). |

@@ -36,7 +36,8 @@ export default function registerRoute(router: Router): void {
 
 const isString = (v: unknown): v is string => typeof v === "string";
 
-function isLinePure(l: unknown): boolean {
+/* A cart line's types (shared with create-order, 5.4). */
+export function isLinePure(l: unknown): boolean {
   const line = l as QuoteLineInput;
   return (
     typeof line === "object" &&
@@ -69,10 +70,12 @@ function pureRequestParams(req: Request): boolean {
 
 /* Sizes only; what the items allow is priceLines' job (it answers per line). */
 function validRequestParams(req: Request): boolean {
-  const lines = req.body.lines as QuoteLineInput[];
+  return isUlid(req.body.storeId) && req.body.currency.length <= 3 && cartLinesWithinLimits(req.body.lines);
+}
+
+/* A cart's sizes (shared with create-order, 5.4). */
+export function cartLinesWithinLimits(lines: QuoteLineInput[]): boolean {
   return (
-    isUlid(req.body.storeId) &&
-    req.body.currency.length <= 3 &&
     lines.length <= MAX_COUNT.cartLines &&
     lines.every(
       (l) =>
