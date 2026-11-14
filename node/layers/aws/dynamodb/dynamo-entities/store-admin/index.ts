@@ -18,6 +18,7 @@ import {
 } from "../../../../core/interfaces/store";
 import { StoreStatusChangedError, reviewQueueKey } from "../store";
 import { transactionFailedAt } from "../slug";
+import { toStorePlanOrNone } from "../../../../core/plans";
 
 /*
  * Platform admin views and actions on stores (progress.md P.8): the status / plan / billing
@@ -116,7 +117,7 @@ export async function listReviewQueue(): Promise<ReviewQueueEntry[]> {
         storeName: typeof o?.storeName === "string" ? o.storeName : "",
         storeSlug: typeof o?.storeSlug === "string" ? o.storeSlug : "",
         requestedAt: typeof r.requestedAt === "number" ? r.requestedAt : 0,
-        requestedPlan: typeof r.requestedPlan === "string" ? r.requestedPlan : "FREE",
+        requestedPlan: toStorePlanOrNone(r.requestedPlan),
         reasons: Array.isArray(r.reasons) ? r.reasons.map(String) : [],
         requestedByUserId: typeof r.requestedByUserId === "string" ? r.requestedByUserId : null,
       };

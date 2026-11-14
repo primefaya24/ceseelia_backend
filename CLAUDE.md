@@ -34,7 +34,7 @@ ceseelia_backend/
     ├── tests/             # vitest specs
     ├── config/index.ts    # env-driven config (STAGE, hosts, CORS, Cognito, table/bucket)
     ├── constants/index.ts # appConstants (entity names, HTTP codes, limits, etc.); input-limits.ts, slug.ts
-    ├── scripts/           # one-off maintenance scripts (slug backfill, category item recount, item price migration)
+    ├── scripts/           # one-off maintenance scripts (slug backfill, category item recount, item price migration, Free plan migration)
     ├── api/v1/<area>/<route>/index.ts   # one file per endpoint
     └── layers/
         ├── core/http      # validateAndExecuteHttpApiRoute (auth + validation wrapper)
@@ -155,7 +155,7 @@ export default function registerRoute(router: Router): void {
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount` | ✅ 1–10 in total; 404 unless the item exists |
 | Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data` | ✅ (overview only fills `allStores`; stats are empty objects) |
 | Admin | `POST /admin/update-store-info` (name/slug; 409 if the slug is taken) | ✅ |
-| Admin (P.8) | `GET /admin/get-review-queue`, `POST /admin/review-store` `{storeId, decision: APPROVE\|REJECT, message?}`, `PUT /admin/set-store-plan` `{storeId, plan}` | ✅ approve Free → LIVE, paid → DRAFT approved (next Go Live skips the check, goes to checkout); reject → DRAFT with the reason; conditional on IN_REVIEW (409 `STATUS_CHANGED`). Set plan = a plan with no subscription (`planSetByAdmin`, no checkout at Go Live), 409 `HAS_SUBSCRIPTION`. `get-all-stores` adds status / plan / billing per store |
+| Admin (P.8) | `GET /admin/get-review-queue`, `POST /admin/review-store` `{storeId, decision: APPROVE\|REJECT, message?}`, `PUT /admin/set-store-plan` `{storeId, plan}` | ✅ approve → DRAFT approved (next Go Live skips the check, goes to checkout); reject → DRAFT with the reason; conditional on IN_REVIEW (409 `STATUS_CHANGED`). Set plan `SPARK\|NOVA\|NONE` = a plan with no subscription (`planSetByAdmin`, no checkout at Go Live), NONE takes it away (a live store → DRAFT), 409 `HAS_SUBSCRIPTION`. `get-all-stores` adds status / plan / billing per store |
 | Public | `GET /store/public/resolve-slug/:slug` → `{storeId}` (404 if unknown) | ✅ |
 | Public | `GET /store/public/storefront/:slug` → `{storeId, settings, categories, items}` (no auth) | ✅ same body as `get-data-public` (`sendPublicStorefront`); 400 bad slug, 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (3.1); `Cache-Control: private, no-cache` (3.2; revalidated by ETag every time since QA Q.21) |
 | Public | `GET /store/public/item/:storeId/:itemId` → `{storeId, item, category, currencies}` (no auth) | ✅ storefront rules; 404 `ITEM_NOT_FOUND` for missing or hidden (3.3) |
@@ -168,12 +168,12 @@ export default function registerRoute(router: Router): void {
 | User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |
 | User | `PUT /user/update-profile` `{userFirstName, userLastName}` (trimmed, 1–50 chars), `PUT /user/update-fcm-token` | ✅ |
 | User | `DELETE /user/delete-user` | ⛔ disabled (501) until a full delete exists (after 1.2) |
-| Merchant | `POST /merchant/create-store` `{storeName, storeSlug}` (any signed-in user, P.3) | ✅ FREE draft + the caller as ADMIN in one transaction; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED`, 409 `SLUG_TAKEN` / `DRAFT_LIMIT_REACHED` (5 drafts), 5/account/hour → 429 |
+| Merchant | `POST /merchant/create-store` `{storeName, storeSlug}` (any signed-in user, P.3) | ✅ draft with no plan (`NONE`) + the caller as ADMIN in one transaction; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED`, 409 `SLUG_TAKEN` / `DRAFT_LIMIT_REACHED` (5 drafts), 5/account/hour → 429 |
 | Merchant | `GET /merchant/path` | ❌ template stub |
 | Customer | — | ❌ empty router |
 | Payments (5.2) | `POST /store/payments/create-connect-account-link` `{storeId, country?}` → `{url, expiresAt}` (store admins); `GET /store/payments/status/:storeId` (members) | ✅ Standard account created once per store (`country` CA/US/AU required the first time; idempotency key), fresh onboarding link per call returning to `/store/storefront/:storeId?payments=return\|refresh`; status reads Stripe, refreshes the cached flags, forgets a disconnected account. 503 `PAYMENTS_NOT_CONFIGURED`, 502 `STRIPE_ERROR`. `payments` lives in its own SETTINGS attribute; public responses get only `paymentsEnabled` |
-| Go Live (P.4) | `GET /store/go-live/checklist/:storeId` (members), `POST /store/go-live` `{storeId, plan}` (store ADMINs), `GET /store/public/plans` (no auth) | ✅ checklist steps STORE_NAME / ITEMS / FULFILMENT / PAYMENTS (Stripe live), plans in the billing currency; Go Live re-checks everything, then `runSmartStoreValidation` (**TODO stub, passes all**) → LIVE, or IN_REVIEW (admin-only `review`); paid plans return a Billing `checkoutUrl` (P.5), 409 `PLAN_NOT_AVAILABLE` while `PAID_PLANS_ENABLED` is off |
-| Billing (P.5) | `GET /store/billing/status/:storeId` (members), `POST /store/billing/checkout` `{storeId, plan}` (store ADMINs; LIVE FREE → SPARK/NOVA), `POST /store/billing/portal` `{storeId}` (the payer only), webhook `POST /api/v1/billing/stripe-webhook` | ✅ Stripe Billing on the platform account with `automatic_tax`; Go Live on a paid plan returns `checkoutUrl` and the webhook takes it live; every event re-syncs the subscription from Stripe (`layers/payments/subscription-sync`, rules in `layers/core/billing`); failed payment → 7 days' grace → FREE (or DRAFT + `pausedReason` when the account already has a live FREE store); hourly grace sweep; paid plans behind `PAID_PLANS_ENABLED` |
+| Go Live (P.4) | `GET /store/go-live/checklist/:storeId` (members), `POST /store/go-live` `{storeId, plan}` (store ADMINs), `GET /store/public/plans` (no auth) | ✅ checklist steps STORE_NAME / ITEMS / FULFILMENT / PAYMENTS (Stripe live), plans in the billing currency; Go Live re-checks everything, then `runSmartStoreValidation` (**TODO stub, passes all**) → a Billing `checkoutUrl` (P.5; the webhook takes it live), LIVE only on a plan an admin gave, or IN_REVIEW (admin-only `review`); plan must be SPARK / NOVA; 409 `PLAN_NOT_AVAILABLE` while `PAID_PLANS_ENABLED` is off |
+| Billing (P.5) | `GET /store/billing/status/:storeId` (members), `POST /store/billing/portal` `{storeId}` (the payer only; Spark ↔ Nova, card, cancel), webhook `POST /api/v1/billing/stripe-webhook` | ✅ Stripe Billing on the platform account with `automatic_tax`; Go Live returns `checkoutUrl` and the webhook takes it live; every event re-syncs the subscription from Stripe (`layers/payments/subscription-sync`, rules in `layers/core/billing`); cancelled → at the period's end, failed payment → 7 days' grace, then the plan ENDS: a live store goes back to DRAFT (`pausedReason: PLAN_ENDED`); hourly grace sweep; plans behind `PAID_PLANS_ENABLED`. No separate upgrade checkout (removed with the Free plan, P.10) |
 | Payments | `POST /api/v1/website/listen-to-stripe-event/:websiteId` | ❌ returns 501 until Stage 5 (registered before `express.json()` so the raw body is available) |
 
 Infra helpers ready to reuse: SES `sendEmail` + templates, PDF invoice generator (`pdfkit`),
@@ -288,17 +288,20 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
 
 ### Stage P — Plans, self-serve stores & Go Live (before 5.3; decided 2026-11-12)
 Full plan in `progress.md` §6a. Key rules:
-- Plans are **per store**: FREE (no fee; commission 2.95 CAD/AUD, 2.45 USD; 30 paid orders a
-  month), SPARK (25 CAD/AUD, 19 USD a month; commission 1.95 CAD/AUD, 1.45 USD; unlimited),
-  NOVA (49 CAD/AUD, 39 USD a month; no commission; unlimited). Custom domains on SPARK/NOVA are
-  "coming soon" until 9.8. No trials. At most one live FREE store per account.
-- Anyone signed in can create a store (DRAFT, FREE) and build it; only LIVE stores take orders.
+- Plans are **per store**, and every plan is paid (**no Free plan since 2026-11-13, P.10**):
+  SPARK (25 CAD/AUD, 19 USD a month; commission 1.95 CAD/AUD, 1.45 USD; unlimited), NOVA (49
+  CAD/AUD, 39 USD a month; no commission; unlimited). Custom domains are "coming soon" until
+  9.8. No trials. Only a store with a plan is LIVE; going live and subscribing are one step.
+- Anyone signed in can create a store (DRAFT, plan `NONE`) and build it; its members preview it,
+  shoppers see "Coming soon"; only LIVE stores take orders.
   `admin.isStoreLive` becomes `admin.suspended` (admin suspension is separate from DRAFT/LIVE).
 - Go Live re-checks the checklist on the server and calls **`runSmartStoreValidation(storeId)`**
   (AI fraud check of the store's items). **It's an empty TODO stub that passes every store for
   now**; once built, a flagged store goes to IN_REVIEW and an admin queue instead of LIVE.
 - Subscriptions use Stripe **Billing on the platform account** (not Connect), with Stripe Tax on
-  for Ceseelia's own GST/HST. Failed payment → retries → 7 days' grace → FREE (not offline).
+  for Ceseelia's own GST/HST. Merchants switch Spark ↔ Nova in the portal. Cancel → live until
+  the period ends; failed payment → retries → 7 days' grace; then the plan ends and the store is
+  a DRAFT again (not live) until it goes live on a plan.
 - The platform fee is the store's admin override (5.1b) if set, else the plan's default.
 - Payments are **online only**: no pay at pickup.
 

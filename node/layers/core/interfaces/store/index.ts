@@ -32,7 +32,7 @@ import {
 } from "../../utils/validation";
 import { isUlid } from "../../utils";
 import { areVariantsValid, isStoreItemVariantPure } from "../../variants";
-import { isStorePlan, PLANS, StorePlan } from "../../plans";
+import { NO_PLAN, PLANS, StorePlan, StorePlanOrNone, toStorePlanOrNone } from "../../plans";
 
 // JOIN_REQUEST, REQUEST_ID
 export interface Merchant {
@@ -243,14 +243,15 @@ export type PaymentCountry = (typeof PAYMENT_COUNTRIES)[number];
 /**
  * A store's lifecycle (P.2). DRAFT: being built, shoppers see "Coming soon". IN_REVIEW: Go Live
  * was asked for but `runSmartStoreValidation` flagged it (P.4c), waiting for an admin. LIVE:
- * open to shoppers and checkout.
+ * open to shoppers and checkout. Only a store with a plan is LIVE (no Free plan, 2026-11-13).
  */
 export const STORE_STATUSES = ["DRAFT", "IN_REVIEW", "LIVE"] as const;
 export type StoreStatus = (typeof STORE_STATUSES)[number];
 
 export interface StoreLifecycle {
   status: StoreStatus;
-  plan: StorePlan;
+  /** NONE until the store subscribes (or an admin gives it a plan), and again once the plan ends. */
+  plan: StorePlanOrNone;
   /** When the status last changed (ms). */
   statusChangedAt?: number;
   /** When the store first went live (ms). */
@@ -258,8 +259,8 @@ export interface StoreLifecycle {
   /** The user who created it themselves (P.3); missing for stores an admin created. */
   createdByUserId?: string;
   /**
-   * Why a store that was live is a DRAFT again (P.5): its paid plan ended while the same account
-   * already had a live FREE store. Cleared when it goes live again.
+   * Why a store that was live is a DRAFT again: PLAN_ENDED = its plan ended (cancelled, payment
+   * failed past the grace, or an admin took it away). Cleared when it goes live again.
    */
   pausedReason?: StorePausedReason;
   /** A platform admin set the plan by hand (P.8, e.g. a free month of Spark); cleared when billing changes it. */
@@ -273,7 +274,7 @@ export interface StoreLifecycle {
   reviewRejection?: { message: string; at: number };
 }
 
-export const STORE_PAUSED_REASONS = ["FREE_PLAN_IN_USE"] as const;
+export const STORE_PAUSED_REASONS = ["PLAN_ENDED"] as const;
 export type StorePausedReason = (typeof STORE_PAUSED_REASONS)[number];
 
 /**
@@ -286,8 +287,8 @@ export interface StoreSubscription {
   customerId: string;
   /** The user who subscribed (pays, and is the only one who can open the billing portal). */
   payerUserId: string;
-  /** The paid plan the subscription's price is for. */
-  plan: StorePlan;
+  /** The plan the subscription's price is for (NONE: not one of our prices). */
+  plan: StorePlanOrNone;
   currency: string;
   /** Stripe's status: active, past_due, unpaid, canceled, incomplete, … */
   status: string;
@@ -295,7 +296,7 @@ export interface StoreSubscription {
   currentPeriodEnd: number | null;
   /** It ends at the period's end (cancelled in the portal). */
   cancelAtPeriodEnd: boolean;
-  /** Payment failed for good: the plan stays until then, then the store drops to FREE (ms). */
+  /** Payment failed for good: the plan stays until then, then it ends and the store is a draft (ms). */
   graceEndsAt: number | null;
   syncedAt: number;
 }
@@ -311,29 +312,36 @@ export interface StoreBillingCheckout {
 
 export interface StoreReview {
   reasons: string[];
-  requestedPlan: StorePlan;
+  requestedPlan: StorePlanOrNone;
   requestedAt: number;
   requestedByUserId: string | null;
 }
 
-/** A new store: a FREE draft (P.3). */
+/** A new store: a draft with no plan (P.3). */
 export function initStoreLifecycle(now = Date.now()): StoreLifecycle {
-  return { status: "DRAFT", plan: "FREE", statusChangedAt: now };
+  return { status: "DRAFT", plan: NO_PLAN, statusChangedAt: now };
 }
 
 /*
- * The saved lifecycle with defaults filled in. A store saved before P.2 has none and is read as
- * LIVE on FREE (assumption A2), so nothing that was open disappears. A saved one with an unknown
- * status is read as DRAFT (never live by accident), and an unknown plan as FREE.
+ * The saved lifecycle with defaults filled in, never live by accident. A store saved before P.2
+ * has none and is read as a DRAFT with no plan. An unknown status is read as DRAFT, an unknown
+ * plan (or the old FREE) as NONE, and a LIVE store without a plan as a DRAFT whose plan ended
+ * (scripts/migrate-free-plan.mjs rewrites those rows, so conditional writes match again).
  */
 export function normalizeStoreLifecycle(raw: unknown): StoreLifecycle {
-  if (!isObject(raw)) return { status: "LIVE", plan: "FREE" };
-  const status = (STORE_STATUSES as readonly string[]).includes(raw.status) ? (raw.status as StoreStatus) : "DRAFT";
-  const out: StoreLifecycle = { status, plan: isStorePlan(raw.plan) ? raw.plan : "FREE" };
+  if (!isObject(raw)) return { status: "DRAFT", plan: NO_PLAN };
+  const plan = toStorePlanOrNone(raw.plan);
+  let status = (STORE_STATUSES as readonly string[]).includes(raw.status)
+    ? (raw.status as StoreStatus)
+    : "DRAFT";
+  const planless = status === "LIVE" && plan === NO_PLAN;
+  if (planless) status = "DRAFT";
+  const out: StoreLifecycle = { status, plan };
   if (isFiniteNumber(raw.statusChangedAt)) out.statusChangedAt = raw.statusChangedAt;
   if (isFiniteNumber(raw.firstLiveAt)) out.firstLiveAt = raw.firstLiveAt;
   if (typeof raw.createdByUserId === "string") out.createdByUserId = raw.createdByUserId;
-  if ((STORE_PAUSED_REASONS as readonly string[]).includes(raw.pausedReason)) {
+  if (planless) out.pausedReason = "PLAN_ENDED";
+  else if ((STORE_PAUSED_REASONS as readonly string[]).includes(raw.pausedReason)) {
     out.pausedReason = raw.pausedReason as StorePausedReason;
   }
   if (raw.planSetByAdmin === true) out.planSetByAdmin = true;
@@ -503,7 +511,7 @@ export function platformFeeMinor(admin: StoreSettings["admin"] | undefined, quot
 /** The commission a store is charged, as `platformFeeMinor` reads it (P.6). */
 export interface CommissionInEffect {
   source: CommissionSource;
-  plan: StorePlan;
+  plan: StorePlanOrNone;
   commissionMode: CommissionMode;
   commissionPercentBps: number;
   salesCommissions: Record<(typeof CURRENCY_CODES)[number], number>;
@@ -512,9 +520,13 @@ export interface CommissionInEffect {
 /*
  * The commission in effect for a store (P.6): the admin's CUSTOM one if set, else the plan's
  * default as a fixed fee per order (NOVA = 0). This is also what an order copies (5.4c), so a
- * later plan or admin change never alters an order in progress.
+ * later plan or admin change never alters an order in progress. A store with no plan isn't live
+ * and takes no orders; if one ever did, it pays SPARK's fee, never nothing.
  */
-export function commissionInEffect(admin: StoreSettings["admin"] | undefined, plan: StorePlan): CommissionInEffect {
+export function commissionInEffect(
+  admin: StoreSettings["admin"] | undefined,
+  plan: StorePlanOrNone
+): CommissionInEffect {
   const a = normalizeAdminSettings(admin);
   if (a.commissionSource === "CUSTOM") {
     return {
@@ -525,10 +537,11 @@ export function commissionInEffect(admin: StoreSettings["admin"] | undefined, pl
       salesCommissions: a.salesCommissions,
     };
   }
-  const p = PLANS[isStorePlan(plan) ? plan : "FREE"];
+  const known = toStorePlanOrNone(plan);
+  const p = PLANS[known === NO_PLAN ? "SPARK" : known];
   return {
     source: "PLAN",
-    plan: p.id,
+    plan: known,
     commissionMode: "FIXED",
     commissionPercentBps: 0,
     salesCommissions: { ...p.commissionMinor },
@@ -540,7 +553,11 @@ export function commissionInEffect(admin: StoreSettings["admin"] | undefined, pl
  * commission in effect, worked out by platformFeeMinor (capped at the total, never below 0).
  * `plan` is the store's lifecycle plan, read on the server.
  */
-export function platformFeeForStore(admin: StoreSettings["admin"] | undefined, plan: StorePlan, quote: FeeQuote): number {
+export function platformFeeForStore(
+  admin: StoreSettings["admin"] | undefined,
+  plan: StorePlanOrNone,
+  quote: FeeQuote
+): number {
   return feeFromCommission(commissionInEffect(admin, plan), quote);
 }
 

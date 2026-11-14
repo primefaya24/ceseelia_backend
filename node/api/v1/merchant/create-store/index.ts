@@ -13,10 +13,10 @@ import { ACCOUNT_DEACTIVATED, PROFILE_NOT_FOUND } from "../../user/user-errors";
 
 /*
  * POST /merchant/create-store (any signed-in user, progress.md P.3)
- * Body: { storeName, storeSlug } → 200 { storeId, storeName, storeSlug, status: "DRAFT", plan: "FREE" }
+ * Body: { storeName, storeSlug } → 200 { storeId, storeName, storeSlug, status: "DRAFT", plan: "NONE" }
  *
- * Self-serve: anyone with an account builds a store without committing. The store is a FREE
- * DRAFT (shoppers see "Coming soon"), and the caller becomes its ADMIN in the same transaction.
+ * Self-serve: anyone with an account builds a store without committing. The store is a
+ * DRAFT with no plan (shoppers see "Coming soon"; the plan comes with Go Live), and the caller becomes its ADMIN in the same transaction.
  * Nothing is checked about the store's contents here; that happens at Go Live (P.4, including
  * runSmartStoreValidation).
  *
@@ -58,7 +58,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const limited = createStoreLimits.perAccount.take(userId);
     if (!limited.ok) {
       res.setHeader("Retry-After", String(limited.retryAfterSeconds));
-      res.status(429).send({ message: "Too many stores created. Please try again later.", code: "RATE_LIMITED" });
+      res.status(429).send({
+        message: "Too many stores created. Please try again later.",
+        code: "RATE_LIMITED",
+      });
       return;
     }
 
@@ -78,7 +81,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       storeName: overview.storeName,
       storeSlug: overview.storeSlug,
       status: "DRAFT",
-      plan: "FREE",
+      plan: "NONE",
     });
   } catch (e) {
     if (e instanceof SlugTakenError) {

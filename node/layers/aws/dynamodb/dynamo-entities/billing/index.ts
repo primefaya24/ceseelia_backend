@@ -46,7 +46,7 @@ export class BillingWriteConflictError extends Error {
 
 export interface StoreBillingState {
   storeId: string;
-  /** The saved lifecycle was missing (a store from before P.2, read as LIVE on FREE). */
+  /** The saved lifecycle was missing (a store from before P.2, read as a DRAFT with no plan). */
   lifecycleMissing: boolean;
   lifecycle: StoreLifecycle;
   suspended: boolean;

@@ -44,7 +44,7 @@ const ownsStores = (statuses: (string | undefined)[]) => {
         [table]: ids.map((id, i) => ({
           pk: `STORE#${id}`,
           sk: "SETTINGS",
-          ...(statuses[i] ? { lifecycle: { status: statuses[i], plan: "FREE" } } : {}),
+          ...(statuses[i] ? { lifecycle: { status: statuses[i], plan: "SPARK" } } : {}),
         })),
       },
     };
@@ -61,11 +61,16 @@ beforeEach(() => {
 });
 
 describe("POST /merchant/create-store (P.3)", () => {
-  it("creates a FREE draft with the caller as ADMIN, all in one transaction", async () => {
+  it("creates a draft with no plan, with the caller as ADMIN, all in one transaction", async () => {
     ddb.on(TransactWriteCommand).resolves({});
     const res = await post(valid);
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ storeName: "Northern Hoop", storeSlug: "northern-hoop", status: "DRAFT", plan: "FREE" });
+    expect(res.body).toMatchObject({
+      storeName: "Northern Hoop",
+      storeSlug: "northern-hoop",
+      status: "DRAFT",
+      plan: "NONE",
+    });
     const storeId = res.body.storeId;
 
     const items = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
@@ -75,7 +80,7 @@ describe("POST /merchant/create-store (P.3)", () => {
     expect(settings.Put!.Item).toMatchObject({
       pk: `STORE#${storeId}`,
       sk: "SETTINGS",
-      lifecycle: { status: "DRAFT", plan: "FREE", createdByUserId: USER },
+      lifecycle: { status: "DRAFT", plan: "NONE", createdByUserId: USER },
       admin: { suspended: false },
     });
     expect(slug.Put!.Item).toMatchObject({ pk: "SLUG#northern-hoop", storeId });
@@ -88,8 +93,13 @@ describe("POST /merchant/create-store (P.3)", () => {
     ddb.on(TransactWriteCommand).resolves({});
     const res = await post({ ...valid, status: "LIVE", plan: "NOVA", lifecycle: { status: "LIVE" }, userId: "someone-else" });
     expect(res.status).toBe(200);
-    const [, settings, , , member] = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
-    expect(settings.Put!.Item!.lifecycle).toMatchObject({ status: "DRAFT", plan: "FREE", createdByUserId: USER });
+    const [, settings, , , member] =
+      ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
+    expect(settings.Put!.Item!.lifecycle).toMatchObject({
+      status: "DRAFT",
+      plan: "NONE",
+      createdByUserId: USER,
+    });
     expect(member.Put!.Item!.sk).toBe(`MEMBER#${USER}`);
   });
 
@@ -140,7 +150,7 @@ describe("POST /merchant/create-store (P.3)", () => {
     expect(res.body).toMatchObject({ code: "DRAFT_LIMIT_REACHED", limit: 5 });
     expect(ddb.commandCalls(TransactWriteCommand)).toHaveLength(0);
 
-    ownsStores(["DRAFT", "DRAFT", "DRAFT", "DRAFT", "LIVE", "IN_REVIEW", undefined]);
+    ownsStores(["DRAFT", "DRAFT", "DRAFT", "DRAFT", "LIVE", "IN_REVIEW"]);
     expect((await post(valid)).status).toBe(200);
   });
 
@@ -167,9 +177,16 @@ describe("countDraftStoresAdministeredBy (P.3)", () => {
       const table = Object.keys(input.RequestItems)[0];
       const keys = input.RequestItems[table].Keys.map((k: { pk: string }) => k.pk);
       expect(keys).toEqual(["STORE#A", "STORE#C"]); // never reads the MERCHANT store
-      return { Responses: { [table]: [{ pk: "STORE#A", lifecycle: { status: "DRAFT" } }, { pk: "STORE#C" }] } };
+      return {
+        Responses: {
+          [table]: [
+            { pk: "STORE#A", lifecycle: { status: "DRAFT" } },
+            { pk: "STORE#C", lifecycle: { status: "LIVE", plan: "NOVA" } },
+          ],
+        },
+      };
     });
-    expect(await countDraftStoresAdministeredBy(USER)).toBe(1); // C has no lifecycle = live (A2)
+    expect(await countDraftStoresAdministeredBy(USER)).toBe(1); // C is live
   });
 
   it("no stores: no reads beyond the membership query", async () => {

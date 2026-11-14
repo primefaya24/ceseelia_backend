@@ -4,7 +4,7 @@ import { CACHE_CONTROL, setCacheControl } from "../../../../../layers/core/http/
 
 /*
  * GET /store/public/plans (no auth, progress.md P.4) → { plans: [{ id, name, monthlyPriceMinor,
- * commissionMinor, monthlyOrderLimit, customDomain, available }] }, prices and commissions in
+ * commissionMinor, customDomain, available }] }, prices and commissions in
  * cents for every currency. The catalogue lives only in layers/core/plans; the webapp reads it
  * here (pricing, the plan & billing card), never from its own copy.
  */

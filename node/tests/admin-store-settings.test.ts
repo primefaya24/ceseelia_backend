@@ -45,10 +45,14 @@ const valid = {
 };
 const saved = { commissionSource: "CUSTOM", commissionMode: "FIXED", commissionPercentBps: 0, salesCommissions: fees, suspended: true };
 /** What a read returns: the defaults for 5.1b's and P.6's fields plus these. */
-const block = (b: object) => ({ commissionSource: "PLAN", commissionMode: "FIXED", commissionPercentBps: 0, ...b });
-/** GET adds the store's plan and its default fee (P.6); no lifecycle = LIVE on FREE (A2). */
-const FREE_FEES = { CAD: 295, AUD: 295, USD: 245 };
-const read = (b: object, plan = "FREE", planCommissions: object = FREE_FEES) => ({
+const block = (b: object) => ({
+  commissionSource: "PLAN",
+  commissionMode: "FIXED",
+  commissionPercentBps: 0,
+  ...b,
+});
+/** GET adds the store's plan and its default fee (P.6); no lifecycle = a draft with no plan (no fee). */
+const read = (b: object, plan = "NONE", planCommissions: object | null = null) => ({
   ...b,
   plan,
   planCommissions,
@@ -340,10 +344,8 @@ describe("platformFeeForStore: the plan's fee unless an admin set a custom one (
   } as const;
 
   it.each([
-    ["FREE", "CAD", 295],
-    ["FREE", "AUD", 295],
-    ["FREE", "USD", 245],
     ["SPARK", "CAD", 195],
+    ["SPARK", "AUD", 195],
     ["SPARK", "USD", 145],
     ["NOVA", "CAD", 0],
     ["NOVA", "USD", 0],
@@ -354,20 +356,28 @@ describe("platformFeeForStore: the plan's fee unless an admin set a custom one (
   });
 
   it("a CUSTOM deal overrides the plan, on every plan (NOVA included)", () => {
-    for (const plan of ["FREE", "SPARK", "NOVA"] as const) {
+    for (const plan of ["NONE", "SPARK", "NOVA"] as const) {
       expect(platformFeeForStore(custom, plan, q())).toBe(500); // 10% of 50.00
     }
     expect(platformFeeForStore({ ...custom, commissionMode: "FIXED" }, "NOVA", q())).toBe(50);
   });
 
-  it("stores saved before P.6 follow their plan; an unknown plan is read as FREE", () => {
-    expect(platformFeeForStore({ salesCommissions: { USD: 900, CAD: 900, AUD: 900 } } as any, "SPARK", q())).toBe(195);
-    expect(platformFeeForStore(undefined, "GOLD" as any, q())).toBe(295);
+  it("stores saved before P.6 follow their plan; no plan (or an unknown one) pays SPARK's fee, never nothing", () => {
+    expect(
+      platformFeeForStore(
+        { salesCommissions: { USD: 900, CAD: 900, AUD: 900 } } as any,
+        "SPARK",
+        q()
+      )
+    ).toBe(195);
+    expect(platformFeeForStore(undefined, "NONE", q())).toBe(195);
+    expect(platformFeeForStore(undefined, "GOLD" as any, q())).toBe(195);
+    expect(platformFeeForStore(undefined, "FREE" as any, q({ currency: "USD" }))).toBe(145);
   });
 
   it("is never more than the order total", () => {
-    expect(platformFeeForStore(undefined, "FREE", q({ totalMinor: 100 }))).toBe(100);
-    expect(platformFeeForStore(undefined, "FREE", q({ totalMinor: 0 }))).toBe(0);
+    expect(platformFeeForStore(undefined, "SPARK", q({ totalMinor: 100 }))).toBe(100);
+    expect(platformFeeForStore(undefined, "SPARK", q({ totalMinor: 0 }))).toBe(0);
   });
 
   it("what an order copies gives the same fee later, whatever changes on the store", () => {
@@ -380,6 +390,10 @@ describe("platformFeeForStore: the plan's fee unless an admin set a custom one (
       salesCommissions: { CAD: 195, AUD: 195, USD: 145 },
     });
     expect(feeFromCommission(copy, q())).toBe(195);
-    expect(commissionInEffect(custom, "FREE")).toMatchObject({ source: "CUSTOM", commissionMode: "PERCENT", commissionPercentBps: 1_000 });
+    expect(commissionInEffect(custom, "NONE")).toMatchObject({
+      source: "CUSTOM",
+      commissionMode: "PERCENT",
+      commissionPercentBps: 1_000,
+    });
   });
 });

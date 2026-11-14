@@ -1,4 +1,4 @@
-import { PLAN_PAYMENT_GRACE_DAYS, StorePlan } from "../plans";
+import { NO_PLAN, PLAN_PAYMENT_GRACE_DAYS, StorePlan } from "../plans";
 import { StoreLifecycle, StoreSubscription } from "../interfaces/store";
 
 /*
@@ -6,11 +6,14 @@ import { StoreLifecycle, StoreSubscription } from "../interfaces/store";
  * (layers/payments/subscription-sync) reads the subscription from Stripe, asks these what it
  * means for the store, and writes the answer.
  *
- *   active / trialing / past_due → the paid plan (past_due = Stripe is still retrying)
- *   unpaid, or canceled because payment failed, or paused → 7 days' grace on the paid plan,
- *     then FREE
+ *   active / trialing / past_due → the plan (past_due = Stripe is still retrying); a draft
+ *     that subscribed goes live
+ *   unpaid, or canceled because payment failed, or paused → 7 days' grace on the plan, then
+ *     ENDED
  *   canceled for any other reason (the merchant cancelled; Stripe ends it at the period's end)
- *     → FREE now
+ *     → ENDED now
+ *   ENDED → no plan: a live store goes back to a DRAFT (pausedReason PLAN_ENDED). There is no
+ *     Free plan to fall back to (owner, 2026-11-13).
  *   incomplete / incomplete_expired → never started: nothing changes
  */
 
@@ -42,7 +45,7 @@ export function isPaying(status: string): boolean {
   return PAYING.has(status);
 }
 
-/** Payment failed for good: grace, then FREE. */
+/** Payment failed for good: grace, then the plan ends. */
 export function isPaymentLost(s: Pick<SubscriptionSnapshot, "status" | "cancellationReason">): boolean {
   return s.status === "unpaid" || s.status === "paused" || (s.status === "canceled" && s.cancellationReason === "payment_failed");
 }
@@ -57,7 +60,7 @@ export function blocksNewSubscription(sub: StoreSubscription | undefined, now: n
 export type PlanEffect =
   | { kind: "PAID"; plan: StorePlan }
   | { kind: "GRACE"; plan: StorePlan; until: number }
-  | { kind: "FREE" }
+  | { kind: "ENDED" }
   | { kind: "NONE" };
 
 /*
@@ -70,22 +73,22 @@ export function planEffect(snap: SubscriptionSnapshot, previousGraceEndsAt: numb
   if (isPaying(snap.status)) return { kind: "PAID", plan: snap.plan };
   if (isPaymentLost(snap)) {
     const until = previousGraceEndsAt ?? (snap.endedAt ?? now) + PLAN_PAYMENT_GRACE_MS;
-    return now < until ? { kind: "GRACE", plan: snap.plan, until } : { kind: "FREE" };
+    return now < until ? { kind: "GRACE", plan: snap.plan, until } : { kind: "ENDED" };
   }
-  if (snap.status === "canceled") return { kind: "FREE" };
+  if (snap.status === "canceled") return { kind: "ENDED" };
   return { kind: "NONE" };
 }
 
 /*
- * The store's lifecycle after the effect. `otherLiveFreeStore` = the payer already has another
- * live FREE store: a store dropping to FREE then goes back to DRAFT instead (one free store per
- * account), and says why. Returns the same object when nothing changes.
+ * The store's lifecycle after the effect. Returns the same object when nothing changes.
  */
 export function lifecycleAfter(
   lifecycle: StoreLifecycle,
   effect: PlanEffect,
-  opts: { now: number; otherLiveFreeStore: boolean }
+  opts: { now: number }
 ): StoreLifecycle {
+  // A plan an admin gave after this subscription ended isn't taken away by its late events (P.8).
+  if (effect.kind === "ENDED" && lifecycle.planSetByAdmin) return lifecycle;
   const after = lifecycleAfterBilling(lifecycle, effect, opts);
   if (after === lifecycle || !after.planSetByAdmin) return after;
   // Billing changed the plan: it's no longer the one an admin gave (P.8).
@@ -96,7 +99,7 @@ export function lifecycleAfter(
 function lifecycleAfterBilling(
   lifecycle: StoreLifecycle,
   effect: PlanEffect,
-  opts: { now: number; otherLiveFreeStore: boolean }
+  opts: { now: number }
 ): StoreLifecycle {
   const { now } = opts;
   if (effect.kind === "NONE") return lifecycle;
@@ -115,12 +118,17 @@ function lifecycleAfterBilling(
     }
     return lifecycle.plan === effect.plan ? lifecycle : { ...lifecycle, plan: effect.plan };
   }
-  // FREE
-  if (lifecycle.plan === "FREE") return lifecycle;
-  if (lifecycle.status === "LIVE" && opts.otherLiveFreeStore) {
-    return { ...lifecycle, status: "DRAFT", plan: "FREE", statusChangedAt: now, pausedReason: "FREE_PLAN_IN_USE" };
+  // ENDED: no plan, so not live.
+  if (lifecycle.status === "LIVE") {
+    return {
+      ...lifecycle,
+      status: "DRAFT",
+      plan: NO_PLAN,
+      statusChangedAt: now,
+      pausedReason: "PLAN_ENDED",
+    };
   }
-  return { ...lifecycle, plan: "FREE" };
+  return lifecycle.plan === NO_PLAN ? lifecycle : { ...lifecycle, plan: NO_PLAN };
 }
 
 /*
@@ -144,7 +152,7 @@ export function subscriptionRecord(
     subscriptionId: snap.id,
     customerId: snap.customerId,
     payerUserId,
-    plan: snap.plan ?? "FREE",
+    plan: snap.plan ?? NO_PLAN,
     currency: snap.currency,
     status: snap.status,
     currentPeriodEnd: snap.currentPeriodEnd,

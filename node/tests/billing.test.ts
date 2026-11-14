@@ -22,8 +22,12 @@ vi.mock("../layers/aws/dynamodb/dynamo-entities/user", async (orig) => ({
 const role = { current: "ADMIN" as "ADMIN" | "MERCHANT" };
 vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/membership")>()),
-  getMembership: vi.fn(async (storeId: string, userId: string) => ({ storeId, userId, role: role.current, createdAt: 1 })),
-  findLiveFreeStoreAdministeredBy: vi.fn(async () => null),
+  getMembership: vi.fn(async (storeId: string, userId: string) => ({
+    storeId,
+    userId,
+    role: role.current,
+    createdAt: 1,
+  })),
 }));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/store", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/store")>()),
@@ -55,7 +59,6 @@ vi.mock("../layers/payments/stripe", async (orig) => ({
 }));
 
 import { verifyCognitoAccessToken } from "../layers/aws/cognito";
-import { findLiveFreeStoreAdministeredBy } from "../layers/aws/dynamodb/dynamo-entities/membership";
 import { deleteStore, getStoreInventoryData } from "../layers/aws/dynamodb/dynamo-entities/store";
 import { readStoreStripeAccount } from "../layers/payments/account-status";
 import { runSmartStoreValidation } from "../layers/core/store-validation";
@@ -125,7 +128,7 @@ const withSettings = (p: Record<string, unknown> = {}) => {
   settingsRow = {
     pk: `STORE#${STORE}`,
     sk: "SETTINGS",
-    lifecycle: { status: "DRAFT", plan: "FREE" },
+    lifecycle: { status: "DRAFT", plan: "NONE" },
     admin: { suspended: false },
     storeInfo: { storeName: "Hoop" },
     ...p,
@@ -144,7 +147,7 @@ function readyStore(): StoreInventoryData {
       ...s,
       storeInfo: { ...s.storeInfo, storeName: "Hoop" },
       general: { ...s.general, pickupEnabled: true, pickupAddress: "1 Main St" },
-      lifecycle: { status: "DRAFT", plan: "FREE" },
+      lifecycle: { status: "DRAFT", plan: "NONE" },
     },
     categories: [{ ...initStoreCategory(cat, "Hoops"), storeCategoriyId: cat, storeCategoryIsActive: true }],
     items: [
@@ -179,7 +182,6 @@ beforeEach(() => {
   secrets.billingWebhookSecret = "whsec_billing";
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.mocked(verifyCognitoAccessToken).mockResolvedValue({ sub: "m", "cognito:groups": [] });
-  vi.mocked(findLiveFreeStoreAdministeredBy).mockResolvedValue(null);
   vi.mocked(getStoreInventoryData).mockResolvedValue(readyStore());
   vi.mocked(runSmartStoreValidation).mockResolvedValue({ ok: true });
   vi.mocked(readStoreStripeAccount).mockResolvedValue({
@@ -224,38 +226,65 @@ describe("subscription rules (P.5)", () => {
     ["incomplete_expired", null, { kind: "NONE" }],
     ["unpaid", null, { kind: "GRACE", plan: "SPARK", until: NOW + 7 * DAY_MS }],
     ["canceled", "payment_failed", { kind: "GRACE", plan: "SPARK", until: NOW + 7 * DAY_MS }],
-    ["canceled", "cancellation_requested", { kind: "FREE" }],
+    ["canceled", "cancellation_requested", { kind: "ENDED" }],
   ])("%s (%s) → %j", (status, reason, effect) => {
     expect(planEffect(snap({ status, cancellationReason: reason }), null, NOW)).toEqual(effect);
   });
 
-  it("grace keeps its end once started, then FREE; a price that isn't ours changes nothing", () => {
+  it("grace keeps its end once started, then ENDED; a price that isn't ours changes nothing", () => {
     const lost = snap({ status: "unpaid" });
-    expect(planEffect(lost, NOW + DAY_MS, NOW)).toEqual({ kind: "GRACE", plan: "SPARK", until: NOW + DAY_MS });
-    expect(planEffect(lost, NOW - 1, NOW)).toEqual({ kind: "FREE" });
+    expect(planEffect(lost, NOW + DAY_MS, NOW)).toEqual({
+      kind: "GRACE",
+      plan: "SPARK",
+      until: NOW + DAY_MS,
+    });
+    expect(planEffect(lost, NOW - 1, NOW)).toEqual({ kind: "ENDED" });
     expect(planEffect(snap({ plan: null }), null, NOW)).toEqual({ kind: "NONE" });
   });
 
-  it("a paid draft goes live; a live store changes plan; drops to FREE, or DRAFT when the account has a live FREE store", () => {
-    const opts = { now: NOW, otherLiveFreeStore: false };
-    expect(lifecycleAfter({ ...lc("DRAFT", "FREE"), pausedReason: "FREE_PLAN_IN_USE" }, { kind: "PAID", plan: "NOVA" }, opts)).toEqual({
+  it("a paid draft goes live; a live store changes plan; a plan that ends takes the store back to DRAFT", () => {
+    const opts = { now: NOW };
+    expect(
+      lifecycleAfter(
+        { ...lc("DRAFT", "NONE"), pausedReason: "PLAN_ENDED" },
+        { kind: "PAID", plan: "NOVA" },
+        opts
+      )
+    ).toEqual({
       status: "LIVE",
       plan: "NOVA",
       statusChangedAt: NOW,
       firstLiveAt: NOW,
     });
-    expect(lifecycleAfter(lc("LIVE", "SPARK"), { kind: "PAID", plan: "NOVA" }, opts)).toEqual(lc("LIVE", "NOVA"));
-    expect(lifecycleAfter(lc("IN_REVIEW", "FREE"), { kind: "PAID", plan: "SPARK" }, opts)).toEqual(lc("IN_REVIEW", "SPARK"));
-    expect(lifecycleAfter(lc("DRAFT", "FREE"), { kind: "GRACE", plan: "SPARK", until: 1 }, opts).status).toBe("DRAFT");
-    expect(lifecycleAfter(lc("LIVE", "SPARK"), { kind: "FREE" }, opts)).toEqual(lc("LIVE", "FREE"));
-    expect(lifecycleAfter(lc("LIVE", "SPARK"), { kind: "FREE" }, { now: NOW, otherLiveFreeStore: true })).toEqual({
+    expect(lifecycleAfter(lc("LIVE", "SPARK"), { kind: "PAID", plan: "NOVA" }, opts)).toEqual(
+      lc("LIVE", "NOVA")
+    );
+    expect(lifecycleAfter(lc("IN_REVIEW", "NONE"), { kind: "PAID", plan: "SPARK" }, opts)).toEqual(
+      lc("IN_REVIEW", "SPARK")
+    );
+    expect(
+      lifecycleAfter(lc("DRAFT", "NONE"), { kind: "GRACE", plan: "SPARK", until: 1 }, opts).status
+    ).toBe("DRAFT");
+    expect(
+      lifecycleAfter(lc("LIVE", "SPARK"), { kind: "GRACE", plan: "SPARK", until: 1 }, opts)
+    ).toEqual(lc("LIVE", "SPARK"));
+    expect(
+      lifecycleAfter({ ...lc("LIVE", "SPARK"), firstLiveAt: 5 }, { kind: "ENDED" }, opts)
+    ).toEqual({
       status: "DRAFT",
-      plan: "FREE",
+      plan: "NONE",
+      firstLiveAt: 5,
       statusChangedAt: NOW,
-      pausedReason: "FREE_PLAN_IN_USE",
+      pausedReason: "PLAN_ENDED",
     });
-    const same = lc("LIVE", "FREE");
-    expect(lifecycleAfter(same, { kind: "FREE" }, opts)).toBe(same);
+    expect(lifecycleAfter(lc("IN_REVIEW", "SPARK"), { kind: "ENDED" }, opts)).toEqual(
+      lc("IN_REVIEW", "NONE")
+    );
+    const same = lc("DRAFT", "NONE");
+    expect(lifecycleAfter(same, { kind: "ENDED" }, opts)).toBe(same);
+    // A plan an admin gave after the subscription ended stays.
+    const gifted: StoreLifecycle = { ...lc("LIVE", "NOVA"), planSetByAdmin: true };
+    expect(lifecycleAfter(gifted, { kind: "ENDED" }, opts)).toBe(gifted);
   });
 
   it("one subscription per store: an old one's late events never undo a newer one", () => {
@@ -312,8 +341,11 @@ describe("syncSubscription (P.5)", () => {
     expect(ddb.commandCalls(TransactWriteCommand)).toHaveLength(0);
   });
 
-  it("payment failed for good: 7 days' grace on the plan (listed for the sweep), then FREE", async () => {
-    withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: record({ status: "past_due" }) });
+  it("payment failed for good: 7 days' grace on the plan (listed for the sweep), then back to DRAFT", async () => {
+    withSettings({
+      lifecycle: { status: "LIVE", plan: "SPARK" },
+      subscription: record({ status: "past_due" }),
+    });
     stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ status: "unpaid" }));
     await syncSubscription("sub_1", () => NOW);
     expect(savedLifecycle()).toBeUndefined();
@@ -322,18 +354,36 @@ describe("syncSubscription (P.5)", () => {
 
     withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: record({ status: "unpaid", graceEndsAt: NOW + 7 * DAY_MS }) });
     await syncSubscription("sub_1", () => NOW + 8 * DAY_MS);
-    expect(savedLifecycle(1)).toMatchObject({ status: "LIVE", plan: "FREE" });
+    expect(savedLifecycle(1)).toMatchObject({
+      status: "DRAFT",
+      plan: "NONE",
+      pausedReason: "PLAN_ENDED",
+    });
     expect(savedSub(1).graceEndsAt).toBeNull();
     expect(txUpdate(1)[1].Delete!.Key).toEqual({ pk: "APP_BILLING_GRACE", sk: `STORE#${STORE}` });
   });
 
-  it("cancelled: FREE when it ends; DRAFT (and why) when the payer already has a live FREE store", async () => {
-    stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ status: "canceled", cancellation_details: { reason: "cancellation_requested" } }));
-    withSettings({ lifecycle: { status: "LIVE", plan: "NOVA" }, subscription: record({ plan: "NOVA" }) });
-    vi.mocked(findLiveFreeStoreAdministeredBy).mockResolvedValueOnce("OTHER");
+  it("cancelled: the store stays live until the period ends, then it's a DRAFT with no plan", async () => {
+    withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: record() });
+    stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ cancel_at_period_end: true }));
     await syncSubscription("sub_1", () => NOW);
-    expect(findLiveFreeStoreAdministeredBy).toHaveBeenCalledWith(USER, STORE);
-    expect(savedLifecycle()).toMatchObject({ status: "DRAFT", plan: "FREE", pausedReason: "FREE_PLAN_IN_USE" });
+    expect(savedLifecycle()).toBeUndefined();
+    expect(savedSub().cancelAtPeriodEnd).toBe(true);
+
+    withSettings({
+      lifecycle: { status: "LIVE", plan: "SPARK" },
+      subscription: record({ cancelAtPeriodEnd: true }),
+    });
+    stripe.subscriptions.retrieve.mockResolvedValue(
+      stripeSub({ status: "canceled", cancellation_details: { reason: "cancellation_requested" } })
+    );
+    await syncSubscription("sub_1", () => NOW);
+    expect(savedLifecycle(1)).toMatchObject({
+      status: "DRAFT",
+      plan: "NONE",
+      pausedReason: "PLAN_ENDED",
+      statusChangedAt: NOW,
+    });
   });
 
   it("a second subscription for a store that already pays is cancelled; an old one's events are ignored", async () => {
@@ -371,7 +421,7 @@ describe("syncSubscription (P.5)", () => {
     withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: record({ status: "unpaid", graceEndsAt: NOW - 1 }) });
     stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ status: "unpaid" }));
     expect(await sweepExpiredGrace(() => NOW)).toBe(1);
-    expect(savedLifecycle()).toMatchObject({ plan: "FREE" });
+    expect(savedLifecycle()).toMatchObject({ status: "DRAFT", plan: "NONE" });
   });
 });
 
@@ -477,16 +527,9 @@ describe("Go Live on a paid plan (P.5)", () => {
 });
 
 describe("/store/billing (P.5)", () => {
-  it("checkout: a live FREE store upgrades; drafts, paying stores and FREE are refused", async () => {
-    withSettings({ lifecycle: { status: "LIVE", plan: "FREE" } });
-    expect((await post("/billing/checkout", { storeId: STORE, plan: "SPARK" })).body.checkoutUrl).toBe("https://checkout.stripe.com/c/cs_1");
-    expect((await post("/billing/checkout", { storeId: STORE, plan: "FREE" })).status).toBe(400);
-    withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: record() });
-    expect((await post("/billing/checkout", { storeId: STORE, plan: "NOVA" })).body.code).toBe("ALREADY_SUBSCRIBED");
-    withSettings();
-    expect((await post("/billing/checkout", { storeId: STORE, plan: "NOVA" })).body.code).toBe("NOT_LIVE");
-    role.current = "MERCHANT";
-    expect((await post("/billing/checkout", { storeId: STORE, plan: "NOVA" })).status).toBe(403);
+  it("there's no separate checkout: a plan is picked by going live", async () => {
+    withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" } });
+    expect((await post("/billing/checkout", { storeId: STORE, plan: "NOVA" })).status).toBe(404);
   });
 
   it("portal: only the person who subscribed", async () => {

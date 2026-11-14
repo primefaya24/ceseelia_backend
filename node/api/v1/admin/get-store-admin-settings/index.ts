@@ -3,7 +3,7 @@ import { appConstants } from "../../../../constants";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { isUlid } from "../../../../layers/core/utils";
 import { getStoreAdminSettings } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
-import { PLANS } from "../../../../layers/core/plans";
+import { NO_PLAN, PLANS } from "../../../../layers/core/plans";
 import { blocksNewSubscription } from "../../../../layers/core/billing";
 import { sendServerError } from "../route-errors";
 
@@ -12,7 +12,7 @@ import { sendServerError } from "../route-errors";
  * → { commissionSource, commissionMode, commissionPercentBps, salesCommissions, suspended,
  *     plan, planCommissions } (5.1a/5.1b/P.6, defaults filled in by normalizeAdminSettings)
  *   `plan` / `planCommissions` = the store's plan and its default fee per order (cents), what
- *   the store pays while `commissionSource` is PLAN. `planSetByAdmin` (P.8) = an admin gave the
+ *   the store pays while `commissionSource` is PLAN (`plan` NONE: no plan yet, planCommissions null). `planSetByAdmin` (P.8) = an admin gave the
  *   plan; `paysForPlan` = a subscription pays for it (or is in grace), so set-store-plan is
  *   refused. · 404 STORE_NOT_FOUND
  */
@@ -37,7 +37,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     res.send({
       ...found.admin,
       plan,
-      planCommissions: { ...PLANS[plan].commissionMinor },
+      planCommissions: plan === NO_PLAN ? null : { ...PLANS[plan].commissionMinor },
       planSetByAdmin: found.lifecycle.planSetByAdmin === true,
       paysForPlan: blocksNewSubscription(found.subscription, Date.now()),
     });

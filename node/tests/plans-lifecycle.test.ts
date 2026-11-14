@@ -13,13 +13,12 @@ import {
   StoreSettings,
 } from "../layers/core/interfaces/store";
 import {
-  getPlan,
-  isPaidPlan,
   isStorePlan,
-  orderLimitWarningAt,
   PLANS,
+  planFromLookupKey,
   planPriceLookupKey,
   STORE_PLANS,
+  toStorePlanOrNone,
 } from "../layers/core/plans";
 import { liveStoreSettings } from "./fixtures";
 
@@ -34,24 +33,17 @@ beforeEach(() => {
 });
 
 describe("plan catalogue (P.1)", () => {
-  it("has the owner's prices, commissions and limits (2026-11-12)", () => {
-    expect(STORE_PLANS).toEqual(["FREE", "SPARK", "NOVA"]);
-    expect(PLANS.FREE).toMatchObject({
-      monthlyPriceMinor: { CAD: 0, AUD: 0, USD: 0 },
-      commissionMinor: { CAD: 295, AUD: 295, USD: 245 },
-      monthlyOrderLimit: 30,
-      customDomain: false,
-    });
+  it("has the owner's prices and commissions; no Free plan (2026-11-13)", () => {
+    expect(STORE_PLANS).toEqual(["SPARK", "NOVA"]);
+    expect(PLANS).not.toHaveProperty("FREE");
     expect(PLANS.SPARK).toMatchObject({
       monthlyPriceMinor: { CAD: 2500, AUD: 2500, USD: 1900 },
       commissionMinor: { CAD: 195, AUD: 195, USD: 145 },
-      monthlyOrderLimit: null,
       customDomain: true,
     });
     expect(PLANS.NOVA).toMatchObject({
       monthlyPriceMinor: { CAD: 4900, AUD: 4900, USD: 3900 },
       commissionMinor: { CAD: 0, AUD: 0, USD: 0 },
-      monthlyOrderLimit: null,
       customDomain: true,
     });
   });
@@ -61,41 +53,56 @@ describe("plan catalogue (P.1)", () => {
       (PLANS.SPARK.commissionMinor as any).USD = 0;
     }).toThrow();
     expect(() => {
-      (PLANS as any).FREE = PLANS.NOVA;
+      (PLANS as any).SPARK = PLANS.NOVA;
     }).toThrow();
   });
 
-  it("anything that isn't a plan is FREE, never a paid plan", () => {
+  it("anything that isn't SPARK or NOVA is no plan (the old FREE too), never a plan by accident", () => {
     expect(isStorePlan("SPARK")).toBe(true);
-    for (const bad of ["spark", "PRO", "", null, undefined, 1, ["NOVA"]]) {
+    for (const bad of ["FREE", "NONE", "spark", "PRO", "", null, undefined, 1, ["NOVA"]]) {
       expect(isStorePlan(bad)).toBe(false);
-      expect(getPlan(bad).id).toBe("FREE");
+      expect(toStorePlanOrNone(bad)).toBe("NONE");
     }
+    expect(toStorePlanOrNone("NOVA")).toBe("NOVA");
   });
 
-  it("paid plans have Stripe lookup keys per currency; FREE has none", () => {
-    expect(isPaidPlan("FREE")).toBe(false);
-    expect(isPaidPlan("SPARK")).toBe(true);
+  it("every plan has a Stripe lookup key per currency, and back", () => {
     expect(planPriceLookupKey("SPARK", "CAD")).toBe("ceseelia_spark_cad");
     expect(planPriceLookupKey("NOVA", "USD")).toBe("ceseelia_nova_usd");
-    expect(planPriceLookupKey("FREE", "AUD")).toBeNull();
-  });
-
-  it("warns at 80% of FREE's limit (24 of 30) and never on unlimited plans", () => {
-    expect(orderLimitWarningAt("FREE")).toBe(24);
-    expect(orderLimitWarningAt("SPARK")).toBeNull();
+    expect(planFromLookupKey("ceseelia_nova_aud")).toEqual({ plan: "NOVA", currency: "AUD" });
+    expect(planFromLookupKey("ceseelia_free_cad")).toBeNull();
+    expect(planFromLookupKey("ceseelia_spark_eur")).toBeNull();
   });
 });
 
 describe("store lifecycle and suspension (P.2)", () => {
-  it("a new store is a FREE draft", () => {
-    expect(initStoreSettings().lifecycle).toMatchObject({ status: "DRAFT", plan: "FREE" });
+  it("a new store is a draft with no plan", () => {
+    expect(initStoreSettings().lifecycle).toMatchObject({ status: "DRAFT", plan: "NONE" });
     expect(initStoreSettings().admin.suspended).toBe(false);
   });
 
-  it("a store saved before P.2 is LIVE on FREE (A2); a bad saved value is never live", () => {
-    expect(normalizeStoreLifecycle(undefined)).toEqual({ status: "LIVE", plan: "FREE" });
-    expect(normalizeStoreLifecycle({ status: "OPEN", plan: "GOLD" })).toEqual({ status: "DRAFT", plan: "FREE" });
+  it("only a store with a plan is live: no lifecycle, a bad value or the old FREE never is", () => {
+    expect(normalizeStoreLifecycle(undefined)).toEqual({ status: "DRAFT", plan: "NONE" });
+    expect(normalizeStoreLifecycle({ status: "OPEN", plan: "GOLD" })).toEqual({
+      status: "DRAFT",
+      plan: "NONE",
+    });
+    expect(normalizeStoreLifecycle({ status: "LIVE", plan: "FREE", firstLiveAt: 5 })).toEqual({
+      status: "DRAFT",
+      plan: "NONE",
+      firstLiveAt: 5,
+      pausedReason: "PLAN_ENDED",
+    });
+    expect(
+      normalizeStoreLifecycle({ status: "DRAFT", plan: "FREE", pausedReason: "FREE_PLAN_IN_USE" })
+    ).toEqual({
+      status: "DRAFT",
+      plan: "NONE",
+    });
+    expect(normalizeStoreLifecycle({ status: "LIVE", plan: "SPARK" })).toEqual({
+      status: "LIVE",
+      plan: "SPARK",
+    });
     expect(normalizeStoreLifecycle({ status: "IN_REVIEW", plan: "NOVA", firstLiveAt: 5 })).toEqual({
       status: "IN_REVIEW",
       plan: "NOVA",
@@ -112,12 +119,12 @@ describe("store lifecycle and suspension (P.2)", () => {
     expect(normalizeAdminSettings({ suspended: "yes" }).suspended).toBe(false);
   });
 
-  it("createStore writes the new store's SETTINGS as a FREE draft", async () => {
+  it("createStore writes the new store's SETTINGS as a draft with no plan", async () => {
     ddb.on(TransactWriteCommand).resolves({});
     await createStore("Hoop", "hoop");
     const puts = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!.map((t) => t.Put?.Item);
     const settings = puts.find((i) => i?.sk === "SETTINGS");
-    expect(settings?.lifecycle).toMatchObject({ status: "DRAFT", plan: "FREE" });
+    expect(settings?.lifecycle).toMatchObject({ status: "DRAFT", plan: "NONE" });
     expect(settings?.admin.suspended).toBe(false);
     expect(settings?.admin).not.toHaveProperty("isStoreLive");
   });
@@ -144,28 +151,36 @@ describe("public routes for a store that isn't live (P.2)", () => {
   };
   const settingsRow = (s: StoreSettings) =>
     ddb.on(GetCommand).resolves({ Item: { pk: `STORE#${STORE}`, sk: "SETTINGS", ...s } });
-  const storefront = () => request(app).get(`/api/v1/store/inventory/get-data-public/${STORE}`).set("Host", "localhost");
+  const storefront = () =>
+    request(app).get(`/api/v1/store/inventory/get-data-public/${STORE}`).set("Host", "localhost");
 
-  it.each(["DRAFT", "IN_REVIEW"] as const)("%s: the storefront is a 200 'Coming soon' with nothing to buy", async (status) => {
-    settingsRow(draft({ lifecycle: { status, plan: "FREE" } }));
-    const res = await storefront();
-    expect(res.status).toBe(200);
-    expect(res.headers["cache-control"]).toBe("no-store");
-    expect(res.body.storeId).toBe(STORE);
-    expect(res.body.categories).toEqual([]);
-    expect(res.body.items).toEqual([]);
-    const s = res.body.settings;
-    expect(s.storeStatus).toBe(status);
-    expect(s.paymentsEnabled).toBe(false);
-    expect(s.storeInfo).toMatchObject({ storeName: "Hoop", slogan: "Soon", logoUri: "store/x/logo.png" });
-    expect(s.storeInfo.emailaddress).toBe("");
-    expect(s.storeInfo.phoneNumber).toBe("");
-    expect(s.storeInfo.contactFormAvailable).toBe(false);
-    expect(s.socialMediaLinks.instagram).toBe("");
-    expect(s.general.pickupAddress).toBe("");
-    for (const key of ["admin", "payments", "lifecycle"]) expect(s).not.toHaveProperty(key);
-    expect(ddb.commandCalls(QueryCommand)).toHaveLength(0); // its items are never read
-  });
+  it.each(["DRAFT", "IN_REVIEW"] as const)(
+    "%s: the storefront is a 200 'Coming soon' with nothing to buy",
+    async (status) => {
+      settingsRow(draft({ lifecycle: { status, plan: "NONE" } }));
+      const res = await storefront();
+      expect(res.status).toBe(200);
+      expect(res.headers["cache-control"]).toBe("no-store");
+      expect(res.body.storeId).toBe(STORE);
+      expect(res.body.categories).toEqual([]);
+      expect(res.body.items).toEqual([]);
+      const s = res.body.settings;
+      expect(s.storeStatus).toBe(status);
+      expect(s.paymentsEnabled).toBe(false);
+      expect(s.storeInfo).toMatchObject({
+        storeName: "Hoop",
+        slogan: "Soon",
+        logoUri: "store/x/logo.png",
+      });
+      expect(s.storeInfo.emailaddress).toBe("");
+      expect(s.storeInfo.phoneNumber).toBe("");
+      expect(s.storeInfo.contactFormAvailable).toBe(false);
+      expect(s.socialMediaLinks.instagram).toBe("");
+      expect(s.general.pickupAddress).toBe("");
+      for (const key of ["admin", "payments", "lifecycle"]) expect(s).not.toHaveProperty(key);
+      expect(ddb.commandCalls(QueryCommand)).toHaveLength(0); // its items are never read
+    }
+  );
 
   it("a suspended draft is just unavailable", async () => {
     settingsRow(draft({ admin: { ...initStoreSettings().admin, suspended: true } }));

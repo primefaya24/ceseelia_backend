@@ -11,7 +11,7 @@ checkStripeConfig()
     .then(() => {
         app.listen(appConfig.PORT, appConfig.localServerIp, () => {
             console.warn(`⚡️[server]: [${appConfig.STAGE}] Server is running at http://${appConfig.localServerIp}:${appConfig.PORT}`);
-            // P.5: stores whose payment grace ended drop to FREE (one server; see progress.md).
+            // P.5: stores whose payment grace ended lose their plan, live → draft (one server; see progress.md).
             registerTimer(appConfig.BILLING_GRACE_SWEEP_INTERVAL, async () => {
                 const n = await sweepExpiredGrace();
                 if (n > 0) console.warn(`[billing] grace sweep: ${n} store(s) re-synced`);

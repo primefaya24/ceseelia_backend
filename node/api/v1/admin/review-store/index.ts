@@ -3,11 +3,12 @@ import { appConstants } from "../../../../constants";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { isUlid } from "../../../../layers/core/utils";
 import { StoreStatusChangedError } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
-import { getStoreAdminState, saveReviewDecision } from "../../../../layers/aws/dynamodb/dynamo-entities/store-admin";
-import { findLiveFreeStoreAdministeredBy } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
+import {
+  getStoreAdminState,
+  saveReviewDecision,
+} from "../../../../layers/aws/dynamodb/dynamo-entities/store-admin";
 import {
   lifecycleAfterReview,
-  requestedPlanOf,
   REVIEW_DECISIONS,
   REVIEW_MESSAGE_MAX,
   ReviewDecision,
@@ -19,8 +20,7 @@ import { sendPaymentsError } from "../../store/payments/errors";
 /*
  * POST /admin/review-store { storeId, decision: "APPROVE" | "REJECT", message? } (admin, P.8)
  * → { status, plan, approved } where `approved` = a DRAFT cleared to go live (see
- *   layers/core/review: a paid plan still needs its checkout, and Free needs no other live Free
- *   store on the account).
+ *   layers/core/review: its next Go Live goes straight to checkout, or live on a gifted plan).
  * REJECT needs a message (1–500 characters), shown to the merchant.
  * 404 STORE_NOT_FOUND · 409 NOT_IN_REVIEW · 409 STATUS_CHANGED (someone decided meanwhile)
  * A rejected store that somehow has a paying subscription has it cancelled first (otherwise its
@@ -58,19 +58,16 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       res.status(appConstants.HTTP_STATUS_CODE_CONFLICT).send({ code: "NOT_IN_REVIEW", message: "This store isn't waiting for review." });
       return;
     }
-    const requestedPlan = requestedPlanOf(state.review, state.lifecycle);
-    const requester = state.review?.requestedByUserId ?? state.lifecycle.createdByUserId ?? null;
-    const otherLiveFreeStore =
-      decision === "APPROVE" && requestedPlan === "FREE" && requester
-        ? (await findLiveFreeStoreAdministeredBy(requester, storeId)) !== null
-        : false;
-    if (decision === "REJECT" && state.subscription && blocksNewSubscription(state.subscription, Date.now())) {
+    if (
+      decision === "REJECT" &&
+      state.subscription &&
+      blocksNewSubscription(state.subscription, Date.now())
+    ) {
       await cancelSubscriptionNow(state.subscription.subscriptionId);
     }
-    const lifecycle = lifecycleAfterReview(state.lifecycle, requestedPlan, decision, {
+    const lifecycle = lifecycleAfterReview(state.lifecycle, decision, {
       now: Date.now(),
       message: req.body.message,
-      otherLiveFreeStore,
     });
     await saveReviewDecision(storeId, lifecycle);
     res.send({ status: lifecycle.status, plan: lifecycle.plan, approved: lifecycle.reviewApprovedAt !== undefined });

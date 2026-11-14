@@ -5,5 +5,5 @@ import { initStoreSettings, StoreSettings } from "../layers/core/interfaces/stor
  * which is a DRAFT since P.2, so public-route tests start from this instead.
  */
 export function liveStoreSettings(): StoreSettings {
-  return { ...initStoreSettings(), lifecycle: { status: "LIVE", plan: "FREE" } };
+  return { ...initStoreSettings(), lifecycle: { status: "LIVE", plan: "SPARK" } };
 }

@@ -200,8 +200,10 @@ export class StoreStatusChangedError extends Error {
 /*
  * Go Live's write (P.4b): DRAFT → LIVE, or DRAFT → IN_REVIEW when runSmartStoreValidation flagged
  * the store. Conditional on the store still being a DRAFT, so two Go Lives (or an admin change)
- * can't both win. IN_REVIEW keeps the reasons and the requested plan in the SETTINGS row's own
- * `review` attribute, which only admins see (members' get-data and public data drop it).
+ * can't both win. LIVE takes the plan (one an admin gave: paid plans go live from the billing
+ * webhook instead). IN_REVIEW keeps the plan the store has (it hasn't paid for the one it asked
+ * for) and keeps the reasons and the requested plan in the SETTINGS row's own `review`
+ * attribute, which only admins see (members' get-data and public data drop it).
  */
 export async function setStoreStatusFromDraft(
   storeId: string,
@@ -223,7 +225,7 @@ export async function setStoreStatusFromDraft(
   const lifecycle: StoreLifecycle = {
     ...previous,
     status: change.status,
-    plan: change.plan,
+    plan: change.status === "LIVE" ? change.plan : previous.plan,
     statusChangedAt: now,
     ...(change.status === "LIVE" && !change.previous.firstLiveAt ? { firstLiveAt: now } : {}),
   };

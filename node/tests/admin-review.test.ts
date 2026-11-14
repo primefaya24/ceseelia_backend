@@ -14,11 +14,9 @@ import {
 vi.mock("../layers/aws/cognito", () => ({ verifyCognitoAccessToken: vi.fn() }));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/membership")>()),
-  findLiveFreeStoreAdministeredBy: vi.fn(async () => null),
 }));
 
 import { verifyCognitoAccessToken } from "../layers/aws/cognito";
-import { findLiveFreeStoreAdministeredBy } from "../layers/aws/dynamodb/dynamo-entities/membership";
 import { lifecycleAfterReview, lifecycleWithAdminPlan } from "../layers/core/review";
 import { lifecycleAfter } from "../layers/core/billing";
 import { normalizeStoreLifecycle } from "../layers/core/interfaces/store";
@@ -36,10 +34,12 @@ const call = (method: "get" | "post" | "put", path: string, body?: object) => {
   return body ? r.send(body) : r;
 };
 const withSettings = (item: Record<string, unknown> | null) =>
-  ddb.on(GetCommand).resolves(item ? { Item: { pk: `STORE#${STORE}`, sk: "SETTINGS", ...item } } : {});
-const inReview = (requestedPlan = "FREE", extra: object = {}) =>
+  ddb
+    .on(GetCommand)
+    .resolves(item ? { Item: { pk: `STORE#${STORE}`, sk: "SETTINGS", ...item } } : {});
+const inReview = (requestedPlan = "SPARK", extra: object = {}) =>
   withSettings({
-    lifecycle: { status: "IN_REVIEW", plan: requestedPlan, createdByUserId: "OWNER" },
+    lifecycle: { status: "IN_REVIEW", plan: "NONE", createdByUserId: "OWNER" },
     review: { reasons: ["X"], requestedPlan, requestedAt: 1, requestedByUserId: "OWNER" },
     ...extra,
   });
@@ -50,46 +50,65 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
   asAdmin();
-  vi.mocked(findLiveFreeStoreAdministeredBy).mockResolvedValue(null);
   ddb.on(TransactWriteCommand).resolves({});
   ddb.on(UpdateCommand).resolves({});
 });
 
 describe("review rules (P.8)", () => {
-  const lc = { status: "IN_REVIEW" as const, plan: "FREE" as const, reviewRejection: { message: "old", at: 1 } };
-  const opts = { now: NOW, otherLiveFreeStore: false };
+  const lc = {
+    status: "IN_REVIEW" as const,
+    plan: "NONE" as const,
+    reviewRejection: { message: "old", at: 1 },
+  };
+  const opts = { now: NOW };
 
-  it("approving Free takes it live; a paid plan (or Free already used) waits for Go Live, cleared", () => {
-    expect(lifecycleAfterReview(lc, "FREE", "APPROVE", opts)).toEqual({
-      status: "LIVE",
-      plan: "FREE",
-      statusChangedAt: NOW,
-      firstLiveAt: NOW,
-    });
-    expect(lifecycleAfterReview({ ...lc, plan: "NOVA" }, "NOVA", "APPROVE", opts)).toEqual({
+  it("approving never takes a store live by itself: DRAFT, cleared for Go Live (checkout next)", () => {
+    expect(lifecycleAfterReview(lc, "APPROVE", opts)).toEqual({
       status: "DRAFT",
-      plan: "NOVA",
+      plan: "NONE",
       statusChangedAt: NOW,
       reviewApprovedAt: NOW,
     });
-    expect(lifecycleAfterReview(lc, "FREE", "APPROVE", { ...opts, otherLiveFreeStore: true })).toMatchObject({
+    expect(
+      lifecycleAfterReview({ ...lc, plan: "NOVA", planSetByAdmin: true }, "APPROVE", opts)
+    ).toEqual({
       status: "DRAFT",
+      plan: "NOVA",
+      planSetByAdmin: true,
+      statusChangedAt: NOW,
       reviewApprovedAt: NOW,
     });
   });
 
   it("rejecting sends it back to DRAFT with the message", () => {
-    expect(lifecycleAfterReview(lc, "FREE", "REJECT", { ...opts, message: "  Fake brands  " })).toEqual({
+    expect(lifecycleAfterReview(lc, "REJECT", { ...opts, message: "  Fake brands  " })).toEqual({
       status: "DRAFT",
-      plan: "FREE",
+      plan: "NONE",
       statusChangedAt: NOW,
       reviewRejection: { message: "Fake brands", at: NOW },
     });
   });
 
-  it("an admin's plan is marked; FREE clears the mark; billing changing the plan clears it too", () => {
-    expect(lifecycleWithAdminPlan({ status: "LIVE", plan: "FREE" }, "SPARK")).toEqual({ status: "LIVE", plan: "SPARK", planSetByAdmin: true });
-    expect(lifecycleWithAdminPlan({ status: "LIVE", plan: "SPARK", planSetByAdmin: true }, "FREE")).toEqual({ status: "LIVE", plan: "FREE" });
+  it("an admin's plan is marked; NONE takes it away (a live store goes back to DRAFT); billing changing the plan clears the mark", () => {
+    expect(lifecycleWithAdminPlan({ status: "DRAFT", plan: "NONE" }, "SPARK")).toEqual({
+      status: "DRAFT",
+      plan: "SPARK",
+      planSetByAdmin: true,
+    });
+    expect(
+      lifecycleWithAdminPlan({ status: "LIVE", plan: "SPARK", planSetByAdmin: true }, "NOVA")
+    ).toEqual({ status: "LIVE", plan: "NOVA", planSetByAdmin: true });
+    expect(
+      lifecycleWithAdminPlan({ status: "LIVE", plan: "SPARK", planSetByAdmin: true }, "NONE", NOW)
+    ).toEqual({
+      status: "DRAFT",
+      plan: "NONE",
+      statusChangedAt: NOW,
+      pausedReason: "PLAN_ENDED",
+    });
+    expect(
+      lifecycleWithAdminPlan({ status: "DRAFT", plan: "SPARK", planSetByAdmin: true }, "NONE")
+    ).toEqual({ status: "DRAFT", plan: "NONE" });
     const gifted = { status: "LIVE" as const, plan: "SPARK" as const, planSetByAdmin: true };
     expect(lifecycleAfter(gifted, { kind: "PAID", plan: "NOVA" }, opts)).toEqual({ status: "LIVE", plan: "NOVA" });
     expect(lifecycleAfter(gifted, { kind: "NONE" }, opts)).toBe(gifted);
@@ -99,15 +118,29 @@ describe("review rules (P.8)", () => {
     expect(
       normalizeStoreLifecycle({
         status: "DRAFT",
-        plan: "FREE",
+        plan: "SPARK",
         planSetByAdmin: true,
         reviewApprovedAt: 5,
         reviewRejection: { message: "m", at: 6 },
       })
-    ).toEqual({ status: "DRAFT", plan: "FREE", planSetByAdmin: true, reviewApprovedAt: 5, reviewRejection: { message: "m", at: 6 } });
-    expect(normalizeStoreLifecycle({ status: "DRAFT", plan: "FREE", planSetByAdmin: "yes", reviewApprovedAt: "x", reviewRejection: { message: 5 } })).toEqual({
+    ).toEqual({
       status: "DRAFT",
-      plan: "FREE",
+      plan: "SPARK",
+      planSetByAdmin: true,
+      reviewApprovedAt: 5,
+      reviewRejection: { message: "m", at: 6 },
+    });
+    expect(
+      normalizeStoreLifecycle({
+        status: "DRAFT",
+        plan: "FREE",
+        planSetByAdmin: "yes",
+        reviewApprovedAt: "x",
+        reviewRejection: { message: 5 },
+      })
+    ).toEqual({
+      status: "DRAFT",
+      plan: "NONE",
     });
   });
 });
@@ -116,8 +149,14 @@ describe("GET /admin/get-review-queue (P.8)", () => {
   it("lists stores in review, oldest first, with their name and link", async () => {
     ddb.on(QueryCommand).resolves({
       Items: [
-        { storeId: "B", requestedAt: 20, requestedPlan: "SPARK", reasons: ["R2"], requestedByUserId: "U2" },
-        { storeId: "A", requestedAt: 10, requestedPlan: "FREE", reasons: ["R1"] },
+        {
+          storeId: "B",
+          requestedAt: 20,
+          requestedPlan: "SPARK",
+          reasons: ["R2"],
+          requestedByUserId: "U2",
+        },
+        { storeId: "A", requestedAt: 10, requestedPlan: "FREE", reasons: ["R1"] }, // asked before Free was dropped
       ],
     });
     ddb.on(BatchGetCommand).callsFake((input) => {
@@ -127,8 +166,24 @@ describe("GET /admin/get-review-queue (P.8)", () => {
     const res = await call("get", "/get-review-queue");
     expect(ddb.commandCalls(QueryCommand)[0].args[0].input.ExpressionAttributeValues).toEqual({ ":pk": "APP_REVIEW" });
     expect(res.body.stores).toEqual([
-      { storeId: "A", storeName: "Alpha", storeSlug: "alpha", requestedAt: 10, requestedPlan: "FREE", reasons: ["R1"], requestedByUserId: null },
-      { storeId: "B", storeName: "Beta", storeSlug: "beta", requestedAt: 20, requestedPlan: "SPARK", reasons: ["R2"], requestedByUserId: "U2" },
+      {
+        storeId: "A",
+        storeName: "Alpha",
+        storeSlug: "alpha",
+        requestedAt: 10,
+        requestedPlan: "NONE",
+        reasons: ["R1"],
+        requestedByUserId: null,
+      },
+      {
+        storeId: "B",
+        storeName: "Beta",
+        storeSlug: "beta",
+        requestedAt: 20,
+        requestedPlan: "SPARK",
+        reasons: ["R2"],
+        requestedByUserId: "U2",
+      },
     ]);
   });
 
@@ -139,38 +194,49 @@ describe("GET /admin/get-review-queue (P.8)", () => {
 });
 
 describe("POST /admin/review-store (P.8)", () => {
-  it("approve Free: LIVE, review answered and off the queue, in one write while still IN_REVIEW", async () => {
+  it("approve: DRAFT, cleared to go live (they still pay at checkout), review answered and off the queue in one write", async () => {
     inReview();
     const res = await call("post", "/review-store", { storeId: STORE, decision: "APPROVE" });
-    expect(res.body).toEqual({ status: "LIVE", plan: "FREE", approved: false });
+    expect(res.body).toEqual({ status: "DRAFT", plan: "NONE", approved: true });
     const [update, queue] = tx();
     expect(update.Update!.UpdateExpression).toBe("SET #lc = :lc REMOVE #review");
     expect(update.Update!.ConditionExpression).toBe("#lc.#st = :inReview");
-    expect(update.Update!.ExpressionAttributeValues![":lc"]).toMatchObject({ status: "LIVE", plan: "FREE", createdByUserId: "OWNER" });
+    expect(update.Update!.ExpressionAttributeValues![":lc"]).toMatchObject({
+      status: "DRAFT",
+      plan: "NONE",
+      reviewApprovedAt: expect.any(Number),
+      createdByUserId: "OWNER",
+    });
     expect(queue.Delete!.Key).toEqual({ pk: "APP_REVIEW", sk: `STORE#${STORE}` });
-  });
-
-  it("approve a paid plan: DRAFT, cleared to go live (they still pay at checkout)", async () => {
-    inReview("SPARK");
-    const res = await call("post", "/review-store", { storeId: STORE, decision: "APPROVE" });
-    expect(res.body).toEqual({ status: "DRAFT", plan: "SPARK", approved: true });
-  });
-
-  it("approve Free when the owner already has a live Free store: DRAFT, cleared", async () => {
-    inReview();
-    vi.mocked(findLiveFreeStoreAdministeredBy).mockResolvedValue("OTHER");
-    expect((await call("post", "/review-store", { storeId: STORE, decision: "APPROVE" })).body.approved).toBe(true);
-    expect(findLiveFreeStoreAdministeredBy).toHaveBeenCalledWith("OWNER", STORE);
   });
 
   it("reject: DRAFT with the reason; a reason is required", async () => {
     inReview();
-    expect((await call("post", "/review-store", { storeId: STORE, decision: "REJECT" })).status).toBe(400);
-    expect((await call("post", "/review-store", { storeId: STORE, decision: "REJECT", message: "   " })).status).toBe(400);
-    expect((await call("post", "/review-store", { storeId: STORE, decision: "REJECT", message: "x".repeat(501) })).status).toBe(400);
-    const res = await call("post", "/review-store", { storeId: STORE, decision: "REJECT", message: "Counterfeit items" });
-    expect(res.body).toEqual({ status: "DRAFT", plan: "FREE", approved: false });
-    expect(tx()[0].Update!.ExpressionAttributeValues![":lc"].reviewRejection.message).toBe("Counterfeit items");
+    expect(
+      (await call("post", "/review-store", { storeId: STORE, decision: "REJECT" })).status
+    ).toBe(400);
+    expect(
+      (await call("post", "/review-store", { storeId: STORE, decision: "REJECT", message: "   " }))
+        .status
+    ).toBe(400);
+    expect(
+      (
+        await call("post", "/review-store", {
+          storeId: STORE,
+          decision: "REJECT",
+          message: "x".repeat(501),
+        })
+      ).status
+    ).toBe(400);
+    const res = await call("post", "/review-store", {
+      storeId: STORE,
+      decision: "REJECT",
+      message: "Counterfeit items",
+    });
+    expect(res.body).toEqual({ status: "DRAFT", plan: "NONE", approved: false });
+    expect(tx()[0].Update!.ExpressionAttributeValues![":lc"].reviewRejection.message).toBe(
+      "Counterfeit items"
+    );
   });
 
   it.each([[{ decision: "MAYBE" }], [{ decision: "APPROVE", storeId: "nope" }], [{ decision: 1 }]])("400 for %j", async (b) => {
@@ -178,8 +244,10 @@ describe("POST /admin/review-store (P.8)", () => {
   });
 
   it("409 NOT_IN_REVIEW, 409 STATUS_CHANGED when another admin decided first, 404, 403", async () => {
-    withSettings({ lifecycle: { status: "LIVE", plan: "FREE" } });
-    expect((await call("post", "/review-store", { storeId: STORE, decision: "APPROVE" })).body.code).toBe("NOT_IN_REVIEW");
+    withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" } });
+    expect(
+      (await call("post", "/review-store", { storeId: STORE, decision: "APPROVE" })).body.code
+    ).toBe("NOT_IN_REVIEW");
     inReview();
     ddb.on(TransactWriteCommand).rejects(
       new TransactionCanceledException({ message: "x", $metadata: {}, CancellationReasons: [{ Code: "ConditionalCheckFailed" }, { Code: "None" }] })
@@ -194,31 +262,62 @@ describe("POST /admin/review-store (P.8)", () => {
 
 describe("PUT /admin/set-store-plan (P.8)", () => {
   it("gives a plan without a subscription, marked as an admin's, only if nothing changed meanwhile", async () => {
-    withSettings({ lifecycle: { status: "DRAFT", plan: "FREE" } });
+    withSettings({ lifecycle: { status: "DRAFT", plan: "NONE" } });
     const res = await call("put", "/set-store-plan", { storeId: STORE, plan: "NOVA" });
-    expect(res.body).toEqual({ plan: "NOVA", planSetByAdmin: true });
+    expect(res.body).toEqual({ status: "DRAFT", plan: "NOVA", planSetByAdmin: true });
     const input = ddb.commandCalls(UpdateCommand)[0].args[0].input;
     expect(input.ExpressionAttributeValues![":lc"]).toEqual({ status: "DRAFT", plan: "NOVA", planSetByAdmin: true });
     expect(input.ConditionExpression).toBe("attribute_exists(pk) AND #lc.#st = :st AND #lc.#pl = :pl AND attribute_not_exists(#sub)");
   });
 
-  it("back to FREE clears the mark; an ended subscription doesn't block", async () => {
-    withSettings({ lifecycle: { status: "LIVE", plan: "SPARK", planSetByAdmin: true }, subscription: { subscriptionId: "sub_1", status: "canceled", graceEndsAt: null } });
-    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "FREE" })).body).toEqual({ plan: "FREE", planSetByAdmin: false });
-    expect(ddb.commandCalls(UpdateCommand)[0].args[0].input.ConditionExpression).toContain("#sub.#sid = :sid AND #sub.#subst = :subst");
+  it("NONE takes the plan away: a live store goes back to DRAFT; an ended subscription doesn't block", async () => {
+    withSettings({
+      lifecycle: { status: "LIVE", plan: "SPARK", planSetByAdmin: true },
+      subscription: { subscriptionId: "sub_1", status: "canceled", graceEndsAt: null },
+    });
+    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "NONE" })).body).toEqual({
+      status: "DRAFT",
+      plan: "NONE",
+      planSetByAdmin: false,
+    });
+    expect(
+      ddb.commandCalls(UpdateCommand)[0].args[0].input.ExpressionAttributeValues![":lc"]
+    ).toMatchObject({ status: "DRAFT", pausedReason: "PLAN_ENDED" });
+    expect(ddb.commandCalls(UpdateCommand)[0].args[0].input.ConditionExpression).toContain(
+      "#sub.#sid = :sid AND #sub.#subst = :subst"
+    );
   });
 
   it("409 HAS_SUBSCRIPTION while the store pays (or is in grace); 409 STATUS_CHANGED; 400; 403", async () => {
-    withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: { subscriptionId: "s", status: "active", graceEndsAt: null } });
-    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "NOVA" })).body.code).toBe("HAS_SUBSCRIPTION");
-    withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: { subscriptionId: "s", status: "unpaid", graceEndsAt: Date.now() + 1e6 } });
-    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "FREE" })).body.code).toBe("HAS_SUBSCRIPTION");
+    withSettings({
+      lifecycle: { status: "LIVE", plan: "SPARK" },
+      subscription: { subscriptionId: "s", status: "active", graceEndsAt: null },
+    });
+    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "NOVA" })).body.code).toBe(
+      "HAS_SUBSCRIPTION"
+    );
+    withSettings({
+      lifecycle: { status: "LIVE", plan: "SPARK" },
+      subscription: { subscriptionId: "s", status: "unpaid", graceEndsAt: Date.now() + 1e6 },
+    });
+    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "NONE" })).body.code).toBe(
+      "HAS_SUBSCRIPTION"
+    );
     expect(ddb.commandCalls(UpdateCommand)).toHaveLength(0);
 
-    withSettings({ lifecycle: { status: "LIVE", plan: "FREE" } });
-    ddb.on(UpdateCommand).rejects(new ConditionalCheckFailedException({ message: "x", $metadata: {} }));
-    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "SPARK" })).body.code).toBe("STATUS_CHANGED");
-    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "GOLD" })).status).toBe(400);
+    withSettings({ lifecycle: { status: "DRAFT", plan: "NONE" } });
+    ddb
+      .on(UpdateCommand)
+      .rejects(new ConditionalCheckFailedException({ message: "x", $metadata: {} }));
+    expect(
+      (await call("put", "/set-store-plan", { storeId: STORE, plan: "SPARK" })).body.code
+    ).toBe("STATUS_CHANGED");
+    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "GOLD" })).status).toBe(
+      400
+    );
+    expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "FREE" })).status).toBe(
+      400
+    );
     asUser();
     expect((await call("put", "/set-store-plan", { storeId: STORE, plan: "SPARK" })).status).toBe(403);
   });

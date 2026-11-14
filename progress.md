@@ -1,6 +1,6 @@
 # Ceseelia Backend — Progress Tracker
 
-_Last reviewed: 2026-11-08 (full codebase read-through) · Last updated: 2026-11-11_
+_Last reviewed: 2026-11-08 (full codebase read-through) · Last updated: 2026-11-13_
 
 This file tracks **what's left to do**. Design notes and conventions are in `CLAUDE.md`. The
 webapp has a matching file at `../ceseelia_webapp/progress.md`.
@@ -32,7 +32,15 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > (no pay at pickup, owner 2026-11-12).
 > Both repos are committed on `dev_v1.0.0_customer_store_front`; nothing pushed.
 
-> **Pick up here (2026-11-12):** Stages S, 0–4 and **Stage P (P.1–P.6, P.8)** are done in both
+> **2026-11-13: no Free plan any more (P.10).** Only Spark and Nova. A new store is a draft with
+> no plan (`plan: "NONE"`), visible to its members only; going live and subscribing are one step
+> (Go Live → Stripe Checkout → the webhook takes it live). Merchants switch Spark ↔ Nova in the
+> billing portal; when a plan ends (cancelled at the period's end, or a failed payment after the
+> 7 days' grace) the store goes back to a DRAFT with `pausedReason: "PLAN_ENDED"`. P.7 (Free
+> order limit) is dropped. `scripts/migrate-free-plan.mjs --write` was run on dev (2026-11-13:
+> the 4 dev stores are now drafts with no plan).
+>
+> **Pick up here (2026-11-12):** Stages S, 0–4 and **Stage P (P.1–P.6, P.8, P.10)** are done in both
 > repos, plus 5.1 (Stripe Connect Standard, commission rules) and 5.2 (merchant onboarding).
 > Latest commits: see `git log` (P.8 is the last one). **Next steps, in order:**
 > 0. **Owner's Stage P QA in the UI** (`../ceseelia_webapp/progress.md` §1b) before checkout.
@@ -44,9 +52,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >    account with `application_fee_amount`; **never `automatic_tax`** on shopper checkout;
 >    online payment only (no pay at pickup). The Connect webhook uses `webhookSecret`, the
 >    platform Billing one (`/api/v1/billing/stripe-webhook`) uses `billingWebhookSecret`.
-> 2. **P.7 Free order limit** (needs paid orders from 5.5/5.6): 30 paid orders per calendar
->    month (UTC) on FREE, warning at 24 (80%), then 7 days' grace, then new checkouts pause;
->    show "12 of 30 orders this month" on WA Plan & billing.
+> 2. ~~P.7 Free order limit~~ dropped with the Free plan (P.10, 2026-11-13).
 > 3. **Owner TODOs (not code):** build the AI check in `runSmartStoreValidation`
 >    (`layers/core/store-validation`, still a stub that passes every store); do the Stripe
 >    Billing setup listed under P.5 "Setup" (prices script, Stripe Tax, webhook, retries,
@@ -594,13 +600,15 @@ match the backend and webapp._
 Decided with the owner 2026-11-12. Done before the rest of Stage 5, because Go Live and the plan
 decide whether checkout is on and what the platform fee is. Two assumptions (flagged, owner can
 change): **(A1)** a subscription is billed in the currency of the store's Stripe account country
-(CA → CAD, US → USD, AU → AUD); **(A2)** stores that exist before P.2 are read as LIVE on FREE.
+(CA → CAD, US → USD, AU → AUD); **(A2)** stores that exist before P.2 are read as LIVE on FREE
+(superseded by P.10: they're read as DRAFT with no plan).
 
-**Plans (per store; at most one live FREE store per account):**
+**Plans (per store). Since 2026-11-13 (P.10) there is no FREE plan:** every live store pays for
+Spark or Nova; a store without a plan is a draft.
 
 | Plan | Monthly (CAD / AUD / USD) | Commission per order (CAD / AUD / USD) | Orders | Custom domain |
 |---|---|---|---|---|
-| FREE | none | 2.95 / 2.95 / 2.45 | 30 paid orders per calendar month | No |
+| ~~FREE~~ (dropped 2026-11-13) | none | 2.95 / 2.95 / 2.45 | 30 paid orders per calendar month | No |
 | SPARK | 25 / 25 / 19 | 1.95 / 1.95 / 1.45 | Unlimited | Yes ("coming soon" until 9.8) |
 | NOVA | 49 / 49 / 39 | none | Unlimited | Yes ("coming soon" until 9.8) |
 
@@ -766,7 +774,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       `commissionSource` (required on PUT; the custom fields are saved either way); GET adds
       `plan` and `planCommissions`. Note: the Go Live sheet and Plan & billing show the plan's
       default fee, even for a store with a CUSTOM deal.
-- [ ] P.7 FREE order limit: count paid orders per store per calendar month (UTC), bumped in 5.6.
+- [-] P.7 **Dropped 2026-11-13 with the Free plan (P.10).** Was: FREE order limit: count paid orders per store per calendar month (UTC), bumped in 5.6.
       Warn the merchant at 24 (80%). At 30, **7 days' grace** (orders still go through), then new
       checkouts pause until they upgrade or the month turns. Checked only in `create-order`
       (5.4), so a shopper already in Stripe Checkout is never stopped.
@@ -796,6 +804,32 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       - Not done: emails to the merchant on a decision (Stage 8 / 6.3 notifications); the
         merchant sees it in the Go Live sheet.
 - [ ] P.9 Custom domains: listed on SPARK / NOVA as "coming soon" at launch; built in 9.8.
+- [x] P.10 **No Free plan** (owner, 2026-11-13): only SPARK and NOVA; going live and subscribing
+      go hand in hand; merchants switch freely between the two; a cancelled plan ends at the
+      period's end and the store is no longer live. Done 2026-11-13 (supersedes the FREE parts
+      of P.1–P.8 above):
+      - `STORE_PLANS = ["SPARK", "NOVA"]`; `lifecycle.plan` is `StorePlanOrNone` (`"NONE"` =
+        no plan). `normalizeStoreLifecycle`: no lifecycle, an unknown plan or the old FREE →
+        NONE; **LIVE with no plan → DRAFT** (`pausedReason: "PLAN_ENDED"`), so nothing is live
+        without a plan. `monthlyOrderLimit`, `getPlan`, `isPaidPlan`, `orderLimitWarningAt` and
+        the FREE order-limit constants are gone; `findLiveFreeStoreAdministeredBy` too.
+      - New stores (`create-store`, admin `store/create`) are DRAFT / NONE.
+      - `POST /store/go-live {storeId, plan: SPARK|NOVA}` (FREE → 400): after the checklist and
+        `runSmartStoreValidation`, always a Billing `checkoutUrl` (store stays DRAFT until the
+        webhook), except a plan an admin gave → LIVE at once. Flagged → IN_REVIEW with the plan
+        asked for in `review.requestedPlan`; the lifecycle keeps NONE (nothing paid yet).
+      - Billing (`layers/core/billing`): `FREE` effect renamed `ENDED`: a LIVE store → DRAFT,
+        NONE, `PLAN_ENDED`; never removes a plan an admin gave after the subscription ended.
+        Spark ↔ Nova in the portal just changes the plan (as before).
+      - `POST /store/billing/checkout` (live FREE → paid upgrade) **removed**: a plan is picked
+        at Go Live; changes happen in the portal.
+      - Review: APPROVE → always DRAFT approved (next Go Live skips the check, then checkout, or
+        live on a gifted plan). Admin `set-store-plan` takes `SPARK | NOVA | NONE`; NONE on a
+        live store → DRAFT (`PLAN_ENDED`); answers `{status, plan, planSetByAdmin}`.
+      - Fee: `commissionInEffect` on NONE (or anything unknown) uses SPARK's fee, never 0 (a store
+        without a plan takes no orders anyway). Admin settings GET: `planCommissions: null` on NONE.
+      - `scripts/migrate-free-plan.mjs` rewrites stored lifecycles to the new shape (dry run by
+        default; `--write`). Needed because conditional writes compare the stored plan/status.
 
 ---
 
@@ -951,6 +985,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-13 | P.10: Free plan dropped (owner). Only Spark / Nova; new stores are DRAFT with plan NONE; Go Live = checkout; a plan that ends (cancel at period end, payment lost after grace, admin removal) sends a live store back to DRAFT (`PLAN_ENDED`). `/store/billing/checkout` removed, P.7 dropped, migration script `scripts/migrate-free-plan.mjs` added and run on dev (4 stores → DRAFT / NONE). |
 | 2026-11-12 | "Pick up here" refreshed for the next session: Stage 5 checkout (5.3–5.4) next, then P.7; owner TODOs listed (AI check, Stripe Billing setup). |
 | 2026-11-12 | P.8 done: admin store list with status / plan / billing, review queue (`APP_REVIEW`, get-review-queue, review-store approve/reject), set-store-plan (gift a plan, no checkout needed at Go Live); store delete cleans the admin-list rows. |
 | 2026-11-12 | P.6 done: `admin.commissionSource` PLAN / CUSTOM (missing = PLAN); `platformFeeForStore`, `commissionInEffect`, `feeFromCommission` (5.4c must use them); admin settings routes take/return the source, GET adds the plan and its default fee. |

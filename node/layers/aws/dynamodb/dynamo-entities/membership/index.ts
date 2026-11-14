@@ -157,26 +157,6 @@ export async function countDraftStoresAdministeredBy(userId: string): Promise<nu
 }
 
 /*
- * A LIVE FREE store (other than `exceptStoreId`) that `userId` is a store ADMIN of, or null: an
- * account can have at most one live FREE store (P.4a). Same read-not-atomic caveat as above;
- * Go Live is rare and per store, so a race would need two of the user's stores going live at
- * the same instant.
- */
-export async function findLiveFreeStoreAdministeredBy(userId: string, exceptStoreId: string): Promise<string | null> {
-  const rows = await queryAllWithPrefix(userPk(userId), `${appConstants.DYNAMO_ENTITY_STORE}#`, TABLE);
-  const adminOf = rows
-    .filter((r) => r.storeMemberPermission === "ADMIN" && r.storeId !== exceptStoreId)
-    .map((r) => String(r.storeId));
-  if (adminOf.length === 0) return null;
-  const settings = await dynamGetManyItems(TABLE, adminOf.map(settingsKey));
-  for (const row of settings) {
-    const l = normalizeStoreLifecycle(row.lifecycle);
-    if (l.status === "LIVE" && l.plan === "FREE") return String(row.pk).slice(`${appConstants.DYNAMO_ENTITY_STORE}#`.length);
-  }
-  return null;
-}
-
-/*
  * Make a user a member of a store. Both the store (SETTINGS row) and the user (PROFILE#INFO) must
  * exist. Throws MembershipError if either is missing or the user is already a member.
  */

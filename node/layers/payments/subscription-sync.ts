@@ -15,7 +15,6 @@ import {
   listExpiredGrace,
   writeStoreBilling,
 } from "../aws/dynamodb/dynamo-entities/billing";
-import { findLiveFreeStoreAdministeredBy } from "../aws/dynamodb/dynamo-entities/membership";
 import { cancelSubscriptionNow, retrieveSubscriptionSnapshot } from "./billing";
 
 /*
@@ -60,11 +59,7 @@ export async function syncSubscription(subscriptionId: string, now: () => number
 
     const sameSub = state.subscription?.subscriptionId === snap.id;
     const effect = planEffect(snap, sameSub ? (state.subscription?.graceEndsAt ?? null) : null, t);
-    const otherLiveFreeStore =
-      effect.kind === "FREE" && state.lifecycle.status === "LIVE" && state.lifecycle.plan !== "FREE"
-        ? (await findLiveFreeStoreAdministeredBy(payerUserId, storeId)) !== null
-        : false;
-    const lifecycle = lifecycleAfter(state.lifecycle, effect, { now: t, otherLiveFreeStore });
+    const lifecycle = lifecycleAfter(state.lifecycle, effect, { now: t });
     const record = subscriptionRecord(snap, payerUserId, effect, t);
     const lifecycleChanged = lifecycle !== state.lifecycle;
     const unchanged =
@@ -96,8 +91,8 @@ export async function forgetExpiredCheckout(storeId: string | undefined, session
 }
 
 /*
- * The hourly sweep (index.ts): stores whose grace has ended are synced again, which drops them
- * to FREE unless the merchant paid meanwhile. A store without a subscription anymore leaves
+ * The hourly sweep (index.ts): stores whose grace has ended are synced again, which ends their
+ * plan (a live store goes back to a draft) unless the merchant paid meanwhile. A store without a subscription anymore leaves
  * the list.
  */
 export async function sweepExpiredGrace(now: () => number = Date.now): Promise<number> {
