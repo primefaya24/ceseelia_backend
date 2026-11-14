@@ -181,9 +181,29 @@ describe("POST /customer/quote (4.3)", () => {
       ok: true,
       error: null,
     });
-    // A postal code (or anything else) in the body is ignored: the client can't pick the province.
-    const sent = await quote(body([cake], { fulfilment: "DELIVERY", postalCode: "T2P 1J9", province: "AB" }));
-    expect(sent.status).toBe(200);
+    // Anything else in the body is ignored: the client can't pick the province directly.
+    const sent = await quote(body([cake], { fulfilment: "DELIVERY", province: "AB" }));
     expect(sent.body).toMatchObject({ taxRegion: { province: "ON", estimated: true }, taxMinor: 97 });
+  });
+
+  it("checkout's quote taxes a delivery on its postal code, as create-order will (5.1)", async () => {
+    const s = liveStoreSettings();
+    liveStore({
+      general: {
+        ...s.general,
+        discountPercent: 0,
+        taxMode: "CANADA",
+        deliveryEnabled: true,
+        deliveryFees: { USD: 0 },
+        canadaTax: { homeProvince: "ON", gstRegistered: true, provincialRegistrations: [] },
+      },
+    });
+    const cake = { itemId: CAKE, quantity: 3 }; // 749
+    const ab = await quote(body([cake], { fulfilment: "DELIVERY", postalCode: " t2p 1j9 " }));
+    expect(ab.body).toMatchObject({ taxRegion: { province: "AB", estimated: false }, taxLines: [{ code: "GST" }], taxMinor: 37 });
+    const bad = await quote(body([cake], { fulfilment: "DELIVERY", postalCode: "90210" }));
+    expect(bad.body.error).toMatchObject({ code: "INVALID_POSTAL_CODE" });
+    expect((await quote(body([cake], { fulfilment: "DELIVERY", postalCode: "x".repeat(11) }))).status).toBe(400);
+    expect((await quote(body([cake], { fulfilment: "DELIVERY", postalCode: 5 }))).status).toBe(400);
   });
 });

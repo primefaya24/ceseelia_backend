@@ -1040,6 +1040,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-13 | `POST /customer/quote` takes an optional delivery `postalCode` (WA 5.1 checkout), so the total shown is taxed exactly as create-order will; the cart still sends none and gets the geo-IP estimate (QA Q.23). |
 | 2026-11-13 | 5.5 + 5.6 done: Connect webhook `/api/v1/payments/stripe-connect-webhook` (signature, account/session checks, event ids; paid / expired / async failed / refunds / disputes / account.updated), `markOrderPaid` (one transaction: PAID, stock by item or variant row, order count, APP sale record; shortfall → paid and flagged). 6.6 `GET /customer/order-status/:orderId` (token header). Old 501 stub removed. |
 | 2026-11-13 | 5.3 + 5.4 done: order model (status enum, pointer row, guest customer, status token hash), `POST /customer/create-order` (re-quote with the delivery postal code, `PRICE_CHANGED` guard, direct-charge Checkout Session with `application_fee_amount`, no `automatic_tax`, session total = quote total). Owner: guest checkout, address on our form. Next: 5.5 Connect webhook. |
 | 2026-11-13 | Stage P QA done by the owner (WA §1b): everything passed, paid plans included. Next: 5.3 / 5.4 checkout. |

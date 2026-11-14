@@ -13,7 +13,8 @@ import { getClientIp, isUlid, resolveCaProvinceFromGeo } from "../../../../layer
 /*
  * POST /customer/quote (public, no auth; progress.md 4.3 / WA 4.4)
  * Body { storeId, currency, fulfilment?: "PICKUP" | "DELIVERY",
- *        lines: [{ itemId, quantity, params: [{ label, values }] }] }.
+ *        lines: [{ itemId, quantity, params: [{ label, values }] }], postalCode? }.
+ * `postalCode` (checkout, 5.1): a delivery taxed on it, exactly as create-order will.
  * Canadian tax on a delivery (QA Q.23) is an estimate for the province the shopper's IP is in
  * (geo-IP, never stored or logged), else the store's own; `taxRegion.estimated` says so. A VPN
  * only changes this estimate: the order is taxed on its delivery address at checkout (Stage 5).
@@ -64,13 +65,19 @@ function pureRequestParams(req: Request): boolean {
     isString(b?.currency) &&
     (b.fulfilment === undefined || b.fulfilment === "PICKUP" || b.fulfilment === "DELIVERY") &&
     Array.isArray(b?.lines) &&
-    b.lines.every(isLinePure)
+    b.lines.every(isLinePure) &&
+    (b.postalCode === undefined || isString(b.postalCode))
   );
 }
 
 /* Sizes only; what the items allow is priceLines' job (it answers per line). */
 function validRequestParams(req: Request): boolean {
-  return isUlid(req.body.storeId) && req.body.currency.length <= 3 && cartLinesWithinLimits(req.body.lines);
+  return (
+    isUlid(req.body.storeId) &&
+    req.body.currency.length <= 3 &&
+    cartLinesWithinLimits(req.body.lines) &&
+    (req.body.postalCode === undefined || req.body.postalCode.trim().length <= MAX_LENGTH.postalCode)
+  );
 }
 
 /* A cart's sizes (shared with create-order, 5.4). */
@@ -115,6 +122,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       priceLines(store, lines, String(req.body.currency).toUpperCase(), {
         fulfilment: req.body.fulfilment as Fulfilment | undefined,
         locationProvince: ip ? resolveCaProvinceFromGeo(geoip.lookup(ip)) : null,
+        ...(req.body.postalCode?.trim() ? { postalCode: req.body.postalCode.trim().toUpperCase() } : {}),
       })
     );
   } catch (e) {
