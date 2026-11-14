@@ -43,7 +43,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > **Pick up here (2026-11-12):** Stages S, 0–4 and **Stage P (P.1–P.6, P.8, P.10, P.11)** are done in both
 > repos, plus 5.1 (Stripe Connect Standard, commission rules) and 5.2 (merchant onboarding).
 > Latest commits: see `git log` (P.8 is the last one). **Next steps, in order:**
-> 0. **Owner's Stage P QA in the UI** (`../ceseelia_webapp/progress.md` §1b) before checkout.
+> 0. ~~Owner's Stage P QA in the UI~~ done 2026-11-13 (`../ceseelia_webapp/progress.md` §1b,
+>    all passed, paid plans included; P.11 came out of it).
 > 1. **Stage 5 checkout: 5.3 `POST /customer/create-order` + 5.4 Checkout Session and the
 >    Connect webhook** (WA 5.1 checkout page, 5.2 redirect/return). Rules already decided:
 >    re-quote on the server with the delivery postal code; refuse unless the store is LIVE, not
@@ -1002,6 +1003,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-13 | Stage P QA done by the owner (WA §1b): everything passed, paid plans included. Next: 5.3 / 5.4 checkout. |
 | 2026-11-13 | P.11 (owner, from Stage P QA): one store per account in any role (`ALREADY_IN_A_STORE` on create-store, assign member, invite; 5-draft cap removed); `POST /store/update-info` lets store admins change name and link (old slug freed at once); settings save keeps the overview name in step with the storefront name. |
 | 2026-11-13 | P.10: Free plan dropped (owner). Only Spark / Nova; new stores are DRAFT with plan NONE; Go Live = checkout; a plan that ends (cancel at period end, payment lost after grace, admin removal) sends a live store back to DRAFT (`PLAN_ENDED`). `/store/billing/checkout` removed, P.7 dropped, migration script `scripts/migrate-free-plan.mjs` added and run on dev (4 stores → DRAFT / NONE). |
 | 2026-11-12 | "Pick up here" refreshed for the next session: Stage 5 checkout (5.3–5.4) next, then P.7; owner TODOs listed (AI check, Stripe Billing setup). |
