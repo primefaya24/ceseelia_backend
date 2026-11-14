@@ -45,10 +45,10 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > Latest commits: see `git log` (P.8 is the last one). **Next steps, in order:**
 > 0. ~~Owner's Stage P QA in the UI~~ done 2026-11-13 (`../ceseelia_webapp/progress.md` §1b,
 >    all passed, paid plans included; P.11 came out of it).
-> 1. **Stage 5 checkout.** 5.3 (order model) and 5.4 (`POST /customer/create-order`, guest
->    checkout, Checkout Session on the connected account) are **done 2026-11-13**. Next: **5.5
->    the Connect webhook** (paid / expired / failed onto the order) and 5.6 on-paid, with WA 5.1
->    checkout page and 5.2 redirect/return. Rules already decided:
+> 1. **Stage 5 checkout.** 5.3–5.6 are **done 2026-11-13** (order model, create-order, the
+>    Connect webhook, on-paid stock/counters) plus 6.6 order-status. Next: **WA 5.1 checkout
+>    page and 5.2 return page**; the owner adds the Connect webhook in Stripe (5.5 "Setup").
+>    5.7 sweeper is a fallback for missed `expired` events. Rules already decided:
 >    re-quote on the server with the delivery postal code; refuse unless the store is LIVE, not
 >    suspended and `paymentsEnabled`; fee = `platformFeeForStore(admin, lifecycle.plan, quote)`
 >    and save `commissionInEffect(...)` on the order (P.6); direct charge on the connected
@@ -937,21 +937,40 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         have no `automatic_tax` / `tax_id_collection` and that the session total equals the
         quote total.
   - [x] d. Return the URL and an order-status token. (WA 5.2)
-- [ ] 5.5 Webhook rewrite:
-  - [ ] a. A **Connect** webhook endpoint (direct charges' events come from the connected
-        account; `event.account` → store). Verify with its signing secret, keeping the raw body.
-  - [ ] b. Respond 2xx fast. Store processed event ids for idempotency.
-  - [ ] c. Handle `checkout.session.completed`, `expired` and `payment_intent.payment_failed`.
-  - [ ] d. Standard merchants can refund in their own dashboard: sync `charge.refunded` and
-        `charge.dispute.*` onto the order. Handle `account.updated` for 5.2b's status.
-- [ ] 5.6 On paid:
-  - [ ] a. Mark the order `PAID`.
-  - [ ] b. Conditional stock decrement. If stock ran out, flag the order for refund. For an item
-        with options (2.7), decrement the combination's `storeVariantStock` (find its index in
-        `storeItemVariants`, condition on that row's options and stock) and keep `storeItemStock`
-        as the sum.
-  - [ ] c. Bump the overview counters.
-  - [ ] d. Write `APP / ORDER#ts#STORE#id` for admin graphs.
+- [x] 5.5 Webhook rewrite (done 2026-11-13; `layers/payments/order-webhook.ts`):
+  - [x] a. A **Connect** webhook endpoint `POST /api/v1/payments/stripe-connect-webhook`
+        (replaces the old 501 stub `/website/listen-to-stripe-event/:websiteId`), raw body,
+        verified with `webhookSecret`. An event only touches an order from the order's own
+        account (`event.account`) and its own session / PaymentIntent.
+  - [x] b. 2xx unless handling failed (500 → Stripe retries); 503 without the secret. Processed
+        event ids in `STRIPE_EVENT#<id> / EVENT` (`expiresAt` for a TTL if the table gets one).
+        Every change is conditional anyway, so repeats are harmless.
+  - [x] c. `checkout.session.completed` (paid) and `async_payment_succeeded` → PAID;
+        `expired` → CANCELLED `PAYMENT_EXPIRED`; `async_payment_failed` → CANCELLED
+        `PAYMENT_FAILED`. `payment_intent.payment_failed` changes nothing on purpose: Checkout
+        lets the shopper try another card until the session expires.
+  - [x] d. `charge.refunded` → `storeOrderRefundedMinor`, a full refund → REFUNDED (paid
+        orders only); `charge.dispute.*` → `storeOrderDispute`; `account.updated` → the store's
+        cached payments flags (account metadata `storeId`, only while the store uses it).
+  - **Setup (owner, Stripe dashboard, test mode first):** Developers → Webhooks → Add endpoint
+    `https://api.ceseelia.com/api/v1/payments/stripe-connect-webhook`, **"Events on Connected
+    accounts"**, events: `checkout.session.completed`, `checkout.session.expired`,
+    `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
+    `charge.refunded`, `charge.dispute.created`, `charge.dispute.updated`,
+    `charge.dispute.closed`, `account.updated`. Put its signing secret in the Stripe secret as
+    `webhookSecret`. Locally: `stripe listen --forward-connect-to
+    localhost:3100/api/v1/payments/stripe-connect-webhook` and use the printed secret.
+- [x] 5.6 On paid (done 2026-11-13; `markOrderPaid` in `dynamo-entities/order`), all in one
+      transaction conditional on the order still being PENDING_PAYMENT:
+  - [x] a. Mark the order `PAID` with the PaymentIntent id and `storeOrderPaidAt`.
+  - [x] b. Conditional stock decrement, one update per item (`stockUpdates`): tracked item stock,
+        or each picked variant row (by index, conditioned on its options and stock) plus the
+        item's total. Unlimited stock is untouched. If stock ran out (or an item / row is gone),
+        the order is still PAID, flagged `storeOrderStockShortfall`, with no stock change: the
+        merchant refunds (6.4) or restocks.
+  - [x] c. `storeOrderCount` +1 on the overview row (completed / cancelled counts come with 6.3).
+  - [x] d. `APP / ORDER#<paidAt>#STORE#<storeId>#<orderId>` {currency, totalMinor,
+        platformFeeMinor} for admin graphs (8.1) and fee reporting (8.4).
 - [ ] 5.7 Sweeper for abandoned `PENDING_PAYMENT` orders (`registerTimer` +
       `SERVER_WATCH_CHECK_FOR_LOST_ORDERS_INTERVAL`).
 
@@ -965,7 +984,10 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 - [ ] 6.4 `POST /store/orders/refund` (full/partial, via Stripe). (WA 6.3)
 - [ ] 6.5 Emails (SES + pdf invoice): customer confirmation/receipt, merchant new-order alert,
       status-change emails.
-- [ ] 6.6 `GET /customer/order-status/:orderId?token=…` (signed, expiring token). (WA 5.3)
+- [x] 6.6 `GET /customer/order-status/:orderId` (done 2026-11-13, early, for WA 5.2's return
+      page): the status token in header `X-Order-Token` (not the URL); a wrong token = unknown
+      order = 404 `ORDER_NOT_FOUND`; shopper view only (no Stripe ids, fee, commission, hash);
+      60/IP/min. The token doesn't expire (it's the shopper's receipt link); revisit with 6.5.
 - [ ] 6.7 Optional FCM push to the merchant. (WA 6.4)
 
 ---
@@ -1018,6 +1040,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-13 | 5.5 + 5.6 done: Connect webhook `/api/v1/payments/stripe-connect-webhook` (signature, account/session checks, event ids; paid / expired / async failed / refunds / disputes / account.updated), `markOrderPaid` (one transaction: PAID, stock by item or variant row, order count, APP sale record; shortfall → paid and flagged). 6.6 `GET /customer/order-status/:orderId` (token header). Old 501 stub removed. |
 | 2026-11-13 | 5.3 + 5.4 done: order model (status enum, pointer row, guest customer, status token hash), `POST /customer/create-order` (re-quote with the delivery postal code, `PRICE_CHANGED` guard, direct-charge Checkout Session with `application_fee_amount`, no `automatic_tax`, session total = quote total). Owner: guest checkout, address on our form. Next: 5.5 Connect webhook. |
 | 2026-11-13 | Stage P QA done by the owner (WA §1b): everything passed, paid plans included. Next: 5.3 / 5.4 checkout. |
 | 2026-11-13 | P.11 (owner, from Stage P QA): one store per account in any role (`ALREADY_IN_A_STORE` on create-store, assign member, invite; 5-draft cap removed); `POST /store/update-info` lets store admins change name and link (old slug freed at once); settings save keeps the overview name in step with the storefront name. |

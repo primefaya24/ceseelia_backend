@@ -40,11 +40,11 @@ describe("host routing", () => {
     expect(res.status).toBe(401);
   });
 
-  it("answers the Stripe webhook instead of hanging", async () => {
+  it("the Connect webhook answers an unsigned request with 400 or 503, never hangs (5.5)", async () => {
     const res = await request(createApp())
-      .post("/api/v1/website/listen-to-stripe-event/x")
+      .post("/api/v1/payments/stripe-connect-webhook")
       .set("Content-Type", "application/json")
       .send("{}");
-    expect(res.status).toBe(501);
+    expect([400, 503]).toContain(res.status);
   });
 });

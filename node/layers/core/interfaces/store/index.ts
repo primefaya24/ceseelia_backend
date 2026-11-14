@@ -1215,6 +1215,15 @@ export interface StoreOrder {
   storeOrderCreatedAt: number;
   storeOrderUpdatedAt: number;
   storeOrderPaidAt?: number;
+  /**
+   * 5.6b: paid, but tracked stock ran out for a line (or the item is gone) by the time the
+   * payment landed. The money is taken; the merchant refunds (6.2) or restocks.
+   */
+  storeOrderStockShortfall?: boolean;
+  /** 5.5d: refunded so far (the merchant can refund in their own Stripe dashboard). */
+  storeOrderRefundedMinor?: number;
+  /** 5.5d: the latest dispute on the payment, as Stripe reports it. */
+  storeOrderDispute?: { status: string; amountMinor: number; updatedAt: number };
 }
 
 // APP, ORDER#CREATE_AT_TIMESTAMP#STORE#STORE_ID (For Sales acitivty graph)

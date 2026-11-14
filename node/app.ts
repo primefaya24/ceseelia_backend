@@ -1,9 +1,9 @@
 import express, { Express } from 'express';
 import cors, { CorsOptions } from 'cors';
 import { CORS_ORIGINS, IN_DEV, TRUST_PROXY_HOPS } from './config';
-import { appConstants } from './constants';
 import { domainRouterWithLogger } from './middleware';
 import { handleBillingWebhook } from './layers/payments/billing-webhook';
+import { handleConnectWebhook } from './layers/payments/order-webhook';
 
 /*
 * CORS: explicit allow-list from CORS_ORIGINS; in dev with no list, reflect any origin.
@@ -31,14 +31,12 @@ export function createApp(): Express {
 
     app.use(cors(buildCorsOptions()));
 
-    // Stripe webhook (needs the raw body, so it must be registered before express.json()).
-    // Payments are not implemented yet (roadmap Stage 5) — respond explicitly instead of hanging.
+    // Stripe webhooks need the raw body (the signature is over it): registered before express.json().
+    // Shopper orders (5.5): events from the stores' connected accounts, signed with webhookSecret.
     app.post(
-        "/api/v1/website/listen-to-stripe-event/:websiteId",
-        express.raw({ type: "application/json" }),
-        (_req, res) => {
-            res.status(appConstants.HTTP_STATUS_CODE_NOT_IMPLEMENTED).send({ message: "Not implemented" });
-        }
+        "/api/v1/payments/stripe-connect-webhook",
+        express.raw({ type: "application/json", limit: "1mb" }),
+        (req, res) => void handleConnectWebhook(req, res)
     );
 
     // Subscriptions (P.5): the platform account's Billing events, signed with billingWebhookSecret.
