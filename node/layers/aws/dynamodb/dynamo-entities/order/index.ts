@@ -10,6 +10,7 @@ import {
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
+  QueryCommand,
   TransactWriteCommand,
   TransactWriteCommandInput,
   UpdateCommand,
@@ -17,7 +18,13 @@ import {
 import { appConstants } from "../../../../../constants";
 import { STOCK_UNLIMITED } from "../../../../../constants/input-limits";
 import { DB_TABLE_NAME } from "../../../../../config";
-import { StoreItem, StoreOrder, StoreOrderCancelReason, StoreOrderLine } from "../../../../core/interfaces/store";
+import {
+  StoreItem,
+  StoreOrder,
+  StoreOrderCancelReason,
+  StoreOrderLine,
+  StoreOrderStatus,
+} from "../../../../core/interfaces/store";
 import { findVariant, hasVariants } from "../../../../core/variants";
 import { dynamGetManyItems } from "../../dynamo-batch-ops";
 
@@ -358,4 +365,97 @@ export async function markEventProcessed(id: string, type: string, now = Date.no
       Item: { ...eventKey(id), type, processedAt: now, expiresAt: Math.floor(now / 1000) + 30 * 24 * 3600 },
     })
   );
+}
+
+/*
+ * The store's orders, newest first (6.1). `statuses` filters (DynamoDB filters after reading, so
+ * up to LIST_ROUNDS pages are read to fill `limit`); `from` / `to` (ms, inclusive) bound the
+ * creation time by the sort key. `cursor` is the sort key of the last order returned; `next` is
+ * null when there are no more.
+ */
+export const LIST_ROUNDS = 5;
+const LIST_READ = 100;
+export const ORDER_SK_PATTERN = /^ORDER#\d{1,16}#[0-9A-HJKMNP-TV-Z]{26}$/;
+
+export async function listStoreOrders(
+  storeId: string,
+  opts: { statuses: StoreOrderStatus[]; from?: number; to?: number; cursor?: string; limit: number }
+): Promise<{ orders: StoreOrder[]; next: string | null }> {
+  const low = `${ORDER}#${opts.from ?? 0}`;
+  const high = `${ORDER}#${opts.to ?? 9_999_999_999_999}#~`;
+  const statusNames = opts.statuses.map((_, i) => `:s${i}`);
+  const orders: StoreOrder[] = [];
+  let start: Record<string, unknown> | undefined = opts.cursor ? { pk: storePk(storeId), sk: opts.cursor } : undefined;
+  for (let round = 0; round < LIST_ROUNDS && orders.length < opts.limit; round++) {
+    const res = await dynamoDbDocumentClient.send(
+      new QueryCommand({
+        TableName: TABLE,
+        KeyConditionExpression: "pk = :pk AND sk BETWEEN :low AND :high",
+        FilterExpression: `#st IN (${statusNames.join(", ")})`,
+        ExpressionAttributeNames: { "#st": "storeOrderStatus" },
+        ExpressionAttributeValues: {
+          ":pk": storePk(storeId),
+          ":low": low,
+          ":high": high,
+          ...Object.fromEntries(opts.statuses.map((s, i) => [`:s${i}`, s])),
+        },
+        ScanIndexForward: false,
+        Limit: LIST_READ,
+        ...(start ? { ExclusiveStartKey: start } : {}),
+      })
+    );
+    for (const item of res.Items ?? []) {
+      if (orders.length >= opts.limit) {
+        // More matched than fit: the next page starts after the last one returned.
+        return { orders, next: lastSk(orders) };
+      }
+      const { pk: _pk, sk: _sk, ...order } = item;
+      orders.push(order as StoreOrder);
+    }
+    start = res.LastEvaluatedKey;
+    if (!start) return { orders, next: null };
+  }
+  // Out of rounds or full: carry on from where reading stopped.
+  return { orders, next: orders.length >= opts.limit ? lastSk(orders) : (start?.sk as string) ?? null };
+}
+
+const lastSk = (orders: StoreOrder[]) => {
+  const o = orders[orders.length - 1];
+  return orderKey(o.storeId, o.storeOrderCreatedAt, o.storeOrderId).sk;
+};
+
+/*
+ * The merchant moves an order on (6.3), only from the status they saw (`from`), so two members
+ * clicking at once can't skip each other's change. Appends to `storeOrderStatusHistory`.
+ * Returns false when the order was no longer in `from`.
+ */
+export async function updateOrderStatus(
+  order: StoreOrder,
+  from: StoreOrderStatus,
+  to: StoreOrderStatus,
+  by: string,
+  now = Date.now()
+): Promise<boolean> {
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: TABLE,
+        Key: keyOf(order),
+        UpdateExpression: "SET #st = :to, #upd = :now, #hist = list_append(if_not_exists(#hist, :empty), :entry)",
+        ConditionExpression: "attribute_exists(pk) AND #st = :from",
+        ExpressionAttributeNames: { "#st": "storeOrderStatus", "#upd": "storeOrderUpdatedAt", "#hist": "storeOrderStatusHistory" },
+        ExpressionAttributeValues: {
+          ":to": to,
+          ":from": from,
+          ":now": now,
+          ":empty": [],
+          ":entry": [{ status: to, at: now, by }],
+        },
+      })
+    );
+    return true;
+  } catch (e) {
+    if ((e as { name?: string })?.name === "ConditionalCheckFailedException") return false;
+    throw e;
+  }
 }

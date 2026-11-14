@@ -48,6 +48,9 @@ const MEMBER_ROUTES: Array<[Method, string, object | undefined]> = [
   ["delete", `/store/inventory/delete-item/${STORE}/${ID}`, undefined],
   ["get", `/store/inventory/get-data/${STORE}`, undefined],
   ["get", `/store/inventory/get-item-image-upload-urls/${STORE}/${ID}/1/1`, undefined],
+  ["get", `/store/orders/list/${STORE}`, undefined],
+  ["get", `/store/orders/get/${STORE}/${ID}`, undefined],
+  ["put", "/store/orders/update-status", { storeId: STORE }],
 ];
 // Store-ADMIN routes: members with the ADMIN role (or platform admins), never MERCHANT members.
 const STORE_ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [

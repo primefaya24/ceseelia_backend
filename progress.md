@@ -978,9 +978,19 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 ## 8. Stage 6 — Order management & notifications
 
-- [ ] 6.1 `GET /store/orders/list/:storeId` (paginated, filter by status/date). (WA 6.1)
-- [ ] 6.2 `GET /store/orders/get/:storeId/:orderId`. (WA 6.2)
-- [ ] 6.3 `PUT /store/orders/update-status`, enforcing allowed transitions. (WA 6.2)
+- [x] 6.1 `GET /store/orders/list/:storeId?status=&from=&to=&cursor=&limit=` (done 2026-11-13;
+      any store member): newest first; `status` comma-separated, default every status but
+      PENDING_PAYMENT; `from`/`to` on the sort key; filtered pages read up to 5 times to fill
+      `limit` (≤ 100, default 25); `next` = the sort key of the last row. Rows are
+      `MerchantOrderSummary`. (WA 6.1)
+- [x] 6.2 `GET /store/orders/get/:storeId/:orderId` (done 2026-11-13): `MerchantOrderView` (all
+      but the token hash); another store's order = 404 `ORDER_NOT_FOUND`. (WA 6.2)
+- [x] 6.3 `PUT /store/orders/update-status` `{storeId, orderId, status, fromStatus}` (done
+      2026-11-13): forward only (`nextOrderStatuses`: Paid → Preparing → Ready → Shipped for
+      deliveries → Completed, skips allowed), only from `fromStatus` (conditional write), appends
+      `storeOrderStatusHistory` `{status, at, by}`. 409 `INVALID_TRANSITION` / `STATUS_CHANGED`
+      with the current order. No cancel: a paid order is cancelled by refunding (6.4). No
+      completed/cancelled counters yet (nothing reads them; add with 8.1). (WA 6.2)
 - [ ] 6.4 `POST /store/orders/refund` (full/partial, via Stripe). (WA 6.3)
 - [ ] 6.5 Emails (SES + pdf invoice): customer confirmation/receipt, merchant new-order alert,
       status-change emails.
@@ -1040,6 +1050,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-13 | 6.1–6.3 done: `/store/orders/list`, `/get`, `/update-status` (members; forward-only steps with history, conditional on the status seen); `MerchantOrderView` / `MerchantOrderSummary`, `nextOrderStatuses`. |
 | 2026-11-13 | `POST /customer/quote` takes an optional delivery `postalCode` (WA 5.1 checkout), so the total shown is taxed exactly as create-order will; the cart still sends none and gets the geo-IP estimate (QA Q.23). |
 | 2026-11-13 | 5.5 + 5.6 done: Connect webhook `/api/v1/payments/stripe-connect-webhook` (signature, account/session checks, event ids; paid / expired / async failed / refunds / disputes / account.updated), `markOrderPaid` (one transaction: PAID, stock by item or variant row, order count, APP sale record; shortfall → paid and flagged). 6.6 `GET /customer/order-status/:orderId` (token header). Old 501 stub removed. |
 | 2026-11-13 | 5.3 + 5.4 done: order model (status enum, pointer row, guest customer, status token hash), `POST /customer/create-order` (re-quote with the delivery postal code, `PRICE_CHANGED` guard, direct-charge Checkout Session with `application_fee_amount`, no `automatic_tax`, session total = quote total). Owner: guest checkout, address on our form. Next: 5.5 Connect webhook. |

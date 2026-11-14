@@ -1224,6 +1224,74 @@ export interface StoreOrder {
   storeOrderRefundedMinor?: number;
   /** 5.5d: the latest dispute on the payment, as Stripe reports it. */
   storeOrderDispute?: { status: string; amountMinor: number; updatedAt: number };
+  /** 6.3: the merchant's status changes, oldest first (`by`: the member's userId, or "ADMIN"). */
+  storeOrderStatusHistory?: StoreOrderStatusChange[];
+}
+
+export interface StoreOrderStatusChange {
+  status: StoreOrderStatus;
+  at: number;
+  by: string;
+}
+
+/*
+ * How a paid order moves forward (6.3): Paid → Preparing → Ready → Shipped (deliveries only) →
+ * Completed. Steps may be skipped; nothing goes back. Cancelling or refunding a paid order is a
+ * refund (6.4), never a status change here. Mirrored in the webapp.
+ */
+export const STORE_ORDER_PROGRESS: StoreOrderStatus[] = ["PAID", "PREPARING", "READY", "SHIPPED", "COMPLETED"];
+
+export function nextOrderStatuses(status: StoreOrderStatus, type: StoreOrderType): StoreOrderStatus[] {
+  const steps = STORE_ORDER_PROGRESS.filter((s) => type === "DELIVERY" || s !== "SHIPPED");
+  const i = steps.indexOf(status);
+  return i < 0 ? [] : steps.slice(i + 1);
+}
+
+/* An order as the store sees it (6.1 / 6.2): everything but the shopper's status-token hash. */
+export type MerchantOrderView = Omit<StoreOrder, "storeOrderStatusTokenHash">;
+
+/* One row of the store's order list (6.1). */
+export interface MerchantOrderSummary {
+  orderId: string;
+  orderCode: string;
+  status: StoreOrderStatus;
+  cancelReason: StoreOrderCancelReason | null;
+  type: StoreOrderType;
+  currency: string;
+  customerName: string;
+  itemCount: number;
+  totalMinor: number;
+  refundedMinor: number;
+  createdAt: number;
+  paidAt: number | null;
+  updatedAt: number;
+  stockShortfall: boolean;
+  disputeStatus: string | null;
+}
+
+export function merchantOrderView(o: StoreOrder): MerchantOrderView {
+  const { storeOrderStatusTokenHash: _hash, ...rest } = o;
+  return rest;
+}
+
+export function merchantOrderSummary(o: StoreOrder): MerchantOrderSummary {
+  return {
+    orderId: o.storeOrderId,
+    orderCode: o.storeOrderCode,
+    status: o.storeOrderStatus,
+    cancelReason: o.storeOrderCancelReason ?? null,
+    type: o.storeOrderType,
+    currency: o.storeOrderCurrency,
+    customerName: o.storeOrderCustomer?.name ?? "",
+    itemCount: (o.storeOrderLines ?? []).reduce((n, l) => n + l.quantity, 0),
+    totalMinor: o.storeOrderTotalMinor,
+    refundedMinor: o.storeOrderRefundedMinor ?? 0,
+    createdAt: o.storeOrderCreatedAt,
+    paidAt: o.storeOrderPaidAt ?? null,
+    updatedAt: o.storeOrderUpdatedAt,
+    stockShortfall: o.storeOrderStockShortfall === true,
+    disputeStatus: o.storeOrderDispute?.status ?? null,
+  };
 }
 
 // APP, ORDER#CREATE_AT_TIMESTAMP#STORE#STORE_ID (For Sales acitivty graph)
