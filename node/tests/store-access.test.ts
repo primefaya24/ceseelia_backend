@@ -49,6 +49,12 @@ const MEMBER_ROUTES: Array<[Method, string, object | undefined]> = [
   ["get", `/store/inventory/get-data/${STORE}`, undefined],
   ["get", `/store/inventory/get-item-image-upload-urls/${STORE}/${ID}/1/1`, undefined],
 ];
+// Store-ADMIN routes: members with the ADMIN role (or platform admins), never MERCHANT members.
+const STORE_ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [
+  ["post", "/store/update-info", { storeId: STORE }],
+  ["post", "/store/go-live", { storeId: STORE }],
+  ["post", "/store/payments/create-connect-account-link", { storeId: STORE }],
+];
 const ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [
   ["post", "/store/create", {}],
   ["delete", `/store/delete/${STORE}`, undefined],
@@ -105,6 +111,26 @@ describe("store routes: access matrix (1.3)", () => {
     passed((await call(method, path, body)).status);
     expect(findUserMock).not.toHaveBeenCalled();
     expect(membershipMock).not.toHaveBeenCalled();
+  });
+
+  describe("store-ADMIN routes", () => {
+    const passedGate = (status: number) => expect([401, 403]).not.toContain(status);
+    it.each(STORE_ADMIN_ROUTES)("%s %s: no token → 401", async (method, path, body) => {
+      expect((await call(method, path, body, false)).status).toBe(401);
+    });
+    it.each(STORE_ADMIN_ROUTES)("%s %s: non-member or MERCHANT member → 403", async (method, path, body) => {
+      asUser();
+      expect((await call(method, path, body)).status).toBe(403);
+      isMemberOf(STORE, "MERCHANT");
+      expect((await call(method, path, body)).status).toBe(403);
+    });
+    it.each(STORE_ADMIN_ROUTES)("%s %s: store ADMIN or platform admin → past the gate", async (method, path, body) => {
+      asUser();
+      isMemberOf(STORE, "ADMIN");
+      passedGate((await call(method, path, body)).status);
+      asAdmin();
+      passedGate((await call(method, path, body)).status);
+    });
   });
 
   it.each(ADMIN_ROUTES)("%s %s stays admin-only, even for a store member", async (method, path, body) => {
