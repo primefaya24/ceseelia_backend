@@ -28,8 +28,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > - [ ] **L.1 Owner: Stripe and secrets.** Stripe Billing setup (P.5 "Setup") and a Spark
 >       checkout test; `PAID_PLANS_ENABLED=true` in prod; live Stripe keys and webhook secrets
 >       in `ceseelia/prod` (one secret per stage, see the note below); S.2 password rotation.
-> - [ ] **L.2 The AI store check** in `runSmartStoreValidation` (P.4c; today every store
->       passes). Owner decisions 2026-11-14:
+> - [x] **L.2 The AI store check** in `runSmartStoreValidation` (P.4c). Code done 2026-11-15;
+>       **switching it on waits for the API key and the eval.** Owner decisions 2026-11-14:
 >       - The AI **never rejects**: it passes a store or sends it to the admin review queue with
 >         evidence per item. Merchants never see the reasons. Go Live attempts are rate-limited.
 >       - Checks: Stripe's prohibited and restricted businesses (verify against Stripe's current
@@ -50,6 +50,16 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >         note below).
 >       - Before switching on: an eval set of ~60 made-up stores (half legitimate and tricky,
 >         half sketchy), results shown to the owner first.
+>       - **Built 2026-11-15** (BE `b186878` + WA): `layers/core/store-validation/` (rules,
+>         image pick, `ai.ts`, `item-check.ts`); Go Live 90 s deadline, failures named
+>         (`VALIDATION_TIMEOUT` / `_NOT_CONFIGURED` / `_UNAVAILABLE`), 5 checks a store a day
+>         (429 `RATE_LIMITED`), admin email (`ADMIN_ALERT_EMAIL`); live items queued on save
+>         (`APP_ITEM_CHECK`, 3 min), swept every minute, flagged → hidden (storefront and
+>         checkout) + `APP_ITEM_REVIEW` queue + email; admin "Hidden items" on /admin/stores
+>         (show again / keep hidden); merchants see "Hidden: under review" / "Hidden by
+>         Ceseelia". **Still to do (owner):** add `anthropicApiKey` to `ceseelia/dev`, then
+>         `node scripts/store-check-eval/run.mjs` (60 stores, ≈ $1) and review the results.
+>         Until the key is there, every Go Live goes to review (`VALIDATION_NOT_CONFIGURED`).
 > - [x] **L.3 Security hardening, S.14–S.17** (done 2026-11-14): helmet and nginx headers (HSTS,
 >       `server_tokens off`), a hardened Docker image (`npm ci --omit=dev`, non-root), legacy
 >       DinersXpress / PrimeFaya code removed, and **`certbot-renew.sh` fixed** (wrong
@@ -1257,6 +1267,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.2 AI store check (code): rule checks + Claude Opus 5.5 over all item text and ≤ 50 photos picked by risk; Go Live 90 s deadline, fails closed to review, 5/store/day, admin email; live stores' new or changed items checked in the background, flagged ones hidden and queued for admins (`get-item-review-queue`, `review-item`); eval set of 60 stores in `scripts/store-check-eval`. Needs `anthropicApiKey` and an eval run before launch. |
 | 2026-11-09 | QA Q.16 (WA): `storeInfo.showEmail` / `showPhone` (optional, missing = shown). When false, `toPublicSettings` blanks that detail in every public response (storefront and item link); `contactFormAvailable` (public only, worked out from the stored email, never saved) keeps Contact us offered; contact-store still emails the real address. |
 | 2026-11-09 | 4.4 done: Canadian sales tax by province (`taxMode: CANADA`): pickup in the store's province, delivery by the shopper's postal code; GST/HST/PST/RST/QST lines in the quote. |
 | 2026-11-09 | 4.2 done: tax rate (added or included), pickup/delivery with a flat fee per currency, in settings and in the quote. |
