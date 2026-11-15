@@ -21,8 +21,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 > **🚀 Launch checklist (owner, 2026-11-14): EVERY item below must be done before launch.**
 > Nothing here is optional or "after launch". Work order agreed 2026-11-14: L.1 is the owner's
-> (2026-11-15); Claude works on L.2–L.9 in the order shown. **L.2 (code), L.3, L.4 (code) and L.5 (code) are
-> done; next is L.6.**
+> (2026-11-15); Claude works on L.2–L.9 in the order shown. **L.2 (code), L.3, L.4 (code), L.5 (code) and L.6
+> are done; next is L.7.**
 > - [ ] **L.0 Owner: the first real test order** in Stripe test mode (Connect webhook first,
 >       with the refund events, BE 5.5 "Setup"): checkout → paid (receipt + PDF, alerts) →
 >       Store › Orders → steps (ready / on its way emails) → refund part → refund the rest.
@@ -87,8 +87,14 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >       --write` (dev), then `APP_SECRET_ID=ceseelia/prod node scripts/setup-vapid.mjs --write`,
 >       and restart the API. Until then the bell says push is "coming soon"; toast and sound work
 >       without it. Not tried in a real browser yet (needs a signed-in session and the keys).
-> - [ ] **L.6 Store Overview:** WA 6.5 with BE 1.5 merchant stats (today's orders, revenue,
->       best sellers).
+> - [x] **L.6 Store Overview:** WA 6.5 with BE 1.5 merchant stats (today's orders, revenue,
+>       best sellers). **Done 2026-11-15:** Store › Overview (first in the store sidebar) from
+>       `GET /store/overview/:storeId?tz=`: orders / sales today and over the last 7 days (with
+>       the change against the 7 before), average order, an orders-per-day chart (with a table
+>       view) and the 30-day best sellers. Paid orders only, on the day they were paid, in the
+>       browser's time zone; refunds come off sales; currencies never added together. Checked
+>       read-only on Northern Hoop (no paid orders yet, so zeros). One-store merchants still
+>       land on Orders; say if Overview should be the home page instead.
 > - [ ] **L.7 Stage 7:** Store › Customers (7.1), unified rewards and earn/redeem (7.3, 7.4),
 >       reviews (7.5). 7.2 (optional customer accounts) included.
 > - [ ] **L.8 Stage 8 admin console:** real admin overview stats (8.1), support tickets (8.3),
@@ -137,7 +143,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > 2. **Claude, once the key is in:** run `node scripts/store-check-eval/run.mjs` (after
 >    `npm run build`, ≈ $1), show the owner the false flags and misses, tune the prompt/effort;
 >    then the same key in `ceseelia/prod`.
-> 3. **Claude:** L.6–L.9 (L.4 and L.5 code done 2026-11-15; owner steps under each). Fix the
+> 3. **Claude:** L.7–L.9 (L.4–L.6 code done 2026-11-15; owner steps under each). Fix the
 >    `ssh`/`scp` deploy scripts (they point at dinersxpress-0) when the prod server is set up.
 > Both repos are on `dev_v1.0.0_customer_store_front`. **Push from your own shell:** Claude's
 > shell has no GitHub credentials.
@@ -452,8 +458,14 @@ match the backend and webapp._
     `tests/admin-members.test.ts` and `tests/membership.test.ts`; also run against the dev table._
 
 ### 1.5 Merchant overview
-- [ ] Replace the `/merchant/path` stub with `GET /merchant/get-overview-data`: the merchant's
+- [x] Replace the `/merchant/path` stub with `GET /merchant/get-overview-data`: the merchant's
       stores plus headline counters from `StoreOverview`. (WA 1.2)
+  - _Done differently 2026-11-15 (L.6): one store per account since P.11, so the numbers are
+    per store: `GET /store/overview/:storeId?tz=` (members; `layers/core/store-stats`, orders
+    via `listStatsOrders`, ≤ 3,000 newest, `partial` beyond; kept 30 s per store and zone).
+    Today / last 7 / the 7 before (orders, sales net of refunds, average order, per currency),
+    7 days in a row, 30-day best sellers (units, top 5). The `/merchant/path` stub is unused
+    and left as is. Tests in `tests/store-stats.test.ts`._
 
 ### 1.6 Admin-only store settings
 - [x] a. `PUT /admin/update-store-admin-settings` (`salesCommission` ≥ 0, `isStoreLive`).
@@ -1361,6 +1373,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.6 / 1.5: `GET /store/overview/:storeId?tz=` (Store Overview numbers in the merchant's time zone; `layers/core/store-stats`). |
 | 2026-11-15 | L.5 / 6.7: new-order alert rows + `GET /store/orders/new/:storeId` for the dashboard; Web Push (VAPID) to members' browsers with an allow-list of push services; `/user/push/*`; `scripts/setup-vapid.mjs`; Stripe event rows get the table's `ttl`. |
 | 2026-11-15 | L.4 9.4–9.6: backend CI (lint, typecheck, test, audit, build, image + /healthz); CloudFormation: PITR + deletion protection on the table (was off in prod), versioned buckets, pool deletion protection, `Retain`s, trigger on nodejs22.x with least privilege, API log group + error metric, SNS alarms (API errors, DynamoDB, sign-up trigger, SES reputation), cfn-lint before deploy; compose ships API logs to CloudWatch and caps nginx's. |
 | 2026-11-15 | L.4 9.1 + 9.2: pino logs (request ids, PII redacted, safe error serializer, route 500s logged in prod too), per-IP API limits (300/min, public reads 120/min), JSON body 100 KB (256 KB for item/settings saves), JSON 413/400; nginx passes `X-Request-Id`, 1 MB body cap, Go Live 120 s timeout (was cut off at 60 s). |

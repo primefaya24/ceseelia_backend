@@ -27,6 +27,7 @@ import {
   StoreOrderLine,
   StoreOrderRefund,
   StoreOrderStatus,
+  STORE_ORDER_STATUSES,
 } from "../../../../core/interfaces/store";
 import { findVariant, hasVariants } from "../../../../core/variants";
 import { OrderRefundState } from "../../../../core/refunds";
@@ -555,4 +556,27 @@ export async function listStalePendingOrders(before: number, limit: number): Pro
 
 export async function deletePendingOrderRow(sk: string): Promise<void> {
   await dynamoDbDocumentClient.send(new DeleteCommand({ TableName: TABLE, Key: { pk: PENDING_ORDERS_PK, sk } }));
+}
+
+/*
+ * Orders for the Store Overview (L.6): every order created since `from` (ms) that could count
+ * (not PENDING_PAYMENT / CANCELLED), newest first, at most STATS_ORDER_CAP. `partial` = there
+ * were more (the overview then says its numbers cover the newest ones).
+ */
+export const STATS_ORDER_CAP = 3000;
+export async function listStatsOrders(
+  storeId: string,
+  from: number,
+  cap = STATS_ORDER_CAP
+): Promise<{ orders: StoreOrder[]; partial: boolean }> {
+  const statuses = STORE_ORDER_STATUSES.filter((s) => s !== "PENDING_PAYMENT" && s !== "CANCELLED");
+  const orders: StoreOrder[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const page = await listStoreOrders(storeId, { statuses, from, cursor, limit: Math.min(500, cap - orders.length) });
+    orders.push(...page.orders);
+    if (!page.next) return { orders, partial: false };
+    if (orders.length >= cap) return { orders, partial: true };
+    cursor = page.next;
+  }
 }
