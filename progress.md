@@ -1,6 +1,6 @@
 # Ceseelia Backend — Progress Tracker
 
-_Last reviewed: 2026-11-08 (full codebase read-through) · Last updated: 2026-11-13_
+_Last reviewed: 2026-11-08 (full codebase read-through) · Last updated: 2026-11-15_
 
 This file tracks **what's left to do**. Design notes and conventions are in `CLAUDE.md`. The
 webapp has a matching file at `../ceseelia_webapp/progress.md`.
@@ -21,7 +21,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 > **🚀 Launch checklist (owner, 2026-11-14): EVERY item below must be done before launch.**
 > Nothing here is optional or "after launch". Work order agreed 2026-11-14: L.1 is the owner's
-> (2026-11-15); Claude works on L.2–L.9 in the order shown, starting with L.3 (certbot).
+> (2026-11-15); Claude works on L.2–L.9 in the order shown. **L.2 (code) and L.3 are done;
+> next is L.4.**
 > - [ ] **L.0 Owner: the first real test order** in Stripe test mode (Connect webhook first,
 >       with the refund events, BE 5.5 "Setup"): checkout → paid (receipt + PDF, alerts) →
 >       Store › Orders → steps (ready / on its way emails) → refund part → refund the rest.
@@ -93,21 +94,34 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > `~/tasks.md` is on primehost-0, a **different project**: Ceseelia's own scripts are fixed
 > (S.17) for when its server exists.
 
-> **▶ Start the next session here (2026-11-14).** Stages S, 0–4 and P are done, and so are
-> Stage 5 checkout (5.1–5.7) and Stage 6 order management and emails (6.1–6.6) in both repos. 6.4
-> (refunds, 2026-11-14) is `POST /store/orders/refund`, for store ADMINs only. 6.4b syncs
-> refunds from Stripe, so failed refunds stop counting and are shown. **The launch checklist above is the work list;** the notes below are
-> what was decided along the way.
-> 1. **Owner: the first real test order** in Stripe test mode. Add the Connect webhook first (5.5
->    "Setup"). Then storefront → checkout → paid → Store › Orders → move it on → refund part of
->    it → refund the rest. (Add the new refund events to the webhook, see 5.5 "Setup".)
-> 2. ~~5.7 lost-order sweeper~~ done 2026-11-14.
-> 3. ~~6.5 emails~~ done 2026-11-14, with a PDF receipt, the store's tax number and alerts to
->    the contact email (owner decisions under 6.5).
-> 4. WA 6.4 new-order notifications, then WA 6.5 Store Overview (needs BE 1.5 stats).
-> 5. S.14–S.17 before going live.
-> Owner TODOs are unchanged: the AI check in `runSmartStoreValidation`, the Stripe Billing setup
-> (P.5 "Setup"), `PAID_PLANS_ENABLED=true` in prod, and S.2 password rotation.
+> **The AI check's key (2026-11-15).** `anthropicApiKey` is still empty in `ceseelia/dev` and
+> `ceseelia/prod`: the owner's platform.claude.com card was declined, and they'll set up its
+> billing on 2026-11-16 (the key is created at platform.claude.com, not in claude.ai settings;
+> the owner pastes it in the AWS console, never in chat). **Until then every Go Live goes to
+> review** (`VALIDATION_NOT_CONFIGURED`, fails closed). Fallback if billing can't be fixed:
+> **Claude Platform on AWS** (Anthropic-run, AWS Marketplace billing, same API and model ids;
+> client `@anthropic-ai/aws-sdk`, a workspace id instead of a key, the server role needs
+> `aws-external-anthropic:CreateInference` + `sts:GetWebIdentityToken` /
+> `sts:TagGetWebIdentityToken`, and `aws iam enable-outbound-web-identity-federation` once).
+> Second choice **Amazon Bedrock** (`anthropic.claude-opus-5-5`, `@anthropic-ai/bedrock-sdk`
+> `AnthropicBedrockMantle`): it has no image URLs (send S3 bytes as base64) and no server-side
+> `fallbacks` (drop it; a refusal already goes to review). Not decided yet.
+
+> **▶ Start the next session here (2026-11-15).** Stages S, 0–4, P, 5 and 6 are done in both
+> repos. **The launch checklist above is the work list;** the notes below are what was decided
+> along the way. Done this session (2026-11-14/15): 5.7 lost-order sweeper, 6.5 emails (PDF
+> receipt, tax number, contact-email alerts), the one-secret-per-stage setup and
+> `CeseeliaServerRole`, L.3 security hardening, and the L.2 AI store check (code, tests, the
+> 60-store eval set; WA: "Checking your store…", hidden-item chips, admin "Hidden items" queue).
+> Next:
+> 1. **Owner:** push both repos; L.0 test order; L.1 Stripe and secrets; platform.claude.com
+>    billing, then `anthropicApiKey` in `ceseelia/dev`; delete the old `ceseelia/dev/stripe`
+>    (`aws secretsmanager delete-secret --secret-id ceseelia/dev/stripe --recovery-window-in-days 30`).
+> 2. **Claude, once the key is in:** run `node scripts/store-check-eval/run.mjs` (after
+>    `npm run build`, ≈ $1), show the owner the false flags and misses, tune the prompt/effort;
+>    then the same key in `ceseelia/prod`.
+> 3. **Claude:** L.4 production basics (Stage 9), then L.5–L.9. Fix the `ssh`/`scp` deploy
+>    scripts (they point at dinersxpress-0) when the prod server is set up.
 > Both repos are on `dev_v1.0.0_customer_store_front`. **Push from your own shell:** Claude's
 > shell has no GitHub credentials.
 
