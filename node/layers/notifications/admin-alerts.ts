@@ -8,23 +8,23 @@ import { log } from "../core/logger";
  * review at Go Live, and when it hides items of a live store. To ADMIN_ALERT_EMAIL. Best effort:
  * never throws (an alert must never fail Go Live or the item check).
  */
-const reviewUrl = () => `${WEBAPP_URL.replace(/\/$/, "")}/admin/stores`;
+const reviewUrl = (path = "/admin/stores") => `${WEBAPP_URL.replace(/\/$/, "")}${path}`;
 
-function page(title: string, intro: string, lines: string[]): string {
+function page(title: string, intro: string, lines: string[], path?: string, button = "Open the review queue"): string {
   const list = lines.map((l) => `<li style="margin:0 0 8px">${e(l)}</li>`).join("");
   return `<!doctype html><html><body style="margin:0;padding:24px;background:#f3f4f6;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827">
 <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px">
 <h1 style="margin:0 0 16px;font-size:20px">${e(title)}</h1>
 <p style="margin:0 0 12px">${intro}</p>
 <ul style="margin:0 0 16px;padding-left:20px;font-size:14px">${list}</ul>
-<p style="margin:20px 0"><a href="${e(reviewUrl())}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#111827;color:#ffffff;text-decoration:none;font-weight:600">Open the review queue</a></p>
+<p style="margin:20px 0"><a href="${e(reviewUrl(path))}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#111827;color:#ffffff;text-decoration:none;font-weight:600">${e(button)}</a></p>
 </div></body></html>`;
 }
 
-async function send(subject: string, html: string): Promise<void> {
+async function send(subject: string, html: string, from = "Ceseelia store check"): Promise<void> {
   try {
     if (!ADMIN_ALERT_EMAIL) return;
-    await sendEmail(subject, "Ceseelia store check", ADMIN_ALERT_EMAIL, html);
+    await sendEmail(subject, from, ADMIN_ALERT_EMAIL, html);
   } catch (err) {
     log.error({ err }, "[admin alerts] couldn't send");
   }
@@ -56,5 +56,27 @@ export function notifyItemsFlagged(
       `The store is live. These items were added or changed and the store check hid them from shoppers until you approve or reject them. The rest of the store keeps selling.`,
       lines
     )
+  );
+}
+
+const REASON_TEXT: Record<string, string> = {
+  OFFENSIVE: "Offensive or abusive",
+  PERSONAL_INFO: "Shares personal information",
+  SPAM: "Spam or not about the store",
+  OTHER: "Other (see the note)",
+};
+
+/* A merchant reported a review (L.7 / 7.5). No review text in the email: it's in the dashboard. */
+export function notifyReviewReported(storeId: string, storeName: string, rating: number, reason: string): Promise<void> {
+  return send(
+    `Review reported at ${storeName || storeId}`,
+    page(
+      `A review at "${storeName || storeId}" was reported`,
+      `The store asked Ceseelia to look at a ${rating}-star review. It stays live until you keep or remove it.`,
+      [`Reason: ${REASON_TEXT[reason] ?? reason}`],
+      "/admin/reviews",
+      "Open reported reviews"
+    ),
+    "Ceseelia reviews"
   );
 }

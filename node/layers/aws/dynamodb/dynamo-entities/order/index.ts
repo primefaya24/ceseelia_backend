@@ -5,7 +5,7 @@
 //   APP_PENDING_ORDER / ORDER#<createdAt>#<orderId> the 5.7 sweeper's list { storeId, orderId, orderSk }
 // Both are written in one transaction when checkout creates the order (5.4); the pointer never
 // changes. The ORDER#<createdAt> sort key lets the merchant's list (6.1) page by date.
-import { createHash, randomBytes, randomInt } from "crypto";
+import { createHash, timingSafeEqual, randomBytes, randomInt } from "crypto";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DeleteCommand,
@@ -65,6 +65,15 @@ export function newStatusToken(): { token: string; hash: string } {
   return { token, hash: hashStatusToken(token) };
 }
 export const hashStatusToken = (token: string) => createHash("sha256").update(token).digest("hex");
+
+/* The shopper's proof for an order: the checkout's status token or one from an order email (6.5). */
+export function orderTokenMatches(order: StoreOrder, token: string): boolean {
+  if (!token || token.length > 64) return false;
+  const given = Buffer.from(hashStatusToken(token));
+  return [order.storeOrderStatusTokenHash ?? "", ...(order.storeOrderLinkTokenHashes ?? [])].some(
+    (h) => h.length === given.length && timingSafeEqual(Buffer.from(h), given)
+  );
+}
 
 /* Write a new order, its pointer and its sweeper row (5.7) together. Throws if the order or pointer exists. */
 export async function createOrderRecords(order: StoreOrder): Promise<void> {

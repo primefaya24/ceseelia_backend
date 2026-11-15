@@ -15,6 +15,8 @@ import route_review_store from './review-store/index';
 import route_set_store_plan from './set-store-plan/index';
 import route_get_item_review_queue from './get-item-review-queue/index';
 import route_review_item from './review-item/index';
+import route_get_review_reports from './get-review-reports/index';
+import route_decide_review_report from './decide-review-report/index';
 dotenv.config();
 
 // User Router
@@ -35,5 +37,7 @@ route_review_store(adminRouter);
 route_set_store_plan(adminRouter);
 route_get_item_review_queue(adminRouter);
 route_review_item(adminRouter);
+route_get_review_reports(adminRouter);
+route_decide_review_report(adminRouter);
 // Export Router
 export default adminRouter;

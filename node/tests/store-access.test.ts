@@ -58,6 +58,9 @@ const MEMBER_ROUTES: Array<[Method, string, object | undefined]> = [
   ["get", `/store/orders/new/${STORE}`, undefined],
   ["get", `/store/overview/${STORE}`, undefined],
   ["get", `/store/customers/list/${STORE}`, undefined],
+  ["get", `/store/reviews/list/${STORE}`, undefined],
+  ["put", "/store/reviews/reply", { storeId: STORE, orderId: STORE, text: "x" }],
+  ["post", "/store/reviews/report", { storeId: STORE, orderId: STORE, reason: "SPAM" }],
   ["get", `/store/orders/get/${STORE}/${ID}`, undefined],
   ["put", "/store/orders/update-status", { storeId: STORE }],
 ];

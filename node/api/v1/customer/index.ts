@@ -15,6 +15,8 @@ import route_create_order from './create-order/index';
 route_create_order(customerRouter);
 import route_order_status from './order-status/index';
 route_order_status(customerRouter);
+import route_review from './review/index';
+route_review(customerRouter);
 
 // Export Router
 export default customerRouter;

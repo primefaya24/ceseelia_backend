@@ -3,6 +3,10 @@
 
 /* Max string lengths, in characters. */
 export const MAX_LENGTH = {
+  // Reviews (L.7 / 7.5)
+  reviewComment: 2000,
+  reviewReply: 1000,
+  reviewReportNote: 500,
   storeName: 60,
   // A Canadian postal code with a space or dash ("K1A 0B1"); a little slack for stray spaces (4.4)
   postalCode: 10,
