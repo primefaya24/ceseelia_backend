@@ -16,6 +16,7 @@ import {
   statusEmailFor,
 } from "./order-email-templates";
 import { log } from "../core/logger";
+import { alertNewOrder } from "./order-alerts";
 
 /*
  * Sending the order emails (progress.md 6.5) through SES. Every function here is best effort: it
@@ -125,7 +126,10 @@ export async function notifyOrderPaid(orderId: string): Promise<void> {
     const alerts = [...new Set(recipients.map((a) => a.trim().toLowerCase()).filter(Boolean))].map((to) =>
       send(to, "Ceseelia", alert)
     );
+    // L.5: the dashboard's alert (toast, sound, bell) and web push to the members' browsers.
+    const dashboard = alertNewOrder(order, store.storeName, members.map((m) => m.userId));
     const results = await Promise.all([receipt, ...alerts]);
+    await dashboard;
     if (!results[0]) log.error(`[order emails] receipt for order ${orderId} wasn't sent`);
   } catch (e) {
     logged("paid emails", orderId)(e);

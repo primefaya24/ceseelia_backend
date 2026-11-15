@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
+vi.mock("../layers/notifications/order-alerts", () => ({ alertNewOrder: vi.fn(async () => {}) }));
 vi.mock("../layers/aws/ses", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/ses")>()),
   sendEmail: vi.fn(async () => ({ MessageId: "m" })),
@@ -26,6 +27,7 @@ import { addOrderLinkTokenHash, getOrderById, hashStatusToken } from "../layers/
 import { listStoreMembers } from "../layers/aws/dynamodb/dynamo-entities/membership";
 import { getPublicStoreSettings } from "../layers/aws/dynamodb/dynamo-entities/store";
 import { log } from "../layers/core/logger";
+import { alertNewOrder } from "../layers/notifications/order-alerts";
 import { notifyOrderPaid, notifyOrderRefunded, notifyOrderStatus, notifyReviewDecision } from "../layers/notifications/order-emails";
 import {
   money,
@@ -139,6 +141,15 @@ describe("sending (6.5)", () => {
     const link = /order\/[0-9A-Z]+#t=([A-Za-z0-9_-]+)/.exec(html)![1];
     expect(vi.mocked(addOrderLinkTokenHash)).toHaveBeenCalledWith(expect.objectContaining({ storeOrderId: ORDER_ID }), hashStatusToken(link));
     expect(html).toContain(`/s/northern-hoop/order/${ORDER_ID}#t=`);
+  });
+
+  it("paid: also raises the dashboard alert and push (L.5) for every member", async () => {
+    await notifyOrderPaid(ORDER_ID);
+    expect(vi.mocked(alertNewOrder)).toHaveBeenCalledWith(
+      expect.objectContaining({ storeOrderId: ORDER_ID }),
+      "Northern Hoop",
+      ["U1", "U2", "U3"]
+    );
   });
 
   it("paid: one alert per member and the store's contact email, each address once; the switch turns the store email off", async () => {

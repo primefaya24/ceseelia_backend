@@ -416,8 +416,8 @@ export async function recordOrderDispute(order: StoreOrder, status: string, amou
 }
 
 /*
- * Processed Connect events (5.5b): STRIPE_EVENT#<id> / EVENT, with `expiresAt` (seconds, for a
- * TTL on the table if one is set up). Handlers are idempotent anyway; this skips repeats early.
+ * Processed Connect events (5.5b): STRIPE_EVENT#<id> / EVENT, with `ttl` (seconds; the table's TTL
+ * attribute) 30 days out. Handlers are idempotent anyway; this skips repeats early.
  */
 const eventKey = (id: string) => ({ pk: `STRIPE_EVENT#${id}`, sk: "EVENT" });
 export async function wasEventProcessed(id: string): Promise<boolean> {
@@ -428,7 +428,9 @@ export async function markEventProcessed(id: string, type: string, now = Date.no
   await dynamoDbDocumentClient.send(
     new PutCommand({
       TableName: TABLE,
-      Item: { ...eventKey(id), type, processedAt: now, expiresAt: Math.floor(now / 1000) + 30 * 24 * 3600 },
+      // `ttl` is the table's TTL attribute (DynamoDB deletes the row after 30 days); `expiresAt`
+      // (the same value) was the only one set before L.5, so older rows never expired.
+      Item: { ...eventKey(id), type, processedAt: now, expiresAt: Math.floor(now / 1000) + 30 * 24 * 3600, ttl: Math.floor(now / 1000) + 30 * 24 * 3600 },
     })
   );
 }
