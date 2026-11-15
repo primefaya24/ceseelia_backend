@@ -268,3 +268,34 @@ export async function closeTicket(ticketId: string, now: number): Promise<boolea
     throw e;
   }
 }
+
+/*
+ * L.9 account delete: remove every ticket the user opened, with its messages and their pointer.
+ * The messages are the user's words (and may hold personal details), so nothing is kept.
+ * Returns how many tickets went.
+ */
+export async function deleteUserTickets(userId: string): Promise<number> {
+  const { dynamoWriteManyItems } = await import("../../dynamo-batch-ops");
+  const tickets = await listUserTickets(userId);
+  const deletes: Array<{ DeleteRequest: { Key: Record<string, string> } }> = [];
+  for (const t of tickets) {
+    let start: Record<string, unknown> | undefined;
+    do {
+      const res = await ddb.send(
+        new QueryCommand({
+          TableName: TABLE,
+          KeyConditionExpression: "pk = :pk AND begins_with(sk, :m)",
+          ExpressionAttributeValues: { ":pk": `TICKET#${t.ticketId}`, ":m": "MSG#" },
+          ProjectionExpression: "pk, sk",
+          ...(start ? { ExclusiveStartKey: start } : {}),
+        })
+      );
+      for (const r of res.Items ?? []) deletes.push({ DeleteRequest: { Key: { pk: String(r.pk), sk: String(r.sk) } } });
+      start = res.LastEvaluatedKey;
+    } while (start);
+    deletes.push({ DeleteRequest: { Key: ticketKey(t.ticketId) } });
+  }
+  // Pointers go with the rest of the USER# rows; tickets someone else owns are never touched.
+  if (deletes.length) await dynamoWriteManyItems(TABLE, deletes);
+  return tickets.length;
+}

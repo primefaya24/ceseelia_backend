@@ -557,19 +557,26 @@ export async function getUserRecordKeys(
 }
 
 ////////////////////////////////////////
-// Delete user
+// Delete user (L.9)
 ////////////////////////////////////////
-export async function deleteUserDB(
-    userId: any, 
-    userEmail: any, 
+/*
+ * Deletes every row under USER#<userId> (profile, sign-in identities, notification settings,
+ * push subscriptions, store and ticket pointers). Call last, after the store memberships, the
+ * tickets and the Cognito logins are gone. Returns how many rows went.
+ */
+export async function deleteUserRows(
+    userId: string,
     tableName: string | undefined = DEFAULT_TABLE_NAME,
-    ) {
-    try {
-    } catch (e) {
-        log.error({ err: e }, "In deleteUser");
-        throw "Could not delete user";
+): Promise<number> {
+    const { dynamoWriteManyItems } = await import("../../dynamo-batch-ops");
+    const keys: Array<{ pk: string; sk: string }> = await getUserRecordKeys(userId, tableName);
+    const rows = keys.filter((k) => k && k.pk === appConstants.DYNAMO_ENTITY_USER + "#" + userId);
+    if (rows.length) {
+        await dynamoWriteManyItems(tableName, rows.map((k) => ({ DeleteRequest: { Key: { pk: k.pk, sk: k.sk } } })));
     }
+    return rows.length;
 }
+
 /*
  * L.8 / 8.3: who is asking, for a support ticket: the user id, their verified sign-in email (the
  * Cognito row) and their name (the profile). Throws like fetchUserUUID.

@@ -77,7 +77,11 @@ export function summarize(row: Record<string, unknown> | undefined): AdminStoreS
 /* Summaries for these stores, by store id (stores without a SETTINGS row are left out). */
 export async function getStoreSummaries(storeIds: string[]): Promise<Record<string, AdminStoreSummary>> {
   if (storeIds.length === 0) return {};
-  const rows = await dynamGetManyItems(TABLE, storeIds.map(settingsKey));
+  // L.9: only what `summarize` reads, not the whole SETTINGS row (theme, texts, rewards...).
+  const rows = await dynamGetManyItems(TABLE, storeIds.map(settingsKey), {
+    ProjectionExpression: "pk, lifecycle, #admin, subscription, payments.stripeAccountId",
+    ExpressionAttributeNames: { "#admin": "admin" },
+  });
   const out: Record<string, AdminStoreSummary> = {};
   for (const row of rows) out[storeIdOfPk(row.pk)] = summarize(row);
   return out;

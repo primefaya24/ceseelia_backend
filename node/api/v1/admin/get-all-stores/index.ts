@@ -1,55 +1,66 @@
-// Imports
 import { Request, Response, Router } from "express";
-import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
+import { CACHE_CONTROL, setCacheControl } from "../../../../layers/core/http/cache";
 import { appConstants } from "../../../../constants";
 import { StoreOverview } from "../../../../layers/core/interfaces/store";
 import { getAllStores } from "../../../../layers/aws/dynamodb/dynamo-entities/admin";
 import { getStoreSummaries } from "../../../../layers/aws/dynamodb/dynamo-entities/store-admin";
 import { log } from "../../../../layers/core/logger";
-dotenv.config();
 
 /*
- * Module Route
+ * GET /admin/get-all-stores?q=&limit=&cursor=  (admins; L.9 paging)
+ * → { stores, next, total }: the store overview rows (small, all read), matching `q` (name or
+ * slug, any case), most recent order first then name; `limit` (1–100, default 50) from `cursor`
+ * (the `next` of the page before). Only the page's stores get their status, plan and billing
+ * (P.8) from SETTINGS, and only those fields. Never Stripe ids.
  */
+export const STORES_PAGE = 50;
+
 export default function registerRoute(router: Router): void {
   router.get("/get-all-stores", (req: Request, res: Response): void => {
     validateAndExecuteHttpApiRoute(
       req,
       res,
-      pureRequestParams,
-      validRequestParams,
+      (r) => ["q", "limit", "cursor"].every((k) => r.query[k] === undefined || typeof r.query[k] === "string"),
+      (r) =>
+        (r.query.q === undefined || String(r.query.q).length <= 100) &&
+        (r.query.limit === undefined || /^\d{1,3}$/.test(String(r.query.limit))) &&
+        (r.query.cursor === undefined || /^\d{1,7}$/.test(String(r.query.cursor))),
       executeRouteCore,
       true,
       true
     );
   });
-};
-
-function pureRequestParams(req: Request): boolean {
-  return true;
 }
 
-/*
- * Ensure request params are valid
- */
-function validRequestParams(req: Request): boolean {
-  return true;
+export function matchStores(stores: StoreOverview[], q: string): StoreOverview[] {
+  const needle = q.trim().toLowerCase();
+  const found = needle
+    ? stores.filter((s) => `${s.storeName ?? ""} ${s.storeSlug ?? ""}`.toLowerCase().includes(needle))
+    : stores.slice();
+  return found.sort(
+    (a, b) =>
+      (b.storeOrderLastCompletedTimestamp ?? 0) - (a.storeOrderLastCompletedTimestamp ?? 0) ||
+      String(a.storeName ?? "").localeCompare(String(b.storeName ?? "")) ||
+      String(a.storeId).localeCompare(String(b.storeId))
+  );
 }
 
-/*
- * Route controller logic
- */
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
+  setCacheControl(res, CACHE_CONTROL.none);
   try {
-    // Fetch data
-    const allStores: StoreOverview[] = await getAllStores();
-
-    // P.8: each store's status, plan and subscription from its SETTINGS row. A store without
-    // one (being deleted) keeps its overview fields only.
-    // (Reads every SETTINGS row in full; fine at today's store count, page it when that grows.)
-    const summaries = await getStoreSummaries(allStores.map((s) => String(s.storeId)));
-    res.send(allStores.map((s) => ({ ...s, ...(summaries[String(s.storeId)] ?? {}) })));
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit ?? STORES_PAGE)));
+    const from = Number(req.query.cursor ?? 0);
+    const found = matchStores(await getAllStores(), String(req.query.q ?? ""));
+    const page = found.slice(from, from + limit);
+    const summaries = await getStoreSummaries(page.map((s) => String(s.storeId)));
+    const stores = page.map((s) => {
+      const sum = summaries[String(s.storeId)];
+      if (!sum) return s;
+      const { stripeAccountId: _stripe, ...shown } = sum;
+      return { ...s, ...shown };
+    });
+    res.send({ stores, next: from + limit < found.length ? String(from + limit) : null, total: found.length });
   } catch (e) {
     log.error({ err: e }, "In admin/get-all-stores");
     res

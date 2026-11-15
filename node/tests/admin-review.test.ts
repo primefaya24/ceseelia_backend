@@ -349,6 +349,7 @@ describe("GET /admin/get-all-stores adds status, plan and billing (P.8)", () => 
               pk: "STORE#A",
               lifecycle: { status: "LIVE", plan: "SPARK" },
               admin: { suspended: false },
+              payments: { stripeAccountId: "acct_A" },
               subscription: { subscriptionId: "sub_1", customerId: "cus_1", plan: "SPARK", status: "past_due", cancelAtPeriodEnd: false, currentPeriodEnd: 9, graceEndsAt: null },
             },
           ],
@@ -356,6 +357,8 @@ describe("GET /admin/get-all-stores adds status, plan and billing (P.8)", () => 
       };
     });
     const res = await call("get", "/get-all-stores");
+    expect(res.body).toMatchObject({ total: 2, next: null });
+    res.body = res.body.stores;
     expect(res.body[0]).toMatchObject({
       storeId: "A",
       status: "LIVE",
@@ -366,6 +369,33 @@ describe("GET /admin/get-all-stores adds status, plan and billing (P.8)", () => 
     });
     expect(res.body[1]).toMatchObject({ storeId: "B", storeName: "Beta" });
     expect(res.body[1]).not.toHaveProperty("status"); // no SETTINGS row: overview fields only
-    expect(JSON.stringify(res.body)).not.toMatch(/sub_1|cus_1/);
+    expect(JSON.stringify(res.body)).not.toMatch(/sub_1|cus_1|acct_A/);
+    // Only the fields the summary needs are read from SETTINGS.
+    expect(ddb.commandCalls(BatchGetCommand)[0].args[0].input.RequestItems![Object.keys(ddb.commandCalls(BatchGetCommand)[0].args[0].input.RequestItems!)[0]].ProjectionExpression).toContain("lifecycle");
+  });
+
+  it("L.9: pages and searches; only the page's stores are read from SETTINGS", async () => {
+    ddb.on(QueryCommand).resolves({
+      Items: Array.from({ length: 7 }, (_, i) => ({
+        pk: "APP_STORE",
+        sk: `STORE#S${i}#OVERVIEW`,
+        storeId: `S${i}`,
+        storeName: i === 5 ? "Tea House" : `Store ${i}`,
+        storeSlug: `store-${i}`,
+        storeOrderLastCompletedTimestamp: i,
+      })),
+    });
+    ddb.on(BatchGetCommand).callsFake((input) => ({ Responses: { [Object.keys(input.RequestItems)[0]]: [] } }));
+    const first = await call("get", "/get-all-stores?limit=3");
+    expect(first.body.stores.map((s: { storeId: string }) => s.storeId)).toEqual(["S6", "S5", "S4"]);
+    expect(first.body).toMatchObject({ next: "3", total: 7 });
+    const keys = Object.values(ddb.commandCalls(BatchGetCommand)[0].args[0].input.RequestItems!)[0].Keys!;
+    expect(keys).toHaveLength(3);
+    const last = await call("get", "/get-all-stores?limit=3&cursor=6");
+    expect(last.body).toMatchObject({ next: null, total: 7 });
+    expect(last.body.stores).toHaveLength(1);
+    const tea = await call("get", "/get-all-stores?q=TEA");
+    expect(tea.body.stores.map((s: { storeId: string }) => s.storeId)).toEqual(["S5"]);
+    expect((await call("get", "/get-all-stores?limit=abc")).status).toBe(400);
   });
 });

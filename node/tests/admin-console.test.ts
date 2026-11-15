@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
-import { DynamoDBDocumentClient, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, QueryCommand, TransactWriteCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
 vi.mock("../layers/aws/cognito", () => ({ verifyCognitoAccessToken: vi.fn() }));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/user", async (orig) => ({
@@ -41,6 +41,7 @@ import { getMembership } from "../layers/aws/dynamodb/dynamo-entities/membership
 import { notifyTicket } from "../layers/notifications/admin-alerts";
 import { notifyTicketAnswered } from "../layers/notifications/support-emails";
 import { resetSupportLimitsForTests } from "../api/v1/user/support";
+import { resetQueueCountsCacheForTests } from "../api/v1/admin/queue-counts";
 
 const DAY = 24 * 3600_000;
 const NOW = Date.UTC(2026, 10, 15, 18, 0, 0); // 15 Nov 2026, 18:00 UTC
@@ -304,5 +305,24 @@ describe("ticket messages (entity)", () => {
     ddb.on(TransactWriteCommand).rejects(Object.assign(new Error("x"), { name: "TransactionCanceledException" }));
     await expect(realAdd(ticket(), "USER", "Ann", "more", 12)).rejects.toBeInstanceOf(real.TicketFullError);
     expect(ddb.commandCalls(UpdateCommand)).toHaveLength(0);
+  });
+});
+
+describe("GET /admin/queue-counts (L.9: menu badges)", () => {
+  const ddb = mockClient(DynamoDBDocumentClient);
+  beforeEach(() => {
+    ddb.reset();
+    resetQueueCountsCacheForTests();
+  });
+
+  it("admins only; four numbers from the queues", async () => {
+    ddb.on(QueryCommand).resolves({ Items: [], Count: 0 });
+    as("USER-ann");
+    expect((await call("get", "/admin/queue-counts")).status).toBe(403);
+    as("ADMIN-1", true);
+    const res = await call("get", "/admin/queue-counts");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ storeReviews: 0, itemReviews: 0, reviewReports: 0, openTickets: 0 });
+    expect(res.headers["cache-control"]).toMatch(/no-store/);
   });
 });

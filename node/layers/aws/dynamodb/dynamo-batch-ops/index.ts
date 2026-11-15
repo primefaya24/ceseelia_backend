@@ -107,7 +107,13 @@ export async function dynamoWriteManyItems(table: string | undefined, requestIte
 * Read up to 100 keys, retrying unprocessed keys. Returns the items found (missing keys are
 * simply absent). Throws DynamoBatchError if keys are still unprocessed after the last attempt.
 */
-export async function dynamoGetBatch(table: string | undefined, keys: Key[]): Promise<Item[]> {
+/** Only these attributes (L.9: Admin › Stores reads a few fields of big SETTINGS rows). */
+export interface BatchProjection {
+    ProjectionExpression: string;
+    ExpressionAttributeNames?: Record<string, string>;
+}
+
+export async function dynamoGetBatch(table: string | undefined, keys: Key[], projection?: BatchProjection): Promise<Item[]> {
     const tableName = requireTable(table);
     const items: Item[] = [];
     let pending = keys;
@@ -115,7 +121,7 @@ export async function dynamoGetBatch(table: string | undefined, keys: Key[]): Pr
         let res;
         try {
             res = await dynamoDbDocumentClient.send(
-                new BatchGetCommand({ RequestItems: { [tableName]: { Keys: pending } } })
+                new BatchGetCommand({ RequestItems: { [tableName]: { Keys: pending, ...(projection ?? {}) } } })
             );
         } catch (e) {
             throw new DynamoBatchError("Batch get failed", { cause: e });
@@ -138,10 +144,10 @@ export async function dynamoGetBatch(table: string | undefined, keys: Key[]): Pr
 /*
 * Read any number of keys in batches of 100 and return every item found, from all batches.
 */
-export async function dynamGetManyItems(table: string | undefined, keys: Key[]): Promise<Item[]> {
+export async function dynamGetManyItems(table: string | undefined, keys: Key[], projection?: BatchProjection): Promise<Item[]> {
     requireTable(table);
     const batches = await Promise.all(
-        chunk(keys, GET_BATCH_SIZE).map((batch) => dynamoGetBatch(table, batch))
+        chunk(keys, GET_BATCH_SIZE).map((batch) => dynamoGetBatch(table, batch, projection))
     );
     return batches.flat();
 }
