@@ -175,7 +175,7 @@ export default function registerRoute(router: Router): void {
 | Inventory | `GET /store/inventory/get-data/:storeId` (auth) | ✅ categories + items + settings |
 | Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ active items in active categories only (counts match), no admin block, `storeId`, geo-IP default currency if the store offers it; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (suspended); a DRAFT / IN_REVIEW store is a 200 "Coming soon" body (`settings.storeStatus`, name and look only, no items; P.2), and its item links, quotes and Contact us are 404 `STORE_NOT_LIVE` |
 | Inventory | `GET /store/inventory/get-item-image-upload-urls/:storeId/:itemId/:pngCount/:jpgCount` | ✅ 1–10 in total; 404 unless the item exists |
-| Admin | `GET /admin/get-all-stores`, `GET /admin/get-overview-data?tz=` | ✅ overview `{ stats, allStores }` (L.8 / 8.1, `layers/core/admin-stats`) |
+| Admin | `GET /admin/get-all-stores?q=&limit=&cursor=` (→ `{ stores, next, total }`, L.9), `GET /admin/get-overview-data?tz=`, `GET /admin/queue-counts` (menu badges, L.9) | ✅ overview `{ stats, allStores }` (L.8 / 8.1, `layers/core/admin-stats`) |
 | Admin commission (L.8 / 8.4) | `GET /admin/commission-report?month=&tz=[&reconcile=1][&format=csv]` | ✅ per store per month from each order's fee; optional check against Stripe's application fees |
 | Support (L.8 / 8.3) | `/user/support/tickets` (GET, POST), `/user/support/tickets/:id` (GET), `…/reply`, `…/close` (POST); `/admin/support/tickets` (GET), `/admin/support/tickets/:id` (GET), `…/reply`, `…/close` (POST, admins) | ✅ own tickets only (404 otherwise), limits per user, emails carry no message text |
 | Admin | `POST /admin/update-store-info` (name/slug; 409 if the slug is taken) | ✅ also sets the storefront name (`storeInfo.storeName`) in the same transaction (P.11) |
@@ -192,7 +192,7 @@ export default function registerRoute(router: Router): void {
 | Admin | `DELETE /admin/remove-store-member/:storeId/:userId`, `DELETE /admin/cancel-store-invite/:storeId/:email` | ✅ 404 `NOT_A_MEMBER` / `NOT_INVITED` |
 | User | `GET /user/get-my-profile[/:locale]` | ✅ profile + `stores` (memberships); creates missing user rows from the user pool; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED` |
 | User | `PUT /user/update-profile` `{userFirstName, userLastName}` (trimmed, 1–50 chars), `PUT /user/update-fcm-token` | ✅ |
-| User | `DELETE /user/delete-user` | ⛔ disabled (501) until a full delete exists (after 1.2) |
+| User | `DELETE /user/delete-user` `{ confirm: "DELETE" }` | ✅ L.9: not admins, not the only member of a store; memberships, tickets, Cognito logins, then USER# rows; 3 an hour |
 | Merchant | `POST /merchant/create-store` `{storeName, storeSlug}` (any signed-in user, P.3) | ✅ draft with no plan (`NONE`) + the caller as ADMIN in one transaction; 404 `PROFILE_NOT_FOUND`, 403 `ACCOUNT_DEACTIVATED`, 409 `SLUG_TAKEN` / `ALREADY_IN_A_STORE` (one store per account, any role, P.11; replaced the 5-draft cap), 5/account/hour → 429 |
 | Merchant | `GET /merchant/path` | ❌ template stub (unused; per-store numbers are `/store/overview`) |
 | Store customers (L.7 / 7.1) | `GET /store/customers/list/:storeId` (store members) | ✅ `{customers: StoreCustomer[], partial}`: everyone with a paid order, most recent first, ≤ 5,000; built by `recordCustomerOrder` on paid and on refund sync |

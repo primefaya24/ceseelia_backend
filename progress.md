@@ -107,9 +107,13 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >       commission reporting (8.4). (8.2 join requests stay superseded by P.3.) **Done
 >       2026-11-15** (backend and webapp); checked read-only on dev (6 draft stores, 7 merchants,
 >       no orders or tickets yet).
-> - [ ] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
+> - [~] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
 >       SEO / link previews, account delete (BE `delete-user`, WA 1.6d), custom domains
 >       (P.9 / 9.8), the admin menu's review-queue badge, paging Admin › Stores.
+>       **Done 2026-11-15:** menu badges (`GET /admin/queue-counts`), paging Admin › Stores
+>       (`get-all-stores?q=&limit=&cursor=`), account delete (`delete-user`, WA 1.6d). **Open:**
+>       3.2b CloudFront, WA 3.6 link previews and 9.8 custom domains all wait on where the
+>       webapp is hosted (no DNS or hosting for `ceseelia.com` / `app.ceseelia.com` yet).
 
 > **Secrets and the prod server (2026-11-14).** One Secrets Manager secret per stage,
 > `ceseelia/dev` and `ceseelia/prod` (`APP_SECRET_ID`), flat keys: `stripeSecretKey`,
@@ -334,6 +338,12 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
   - _Done 2026-11-08, tested by hand. **Disabled for now:** returns 501 and deletes
     nothing (the webapp never calls it). **Re-enable after 1.2** with the full delete described
     above._
+  - _**Built 2026-11-15 (L.9).** `DELETE /user/delete-user` `{ confirm: "DELETE" }`: refuses
+    admins (403 `ADMIN_ACCOUNT`) and the only member of a store (409 `ONLY_MEMBER`); leaves the
+    store, deletes the user's tickets and messages, then every Cognito login, then every USER#
+    row (logins first so a failure can be retried; a login already gone counts as done). 3 tries
+    an hour. Orders, reviews and rewards stay with the store. **Owner:** `iam/` now allows
+    `cognito-idp:AdminDeleteUser`; update `CeseeliaServerRole` from the file._
 
 ### S.C — Hardening
 - [x] 🟡 **S.12 Move identity off `req.body`.** The wrapper writes `cognito_id`, `is_user_admin`
@@ -1459,6 +1469,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.9 (part): admin menu badges (`/admin/queue-counts`); `get-all-stores` pages, searches and reads only the page's SETTINGS fields; account delete (`delete-user`) with only-member and admin guards. |
 | 2026-11-15 | L.8: real admin overview (stores, merchants, 30-day orders / sales / commission, chart, top stores, to-do counts); support tickets for users and admins with email notices (no message text in email); monthly commission report per store with a Stripe check and CSV. |
 | 2026-11-15 | L.7 / 7.2–7.4: rewards: emailed 6-digit code (hashed, 5 guesses, per-email limits in the table, per-IP limits), 30-day per-store sessions; earn once per paid order, refunds take back their share; one reward per order off the items before tax (commission on the price after it), spent in the order's own transaction, given back once if never paid or fully refunded; one spelling for the redemption method plus a migration script. |
 | 2026-11-15 | L.7 / 7.5: verified-buyer reviews (live at once), store replies and reports, admin keep/remove; public reviews + rating. |

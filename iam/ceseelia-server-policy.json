@@ -47,7 +47,10 @@
     {
       "Sid": "UserPoolProd",
       "Effect": "Allow",
-      "Action": "cognito-idp:AdminGetUser",
+      "Action": [
+        "cognito-idp:AdminGetUser",
+        "cognito-idp:AdminDeleteUser"
+      ],
       "Resource": "arn:aws:cognito-idp:us-east-1:258084617016:userpool/us-east-1_YLhkkYbV5"
     },
     {

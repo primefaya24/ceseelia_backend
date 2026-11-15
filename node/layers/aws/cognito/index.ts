@@ -166,7 +166,12 @@ export async function deleteUser(
                 UserPoolId: COGNITO_USER_POOL_ID,
                 Username: username
             });
-            await cognitoClient.send(command);
+            try {
+                await cognitoClient.send(command);
+            } catch (e) {
+                // Already gone (a retry after a partial delete): that's the outcome we want.
+                if ((e as { name?: string })?.name !== "UserNotFoundException") throw e;
+            }
         }
     } catch (e) {
         log.error({ err: e }, "In adminDeleteUser");
