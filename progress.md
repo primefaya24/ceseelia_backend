@@ -17,6 +17,81 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 ---
 
+## 0. Owner to-do: manual steps only (2026-11-15)
+
+Everything here is for the owner to do by hand; Claude can't (no GitHub, console or Stripe
+access, and secrets never go through chat). The same list is in both repos' `progress.md`; tick
+it in both. In order: each phase needs the one before it. Details stay where they're linked.
+
+**A. Now (nothing blocks these)**
+- [ ] A1. **Push** every repo from your own shell: backend and webapp
+      `dev_v1.0.0_customer_store_front`; CloudFormation `dev_v1.0.0_l4_backups_alarms` and
+      `dev_v1.0.0_l9_webapp_cloudfront`.
+- [ ] A2. **S.2 Rotate the old password** that was in the backend's `node/README.md` (still in git
+      history).
+- [ ] A3. **Delete the old secret** `ceseelia/dev/stripe` (no longer read):
+      `aws secretsmanager delete-secret --secret-id ceseelia/dev/stripe --recovery-window-in-days 30`.
+- [ ] A4. **platform.claude.com billing**, then create an API key there and paste it in the AWS
+      console as `anthropicApiKey` in `ceseelia/dev`. Then tell Claude: it runs the 60-store eval
+      (≈ $1) and shows you the results. Until the key is in, every Go Live goes to review.
+      (If billing can't be fixed: pick Claude Platform on AWS or Bedrock, backend §1 "The AI
+      check's key".)
+
+**B. AWS infrastructure (dev first, then prod)**
+- [ ] B1. GitHub › CloudFormation repo › Settings › Secrets and variables › Actions › Variables:
+      add `ALARM_EMAIL`.
+- [ ] B2. Merge `dev_v1.0.0_l4_backups_alarms` into `dev_v1.0.0` and push (CI deploys dev:
+      backups, alarms, logs). Click the SNS confirmation email.
+- [ ] B3. Webapp hosting (L.9): run `sam validate --lint` (cfn-lint couldn't run in Claude's
+      shell), preview a change set on `ceseelia-dev`, then merge
+      `dev_v1.0.0_l9_webapp_cloudfront` into `dev_v1.0.0` and push. Check
+      `https://dev.ceseelia.com` resolves.
+- [ ] B4. When dev looks right, merge `dev_v1.0.0` into `prod_v1.0.0` and push (prod is also
+      behind on the 2026-11-09 upload-expiry rule).
+- [ ] B5. **Launch the prod API server** (EC2) with the **`CeseeliaServerRole`** instance
+      profile, point `api.ceseelia.com` at it (Route53 A record), run `generate-cert.sh`. Tell
+      Claude the host so it can fix the `ssh`/`scp` deploy scripts (they still point at
+      dinersxpress-0).
+- [ ] B6. After prod's stack is deployed, update the server role from the file (adds the prod log
+      group and `cognito-idp:AdminDeleteUser` for account delete):
+      `aws iam put-role-policy --role-name CeseeliaServerRole --policy-name ceseelia-server-prod --policy-document file://iam/ceseelia-server-policy.json`
+      (from `ceseelia_backend/`).
+- [ ] B7. Prod server environment: `APP_SECRET_ID=ceseelia/prod`,
+      `CORS_ORIGINS=https://app.ceseelia.com` (required; the API won't start without it),
+      `ADMIN_ALERT_EMAIL` (where review, ticket and hidden-item alerts go). Leave
+      `PAID_PLANS_ENABLED` off until D3.
+- [ ] B8. **Web push keys:** `node scripts/setup-vapid.mjs --write` (dev), then
+      `APP_SECRET_ID=ceseelia/prod node scripts/setup-vapid.mjs --write`; restart the API.
+
+**C. Stripe in test mode**
+- [ ] C1. **Connect webhook** (backend 5.5 "Setup"): endpoint
+      `https://api.ceseelia.com/api/v1/payments/stripe-connect-webhook`, "Events on Connected
+      accounts", the events listed there; its signing secret into the stage's secret as
+      `stripeWebhookSecret`.
+- [ ] C2. **Billing setup** (backend P.5 "Setup" 1–5): prices script, Stripe Tax (origin address,
+      GST/HST, SaaS tax code), billing webhook (`stripeBillingWebhookSecret`), Smart Retries →
+      mark unpaid, customer portal.
+- [ ] C3. **L.0 first real test order:** checkout → paid (receipt, PDF, alerts) → Store › Orders →
+      ready / on its way emails → refund part → refund the rest.
+- [ ] C4. **A Spark checkout** (Go Live → Stripe Checkout → live) and a plan switch in the portal.
+
+**D. Going live**
+- [ ] D1. Repeat C1 and C2 in **live mode**; live keys and both webhook secrets into
+      `ceseelia/prod` (AWS console).
+- [ ] D2. `anthropicApiKey` in `ceseelia/prod`, once you've reviewed the eval (A4).
+- [ ] D3. `PAID_PLANS_ENABLED=true` on the prod server; restart.
+- [ ] D4. Deploy the webapp: `tools/deploy-s3.sh prod` (from `ceseelia_webapp/`).
+- [ ] D5. Smoke test on prod: sign up, create a store, Go Live, a real order; paste a store link
+      in WhatsApp or Slack and check the preview (name, slogan, logo).
+
+**E. Optional, any time**
+- [ ] E1. The two storage distributions (`dev.storage` / `prod.storage`, made by hand) use
+      `PriceClass_All`; `PriceClass_200` costs less and still covers North America, Europe and
+      Asia.
+
+_Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-08), rewards
+`normalize-rewards-method.mjs --write` on dev and prod (2026-11-15), Stage P QA (2026-11-13)._
+
 ## 1. Where things stand
 
 > **🚀 Launch checklist (owner, 2026-11-14): EVERY item below must be done before launch.**
@@ -1473,6 +1548,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | §0 Owner to-do added: every manual step in one ordered list (same in both repos). |
 | 2026-11-15 | L.9: link previews (`GET /store/public/preview/:slug[/:itemId]`, Open Graph HTML for bots); webapp S3 + CloudFront in the CloudFormation template (branch `dev_v1.0.0_l9_webapp_cloudfront`, not deployed); `iam/` AdminDeleteUser. |
 | 2026-11-15 | L.9 (part): admin menu badges (`/admin/queue-counts`); `get-all-stores` pages, searches and reads only the page's SETTINGS fields; account delete (`delete-user`) with only-member and admin guards. |
 | 2026-11-15 | L.8: real admin overview (stores, merchants, 30-day orders / sales / commission, chart, top stores, to-do counts); support tickets for users and admins with email notices (no message text in email); monthly commission report per store with a Stripe check and CSV. |
