@@ -182,6 +182,7 @@ describe("sending (6.5)", () => {
     expect(sendEmail).not.toHaveBeenCalled();
     await notifyOrderStatus(order(), "READY");
     expect(vi.mocked(sendEmail).mock.calls[0][0]).toBe("Your order K7Q2XM is ready for pickup");
+    expect(JSON.stringify(vi.mocked(sendEmail).mock.calls[0])).toContain("you can review your order from that page");
   });
 
   it("refund and review decision", async () => {

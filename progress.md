@@ -96,8 +96,11 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >       read-only on Northern Hoop (no paid orders yet, so zeros). One-store merchants still
 >       land on Orders; say if Overview should be the home page instead.
 > - [ ] **L.7 Stage 7:** Store › Customers (7.1), unified rewards and earn/redeem (7.3, 7.4),
->       reviews (7.5). 7.2 (optional customer accounts) included. **7.1 Customers done 2026-11-15**
->       (rewards, accounts, reviews: waiting on the owner's answers).
+>       reviews (7.5). 7.2 (optional customer accounts) included. **7.1 Customers and 7.5 reviews done
+>       2026-11-15.** Owner's decisions (2026-11-15): reviews only from verified buyers, live at
+>       once, merchants reply and report but never edit or remove, the platform admin keeps or
+>       removes reported ones; rewards prove the shopper with an emailed code (also the light
+>       7.2 accounts); commission is on the price after a rewards discount. Next: 7.3/7.4.
 > - [ ] **L.8 Stage 8 admin console:** real admin overview stats (8.1), support tickets (8.3),
 >       commission reporting (8.4). (8.2 join requests stay superseded by P.3.)
 > - [ ] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
@@ -1262,8 +1265,22 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 - [ ] 7.3 Unify the rewards redemption constant (`POINTS_TO_*` vs `REWARDS_REDEMPTION_*`) with a
       data migration, then drop the dual acceptance in the validator.
 - [ ] 7.4 Rewards: earn on paid orders, redeem inside the quote. (WA 7.2)
-- [ ] 7.5 Reviews: `POST /customer/review` (completed orders only, token-gated), moderation,
+- [x] 7.5 Reviews: `POST /customer/review` (completed orders only, token-gated), moderation,
       `GET /store/reviews/list/:storeId`. (WA 7.3)
+  - _Done 2026-11-15 (L.7), owner's rules. `layers/aws/dynamodb/dynamo-entities/review`:
+    `REVIEW#<createdAt>#<orderId>`, `REVIEW_FOR#<orderId>` (one per order, conditional),
+    `REVIEW_STATS` (count, sum, r1–r5), queue `APP_REVIEW_REPORT`; what's published and the
+    stats always move in one transaction. Buyer: `GET`/`POST /customer/review` with the
+    order's token (checkout or email; wrong = 404), once the order is READY / SHIPPED /
+    COMPLETED or 14 days after payment, never cancelled or refunded; rating 1–5, comment ≤ 2,000
+    (plain text, control and bidi characters stripped); shown as first name + last initial and
+    what they bought; 10/IP/10 min. Public `GET /store/public/reviews/:storeId` (published,
+    summary on page 1). Store: `list` (removed ones too, report state, not who reported), `PUT
+    reply` (set / replace / remove), `POST report` (OFFENSIVE / PERSONAL_INFO / SPAM / OTHER +
+    note; once per review; emails ADMIN_ALERT_EMAIL). Admin: `get-review-reports`,
+    `decide-review-report` KEEP (can't be reported again) / REMOVE (hidden, out of the
+    rating). There is no edit or delete route. Ready/shipped emails now mention reviewing.
+    Tests in `tests/reviews.test.ts`._
 
 ---
 
@@ -1383,6 +1400,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.7 / 7.5: verified-buyer reviews (live at once), store replies and reports, admin keep/remove; public reviews + rating. |
 | 2026-11-15 | L.7 / 7.1: customer records from paid orders (exactly once, refunds both ways) + `GET /store/customers/list/:storeId`; backfill script. |
 | 2026-11-15 | L.6 / 1.5: `GET /store/overview/:storeId?tz=` (Store Overview numbers in the merchant's time zone; `layers/core/store-stats`). |
 | 2026-11-15 | L.5 / 6.7: new-order alert rows + `GET /store/orders/new/:storeId` for the dashboard; Web Push (VAPID) to members' browsers with an allow-list of push services; `/user/push/*`; `scripts/setup-vapid.mjs`; Stripe event rows get the table's `ttl`. |

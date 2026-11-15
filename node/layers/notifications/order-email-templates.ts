@@ -132,6 +132,8 @@ export function statusEmail(o: StoreOrder, store: EmailStore, kind: "READY" | "S
         ),
         linesTable(o, false),
         button(orderUrl, "View your order"),
+        // L.7: the same link is how a buyer reviews the order (it proves they bought it).
+        p(`Once you have it, you can review your order from that page. Only customers can review ${e(store.storeName)}.`),
       ].join(""),
       shopperFooter(store)
     ),
