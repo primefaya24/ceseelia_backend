@@ -1,5 +1,6 @@
 // Imports
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { normalizeRedemptionMethod } from "../../../../core/rewards";
 import {
   DynamoDBDocumentClient,
   GetCommand,
@@ -659,7 +660,8 @@ export async function updateStoreSettings(
         ":templateId": storeSettings.templateId,
         ":themeId": storeSettings.themeId,
         ":storeInfo": withoutPublicOnlyInfo(storeSettings.storeInfo),
-        ":purchaseRewards": storeSettings.purchaseRewards,
+        // 7.3: always saved with the one spelling (old tabs may still send REWARDS_REDEMPTION_*).
+        ":purchaseRewards": { ...storeSettings.purchaseRewards, redemptionMethod: normalizeRedemptionMethod(storeSettings.purchaseRewards?.redemptionMethod) },
         ":socialMediaLinks": storeSettings.socialMediaLinks,
         ":currencies": storeSettings.currencies,
         ":general": storeSettings.general,
@@ -1146,4 +1148,17 @@ export async function clearStoreStripeAccount(storeId: string, stripeAccountId: 
   } catch (e) {
     if (!isConditionalCheckFailure(e)) throw e;
   }
+}
+
+/* L.7: just the store's rewards settings (null if the store is gone). */
+export async function getStoreRewardsSettings(storeId: string): Promise<Pick<StoreSettings, "purchaseRewards"> | null> {
+  const res = await dynamoDbDocumentClient.send(
+    new GetCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: paymentsKey(storeId),
+      ProjectionExpression: "#pk, #r",
+      ExpressionAttributeNames: { "#pk": "pk", "#r": "purchaseRewards" },
+    })
+  );
+  return res.Item ? { purchaseRewards: res.Item.purchaseRewards } : null;
 }

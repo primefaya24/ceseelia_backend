@@ -72,6 +72,8 @@ function linesTable(o: StoreOrder, withTotals: boolean): string {
     // The lines are after their discounts, so the subtotal is too; the saving is shown apart.
     totals += row("Subtotal", money(o.storeOrderSubtotalMinor - o.storeOrderDiscountMinor, c));
     if (o.storeOrderDiscountMinor > 0) totals += row(`<span style="color:#047857">You saved</span>`, `<span style="color:#047857">${money(o.storeOrderDiscountMinor, c)}</span>`);
+    const rewards = o.storeOrderRewards?.rewardsMinor ?? 0;
+    if (rewards > 0) totals += row(`<span style="color:#047857">Rewards</span>`, `<span style="color:#047857">−${money(rewards, c)}</span>`);
     if (o.storeOrderDeliveryMinor > 0) totals += row("Delivery", money(o.storeOrderDeliveryMinor, c));
     for (const t of o.storeOrderTaxLines ?? []) {
       if (t.minor > 0) totals += row(`${e(t.label)} ${t.percent}%${o.storeOrderPricesIncludeTax ? " (included)" : ""}`, money(t.minor, c));
@@ -196,6 +198,23 @@ export function reviewDecisionEmail(storeName: string, approved: boolean, messag
         button(storefrontUrl, "Open your store"),
       ].join(""),
       "Reply to this email if you have questions."
+    ),
+  };
+}
+
+/* L.7: the code that proves a shopper owns their rewards email. No link, so it can't be phished into a login page. */
+export function rewardsCodeEmail(storeName: string, code: string, minutes: number): RenderedEmail {
+  return {
+    subject: `${code} is your ${storeName} rewards code`,
+    html: layout(
+      "Your rewards code",
+      [
+        p(`Enter this code at <strong>${e(storeName)}</strong> to see and use your rewards points:`),
+        `<p style="margin:0 0 16px;font-size:32px;font-weight:700;letter-spacing:6px">${e(code)}</p>`,
+        p(`It works once, for ${minutes} minutes. Never share it: ${e(storeName)} and Ceseelia will never ask you for it.`),
+        p(`If you didn't ask for a code, ignore this email. Nobody can use your points without it.`),
+      ].join(""),
+      `Sent by Ceseelia for ${e(storeName)}.`
     ),
   };
 }

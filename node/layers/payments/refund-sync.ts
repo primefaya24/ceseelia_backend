@@ -5,6 +5,7 @@ import { getStripe } from "./stripe";
 import { notifyOrderRefunded } from "../notifications/order-emails";
 import { recordCustomerOrder } from "../aws/dynamodb/dynamo-entities/customer";
 import { log } from "../core/logger";
+import { rewardsAfterRefund } from "./rewards-sync";
 
 /*
  * Sync an order's refunds from Stripe (6.4b): lists the payment's refunds on the store's
@@ -45,6 +46,7 @@ export async function syncOrderRefunds(orderId: string): Promise<StoreOrder | nu
       if (more > 0) await notifyOrderRefunded(synced, more);
       // L.7: the customer's total spent follows the refunds (both ways; idempotent).
       await recordCustomerOrder(synced).catch((e) => log.error({ err: e, orderId }, "In refund-sync: customer record"));
+      await rewardsAfterRefund(synced);
       return synced;
     }
   }

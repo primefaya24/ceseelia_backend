@@ -55,6 +55,8 @@ export function shopperOrderView(o: StoreOrder, store: { storeName: string; stor
     lines: o.storeOrderLines,
     subtotalMinor: o.storeOrderSubtotalMinor,
     discountMinor: o.storeOrderDiscountMinor,
+    // L.7: what a rewards reward took off (points spent aren't shown: the amount is what matters).
+    rewardsMinor: o.storeOrderRewards?.rewardsMinor ?? 0,
     deliveryMinor: o.storeOrderDeliveryMinor,
     taxMinor: o.storeOrderTaxMinor,
     taxLines: o.storeOrderTaxLines,

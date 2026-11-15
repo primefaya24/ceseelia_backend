@@ -117,6 +117,7 @@ export function receiptPdf(o: StoreOrder, store: ReceiptStore): Promise<Buffer> 
     };
     total("Subtotal", money(o.storeOrderSubtotalMinor - o.storeOrderDiscountMinor, c));
     if (o.storeOrderDiscountMinor > 0) total("You saved", money(o.storeOrderDiscountMinor, c));
+    if ((o.storeOrderRewards?.rewardsMinor ?? 0) > 0) total("Rewards", `-${money(o.storeOrderRewards!.rewardsMinor, c)}`);
     if (o.storeOrderDeliveryMinor > 0) total("Delivery", money(o.storeOrderDeliveryMinor, c));
     for (const t of o.storeOrderTaxLines ?? []) {
       if (t.minor > 0) total(`${pdfText(t.label)} ${t.percent}%${o.storeOrderPricesIncludeTax ? " (included)" : ""}`, money(t.minor, c));

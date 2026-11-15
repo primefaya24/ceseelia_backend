@@ -1,4 +1,5 @@
 import { MAX_QUANTITY_PER_LINE } from "../../../constants/input-limits";
+import type { RewardsDiscount } from "../rewards";
 import {
   fulfilmentSettings,
   isItemHiddenByReview,
@@ -113,6 +114,8 @@ export interface Quote {
   lines: PricedLine[];
   subtotalMinor: number;
   discountMinor: number;
+  /** One rewards reward taken off the items (L.7), after `discountMinor`, before tax; 0 if none. */
+  rewardsMinor: number;
   /** What the shopper can choose, with the fee in this currency. */
   fulfilmentOptions: { method: Fulfilment; feeMinor: number }[];
   /** The one priced (the shopper's choice, else the first option); null if none is available. */
@@ -130,7 +133,7 @@ export interface Quote {
    */
   taxRegion: { province: CaProvince; name: string; estimated: boolean } | null;
   taxMinor: number;
-  /** Goods after discount + delivery, + tax unless prices include it. */
+  /** Goods after discounts and rewards + delivery, + tax unless prices include it. */
   totalMinor: number;
   ok: boolean;
   /**
@@ -248,6 +251,8 @@ export function priceLines(
     postalCode?: string;
     /** Where the shopper seems to be (geo-IP), for an estimate before there's an address. */
     locationProvince?: CaProvince | null;
+    /** A rewards reward to take off (L.7); the caller checks the shopper may spend it. */
+    rewards?: RewardsDiscount | null;
   } = {}
 ): Quote {
   const f = fulfilmentSettings(store.settings.general);
@@ -257,6 +262,7 @@ export function priceLines(
       lines: [],
       subtotalMinor: 0,
       discountMinor: 0,
+      rewardsMinor: 0,
       fulfilmentOptions: [],
       fulfilment: null,
       deliveryMinor: 0,
@@ -376,7 +382,12 @@ export function priceLines(
   const wanted = opts.fulfilment ?? fulfilmentOptions[0]?.method;
   const chosen = fulfilmentOptions.find((o) => o.method === wanted) ?? null;
   const deliveryMinor = chosen && valid.length > 0 ? chosen.feeMinor : 0;
-  const taxable = subtotalMinor - discountMinor + deliveryMinor;
+  const goods = subtotalMinor - discountMinor;
+  // L.7: never more than the items; the percent is of the items after their discounts.
+  const rewardsMinor = !opts.rewards || valid.length === 0
+    ? 0
+    : Math.min(goods, opts.rewards.kind === "MONEY" ? Math.max(0, Math.floor(opts.rewards.minor)) : percentOf(goods, opts.rewards.percent));
+  const taxable = goods - rewardsMinor + deliveryMinor;
   const tax = taxFor(f, chosen?.method ?? null, taxable, opts.postalCode, opts.locationProvince ?? null);
   const error: Quote["error"] = chosen
     ? tax.error
@@ -389,6 +400,7 @@ export function priceLines(
     lines: priced,
     subtotalMinor,
     discountMinor,
+    rewardsMinor,
     fulfilmentOptions,
     fulfilment: chosen?.method ?? null,
     deliveryMinor,

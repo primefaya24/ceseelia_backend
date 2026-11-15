@@ -492,6 +492,8 @@ export interface FeeQuote {
   /** Items before discounts. */
   subtotalMinor: number;
   discountMinor: number;
+  /** A rewards reward on the items (L.7): the commission is on the price after it. */
+  rewardsMinor?: number;
   /** In FLAT mode with tax-inclusive prices, the items include tax at this rate. */
   pricesIncludeTax: boolean;
   taxPercent: number;
@@ -592,7 +594,7 @@ export function feeFromCommission(c: CommissionInEffect, quote: FeeQuote): numbe
  * never takes a cut of the sales tax the merchant collects.
  */
 export function commissionBaseMinor(quote: FeeQuote): number {
-  const items = Math.max(0, Math.floor(quote.subtotalMinor - quote.discountMinor));
+  const items = Math.max(0, Math.floor(quote.subtotalMinor - quote.discountMinor - (quote.rewardsMinor ?? 0)));
   if (!quote.pricesIncludeTax || !(quote.taxPercent > 0)) return items;
   // items × 100 / (100 + rate), with the rate in thousandths of a percent (as percentOf does).
   const milli = BigInt(Math.round(quote.taxPercent * 1000));
@@ -704,7 +706,8 @@ export function isStoreSettingsValid(storeSettings: StoreSettings, storeId: stri
 
   // Rewards
   const r = s.purchaseRewards;
-  // TODO(Stage 7): unify — the webapp saves REWARDS_REDEMPTION_*, the backend default is POINTS_TO_*
+  // 7.3: POINTS_TO_* is the spelling; REWARDS_REDEMPTION_* (older webapp) is still accepted and
+  // saved as POINTS_TO_* (updateStoreSettings); scripts/normalize-rewards-method.mjs fixes old rows.
   const redemptionMethods = [
     appConstants.STORE_REWARDS_REDEMPTION_METHOD_POINTS_TO_MONEY,
     appConstants.STORE_REWARDS_REDEMPTION_METHOD_POINTS_TO_DISCOUNT,
@@ -1226,6 +1229,16 @@ export interface StoreOrderLine {
   totalMinor: number;
 }
 
+export interface StoreOrderRewards {
+  customerId: string;
+  points: number;
+  rewardsMinor: number;
+  kind: "MONEY" | "PERCENT";
+  /** MONEY: minor units; PERCENT: percent. */
+  value: number;
+  returned: boolean;
+}
+
 export interface StoreOrder {
   storeOrderId: string;
   storeId: string;
@@ -1266,6 +1279,11 @@ export interface StoreOrder {
   storeOrderStockShortfall?: boolean;
   /** 5.5d: refunded so far (the merchant can refund in their own Stripe dashboard). */
   storeOrderRefundedMinor?: number;
+  /**
+   * L.7: a rewards reward spent on this order (taken from the balance when the order was created;
+   * `returned` once given back because it was never paid or was fully refunded).
+   */
+  storeOrderRewards?: StoreOrderRewards;
   /** 5.5d: the latest dispute on the payment, as Stripe reports it. */
   storeOrderDispute?: { status: string; amountMinor: number; updatedAt: number };
   /** 6.3: the merchant's status changes, oldest first (`by`: the member's userId, or "ADMIN"). */

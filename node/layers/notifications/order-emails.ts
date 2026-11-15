@@ -12,11 +12,13 @@ import {
   RenderedEmail,
   refundEmail,
   reviewDecisionEmail,
+  rewardsCodeEmail,
   statusEmail,
   statusEmailFor,
 } from "./order-email-templates";
 import { log } from "../core/logger";
 import { recordCustomerOrder } from "../aws/dynamodb/dynamo-entities/customer";
+import { rewardsAfterPaid } from "../payments/rewards-sync";
 import { alertNewOrder } from "./order-alerts";
 
 /*
@@ -131,9 +133,12 @@ export async function notifyOrderPaid(orderId: string): Promise<void> {
     const dashboard = alertNewOrder(order, store.storeName, members.map((m) => m.userId));
     // L.7 / 7.1: the store's customer record (best effort; idempotent, so retries are safe).
     const customer = recordCustomerOrder(order).catch(logged("customer record", orderId));
+    // L.7 / 7.4: the order's rewards points (best effort, idempotent).
+    const rewards = rewardsAfterPaid(order);
     const results = await Promise.all([receipt, ...alerts]);
     await dashboard;
     await customer;
+    await rewards;
     if (!results[0]) log.error(`[order emails] receipt for order ${orderId} wasn't sent`);
   } catch (e) {
     logged("paid emails", orderId)(e);
@@ -176,5 +181,14 @@ export async function notifyReviewDecision(storeId: string, approved: boolean, m
     await Promise.all(admins.map((to) => send(to, "Ceseelia", email)));
   } catch (e) {
     log.error({ err: e }, `[order emails] review decision email for store ${storeId} failed`);
+  }
+}
+
+/* L.7: a rewards code (best effort; the route answers the same whether or not this sends). */
+export async function sendRewardsCode(to: string, storeName: string, code: string, minutes: number): Promise<void> {
+  try {
+    await send(to, `${storeName} via Ceseelia`, rewardsCodeEmail(storeName, code, minutes));
+  } catch (e) {
+    log.error({ err: e }, "[rewards] code email failed");
   }
 }

@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import { WEBAPP_URL } from "../../config";
 import { Quote } from "../core/pricing";
 import { getStripe } from "./stripe";
+import { allocate } from "../core/rewards";
 
 /*
  * The shopper's Checkout Session for an order (5.4c): a **direct charge on the store's connected
@@ -22,10 +23,12 @@ const line = (currency: string, name: string, amount: number): LineItem => ({
 });
 
 export function checkoutLineItems(quote: Quote): LineItem[] {
-  const items: LineItem[] = quote.lines.map((l) => {
+  // L.7: Stripe has no negative lines, so a rewards discount is spread over the items to the cent.
+  const off = allocate(quote.rewardsMinor ?? 0, quote.lines.map((l) => l.totalMinor));
+  const items: LineItem[] = quote.lines.map((l, i) => {
     const picks = l.params.map((p) => p.values.join(", ")).filter(Boolean).join(" · ");
-    const name = `${l.itemName}${picks ? ` (${picks})` : ""}${l.quantity > 1 ? ` × ${l.quantity}` : ""}`;
-    return line(quote.currency, name, l.totalMinor);
+    const name = `${l.itemName}${picks ? ` (${picks})` : ""}${l.quantity > 1 ? ` × ${l.quantity}` : ""}${off[i] ? " (rewards applied)" : ""}`;
+    return line(quote.currency, name, l.totalMinor - off[i]);
   });
   if (quote.deliveryMinor > 0) items.push(line(quote.currency, "Delivery", quote.deliveryMinor));
   if (!quote.pricesIncludeTax) {

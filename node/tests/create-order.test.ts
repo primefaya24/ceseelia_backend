@@ -303,6 +303,31 @@ describe("order Checkout Session params (5.4c)", () => {
     }
   });
 
+  it.each([
+    ["money off, tax added", { taxPercent: 8.25, pricesIncludeTax: false }, { kind: "MONEY", minor: 500 }],
+    ["percent off, tax included", { taxPercent: 13, pricesIncludeTax: true }, { kind: "PERCENT", percent: 10 }],
+    ["more than the items", { taxPercent: 5 }, { kind: "MONEY", minor: 999_999 }],
+  ] as const)("L.7: with a rewards reward (%s) the session still adds up to the quote, never below 0", (_l, general, rewards) => {
+    for (const fulfilment of ["PICKUP", "DELIVERY"] as const) {
+      const quote = priceLines(store(general) as any, lines, "USD", { fulfilment, rewards });
+      const plain = priceLines(store(general) as any, lines, "USD", { fulfilment });
+      expect(quote.rewardsMinor).toBeGreaterThan(0);
+      expect(quote.rewardsMinor).toBeLessThanOrEqual(plain.subtotalMinor - plain.discountMinor);
+      expect(quote.totalMinor).toBeLessThan(plain.totalMinor);
+      const items = checkoutLineItems(quote);
+      expect(sumLineItems(items)).toBe(quote.totalMinor);
+      expect(items.every((i) => i.price_data!.unit_amount! >= 0)).toBe(true);
+    }
+  });
+
+  it("L.7: tax is on the price after the reward; 10% off is of the items after their discount", () => {
+    const plain = priceLines(store({ taxPercent: 10, pricesIncludeTax: false }) as any, lines, "USD", { fulfilment: "PICKUP" });
+    const q = priceLines(store({ taxPercent: 10, pricesIncludeTax: false }) as any, lines, "USD", { fulfilment: "PICKUP", rewards: { kind: "PERCENT", percent: 10 } });
+    const goods = plain.subtotalMinor - plain.discountMinor;
+    expect(q.rewardsMinor).toBe(Math.round(goods / 10));
+    expect(q.taxMinor).toBe(Math.round((goods - q.rewardsMinor) / 10));
+  });
+
   it("never turns on Stripe tax or tax-id collection; fee and metadata on the payment", () => {
     const quote = priceLines(store({ taxPercent: 5 }) as any, lines, "USD", { fulfilment: "DELIVERY" });
     const p = orderSessionParams({ orderId: "O1", storeId: "S1", storeSlug: "hoop", quote, feeMinor: 145, customerEmail: "a@b.co", now: 0 });
@@ -318,5 +343,117 @@ describe("order Checkout Session params (5.4c)", () => {
     expect(p.success_url).not.toContain("token");
     const names = checkoutLineItems(quote).map((l) => l.price_data!.product_data!.name);
     expect(names).toEqual(["Tea × 7", "Delivery", "Tax 5%"]);
+  });
+});
+
+/* ---------------- L.7: spending rewards at checkout ---------------- */
+describe("POST /customer/create-order with redeemRewards (L.7)", () => {
+  const TOKEN = "A".repeat(43);
+  const CID = "c".repeat(32);
+  let session: Record<string, unknown> | undefined;
+  let account: Record<string, unknown> | undefined;
+
+  /* The world above, plus a rewards program ($5 off for 100 points), a session and an account. */
+  function rewardsWorld(rewards: object = {}) {
+    world({
+      purchaseRewards: {
+        redemptionMethod: "POINTS_TO_MONEY",
+        rewardsLabel: "Points",
+        redemptionPointAmount: 100,
+        redemptionPointAmountValue: 5,
+        pointsPerDollarSpent: 1,
+        isAvailable: true,
+        ...rewards,
+      },
+    });
+    const base = liveStoreSettings();
+    ddb.on(GetCommand).callsFake((input) => {
+      const sk = String(input.Key.sk);
+      if (sk.startsWith("REWARDS_SESSION#")) return { Item: session };
+      if (sk.startsWith("REWARDS#")) return { Item: account };
+      return {
+        Item: {
+          ...input.Key,
+          ...base,
+          currencies: [{ currencyCode: "USD", currencySign: "$", currencyIsDefault: true }],
+          general: { ...base.general, taxPercent: 10, pricesIncludeTax: false, pickupEnabled: true, deliveryEnabled: true, deliveryFees: { USD: 500 } },
+          payments: { stripeAccountId: "acct_store", chargesEnabled: true, payoutsEnabled: true, detailsSubmitted: true },
+          purchaseRewards: {
+            redemptionMethod: "POINTS_TO_MONEY",
+            rewardsLabel: "Points",
+            redemptionPointAmount: 100,
+            redemptionPointAmountValue: 5,
+            pointsPerDollarSpent: 1,
+            isAvailable: true,
+            ...rewards,
+          },
+        },
+      };
+    });
+  }
+  // 2749 items − 500 = 2249; tax 10% = 225; total 2474.
+  const REWARDS_TOTAL = 2474;
+  const redeem = (patch: object = {}) =>
+    request(app)
+      .post("/api/v1/customer/create-order")
+      .set("Host", "localhost")
+      .set("X-Rewards-Token", TOKEN)
+      .send(body({ redeemRewards: true, expectedTotalMinor: REWARDS_TOTAL, ...patch }));
+
+  beforeEach(() => {
+    session = { customerId: CID, email: "ana@example.com", expiresAt: Date.now() + 60_000 };
+    account = { email: "ana@example.com", balance: 150 };
+  });
+
+  it("takes the reward off, spends the points in the order's own transaction, fee on the lower price", async () => {
+    rewardsWorld();
+    const res = await redeem();
+    expect(res.status).toBe(200);
+    expect(res.body.totalMinor).toBe(REWARDS_TOTAL);
+    const items = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
+    expect(items).toHaveLength(4);
+    expect(items[3].Update).toMatchObject({
+      Key: { sk: `REWARDS#${CID}` },
+      ConditionExpression: "balance >= :points",
+      ExpressionAttributeValues: expect.objectContaining({ ":points": 100, ":minus": -100 }),
+    });
+    expect(savedOrder().storeOrderRewards).toEqual({ customerId: CID, points: 100, rewardsMinor: 500, kind: "MONEY", value: 500, returned: false });
+    const [params] = vi.mocked(createOrderCheckout).mock.calls[0];
+    expect(sumLineItems(params.line_items!)).toBe(REWARDS_TOTAL);
+  });
+
+  it("no session → 401; the checkout email must be the rewards email; not enough points → 409", async () => {
+    rewardsWorld();
+    session = undefined;
+    expect((await redeem()).body.code).toBe("REWARDS_SIGNED_OUT");
+    session = { customerId: CID, email: "ana@example.com", expiresAt: Date.now() - 1 };
+    expect((await redeem()).status).toBe(401); // expired
+    session = { customerId: CID, email: "someone@else.com", expiresAt: Date.now() + 60_000 };
+    expect((await redeem()).body.code).toBe("REWARDS_EMAIL");
+    session = { customerId: CID, email: "ana@example.com", expiresAt: Date.now() + 60_000 };
+    account = { balance: 99 };
+    const low = await redeem();
+    expect(low.status).toBe(409);
+    expect(low.body.code).toBe("REWARDS_BALANCE");
+    expect(createOrderCheckout).not.toHaveBeenCalled();
+  });
+
+  it("two tabs spending the same points: the second's transaction fails, its Stripe session is closed", async () => {
+    rewardsWorld();
+    ddb.on(TransactWriteCommand).rejects(
+      Object.assign(new Error("cancelled"), {
+        name: "TransactionCanceledException",
+        CancellationReasons: [{ Code: "None" }, { Code: "None" }, { Code: "None" }, { Code: "ConditionalCheckFailed" }],
+      })
+    );
+    const res = await redeem();
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe("REWARDS_BALANCE");
+    expect(expireOrderCheckout).toHaveBeenCalledWith("cs_1", "acct_store");
+  });
+
+  it("a store with rewards off refuses the reward rather than charging full price silently", async () => {
+    rewardsWorld({ isAvailable: false });
+    expect((await redeem()).body.code).toBe("REWARDS_OFF");
   });
 });

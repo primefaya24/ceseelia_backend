@@ -8,6 +8,7 @@ import { sendPublicError } from "../../../../layers/core/http/public-storefront"
 import { createRateLimiter } from "../../../../layers/core/http/rate-limit";
 import { CACHE_CONTROL, setCacheControl } from "../../../../layers/core/http/cache";
 import { Fulfilment, priceLines, QuoteLineInput } from "../../../../layers/core/pricing";
+import { discountOf, pointsFor, rewardsProgram } from "../../../../layers/core/rewards";
 import { getClientIp, isUlid, resolveCaProvinceFromGeo } from "../../../../layers/core/utils";
 
 /*
@@ -66,7 +67,8 @@ function pureRequestParams(req: Request): boolean {
     (b.fulfilment === undefined || b.fulfilment === "PICKUP" || b.fulfilment === "DELIVERY") &&
     Array.isArray(b?.lines) &&
     b.lines.every(isLinePure) &&
-    (b.postalCode === undefined || isString(b.postalCode))
+    (b.postalCode === undefined || isString(b.postalCode)) &&
+    (b.redeemRewards === undefined || typeof b.redeemRewards === "boolean")
   );
 }
 
@@ -118,13 +120,16 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       quantity: l.quantity,
       params: l.params ?? [],
     }));
-    res.send(
-      priceLines(store, lines, String(req.body.currency).toUpperCase(), {
-        fulfilment: req.body.fulfilment as Fulfilment | undefined,
-        locationProvince: ip ? resolveCaProvinceFromGeo(geoip.lookup(ip)) : null,
-        ...(req.body.postalCode?.trim() ? { postalCode: req.body.postalCode.trim().toUpperCase() } : {}),
-      })
-    );
+    // L.7: with `redeemRewards`, the price with one reward off (a preview: create-order checks
+    // the shopper's session and balance); `rewardsPoints` = what this order would earn.
+    const program = rewardsProgram(store.settings);
+    const quote = priceLines(store, lines, String(req.body.currency).toUpperCase(), {
+      fulfilment: req.body.fulfilment as Fulfilment | undefined,
+      locationProvince: ip ? resolveCaProvinceFromGeo(geoip.lookup(ip)) : null,
+      ...(req.body.postalCode?.trim() ? { postalCode: req.body.postalCode.trim().toUpperCase() } : {}),
+      rewards: program && req.body.redeemRewards === true ? discountOf(program) : null,
+    });
+    res.send({ ...quote, rewardsPoints: program ? pointsFor(quote.subtotalMinor - quote.discountMinor - quote.rewardsMinor, program.pointsPerUnit) : 0 });
   } catch (e) {
     sendPublicError(res, e);
   }

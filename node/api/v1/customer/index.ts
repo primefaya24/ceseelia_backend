@@ -17,6 +17,8 @@ import route_order_status from './order-status/index';
 route_order_status(customerRouter);
 import route_review from './review/index';
 route_review(customerRouter);
+import route_rewards from './rewards/index';
+route_rewards(customerRouter);
 
 // Export Router
 export default customerRouter;

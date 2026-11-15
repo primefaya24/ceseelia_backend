@@ -24,7 +24,9 @@ import {
   toPublicInventory,
 } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { getStoreOverviewRow } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
-import { createOrderRecords, newOrderCode, newStatusToken } from "../../../../layers/aws/dynamodb/dynamo-entities/order";
+import { createOrderRecords, newOrderCode, newStatusToken, RewardsBalanceError } from "../../../../layers/aws/dynamodb/dynamo-entities/order";
+import { getRewardsAccount, getSession, normEmail, spendInTransaction } from "../../../../layers/aws/dynamodb/dynamo-entities/rewards";
+import { discountOf, RewardsProgram, rewardsProgram } from "../../../../layers/core/rewards";
 import {
   createOrderCheckout,
   expireOrderCheckout,
@@ -62,6 +64,10 @@ import { log } from "../../../../layers/core/logger";
  *     shopper sees the new total before paying.
  *   - 409 BELOW_MINIMUM: Stripe can't charge under 0.50.
  *   - 404 STORE_NOT_FOUND / STORE_UNAVAILABLE / STORE_NOT_LIVE. 400 malformed.
+ *   - L.7 `redeemRewards: true` (+ header X-Rewards-Token): one rewards reward off. 401
+ *     REWARDS_SIGNED_OUT (no session), 409 REWARDS_EMAIL (checkout email isn't the rewards
+ *     email), 409 REWARDS_OFF, 409 REWARDS_BALANCE (not enough points, checked again inside the
+ *     order's own transaction so two tabs can't spend the same points).
  *   - 503 PAYMENTS_NOT_CONFIGURED · 502 STRIPE_ERROR. 10 orders per IP per 10 minutes → 429.
  */
 export const createOrderLimit = createRateLimiter({ windowMs: 10 * 60_000, max: 10 });
@@ -94,6 +100,7 @@ function pureRequestParams(req: Request): boolean {
     isString(c.email) &&
     isOptString(c.phone) &&
     isOptString(b.note) &&
+    (b.redeemRewards === undefined || typeof b.redeemRewards === "boolean") &&
     (a === undefined ||
       a === null ||
       (isObj(a) &&
@@ -178,11 +185,36 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // L.7: a reward needs a live session for this store, for the checkout email, with the points.
+    let spend: { customerId: string; points: number; program: RewardsProgram } | null = null;
+    if (req.body.redeemRewards === true) {
+      const program = rewardsProgram(raw.settings);
+      if (!program) {
+        conflict(res, "REWARDS_OFF", "This store has no rewards right now.");
+        return;
+      }
+      const session = await getSession(storeId, req.header("x-rewards-token") ?? "", Date.now());
+      if (!session) {
+        res.status(401).send({ code: "REWARDS_SIGNED_OUT", message: "Confirm your email again to use your points." });
+        return;
+      }
+      if (session.email !== normEmail(req.body.customer.email)) {
+        conflict(res, "REWARDS_EMAIL", "Use the email your points are on to spend them.");
+        return;
+      }
+      const account = await getRewardsAccount(storeId, session.customerId);
+      if (!account || account.balance < program.cost) {
+        conflict(res, "REWARDS_BALANCE", "You don't have enough points for this reward.");
+        return;
+      }
+      spend = { customerId: session.customerId, points: program.cost, program };
+    }
+
     const quote: Quote = priceLines(
       toPublicInventory(raw),
       (req.body.lines as QuoteLineInput[]).map((l) => ({ itemId: l.itemId, quantity: l.quantity, params: l.params ?? [] })),
       String(req.body.currency).toUpperCase(),
-      { fulfilment, ...(address ? { postalCode: address.postalCode } : {}) }
+      { fulfilment, ...(address ? { postalCode: address.postalCode } : {}), rewards: spend ? discountOf(spend.program) : null }
     );
     if (!quote.ok || quote.error || quote.fulfilment !== fulfilment) {
       conflict(res, "CART_INVALID", quote.error?.message ?? "Some items in your cart can't be ordered.", { quote });
@@ -242,6 +274,18 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       })),
       storeOrderSubtotalMinor: quote.subtotalMinor,
       storeOrderDiscountMinor: quote.discountMinor,
+      ...(spend
+        ? {
+            storeOrderRewards: {
+              customerId: spend.customerId,
+              points: spend.points,
+              rewardsMinor: quote.rewardsMinor,
+              kind: spend.program.kind,
+              value: spend.program.value,
+              returned: false,
+            },
+          }
+        : {}),
       storeOrderDeliveryMinor: quote.deliveryMinor,
       storeOrderTaxMinor: quote.taxMinor,
       storeOrderTaxLines: quote.taxLines,
@@ -255,7 +299,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       storeOrderCreatedAt: now,
       storeOrderUpdatedAt: now,
     };
-    await createOrderRecords(order);
+    await createOrderRecords(order, spend ? [spendInTransaction(storeId, spend.customerId, spend.points, now)] : []);
 
     res.send({
       orderId,
@@ -268,6 +312,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   } catch (e) {
     // A session whose order wasn't saved mustn't be payable.
     if (sessionId) await expireOrderCheckout(sessionId, stripeAccount);
+    if (e instanceof RewardsBalanceError) {
+      conflict(res, "REWARDS_BALANCE", "You don't have enough points for this reward.");
+      return;
+    }
     if (e instanceof PaymentsNotConfiguredError) {
       log.error({ err: e }, "In customer/create-order");
       res.status(503).send({ code: "PAYMENTS_NOT_CONFIGURED", message: "Payments aren't available right now." });

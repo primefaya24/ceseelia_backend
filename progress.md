@@ -100,7 +100,9 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >       2026-11-15.** Owner's decisions (2026-11-15): reviews only from verified buyers, live at
 >       once, merchants reply and report but never edit or remove, the platform admin keeps or
 >       removes reported ones; rewards prove the shopper with an emailed code (also the light
->       7.2 accounts); commission is on the price after a rewards discount. Next: 7.3/7.4.
+>       7.2 accounts); commission is on the price after a rewards discount. **7.2 (light), 7.3 and
+>       7.4 rewards done 2026-11-15** (backend and webapp); owner step: run
+>       `scripts/normalize-rewards-method.mjs --write` on dev and prod (one dev store found).
 > - [ ] **L.8 Stage 8 admin console:** real admin overview stats (8.1), support tickets (8.3),
 >       commission reporting (8.4). (8.2 join requests stay superseded by P.3.)
 > - [ ] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
@@ -1261,10 +1263,43 @@ pickup or delivery, goes through Stripe Checkout (5.4).
     customer (≤ 5,000, `partial`), most recent first. `scripts/backfill-customers.mjs` (dry run
     by default) for orders paid before this; dev and prod have none, so not run. Tests in
     `tests/customers.test.ts`._
-- [ ] 7.2 Optional customer accounts (a separate Cognito app client or pool).
-- [ ] 7.3 Unify the rewards redemption constant (`POINTS_TO_*` vs `REWARDS_REDEMPTION_*`) with a
-      data migration, then drop the dual acceptance in the validator.
-- [ ] 7.4 Rewards: earn on paid orders, redeem inside the quote. (WA 7.2)
+- [x] 7.2 Optional customer accounts: the light version (owner 2026-11-15): a shopper proves
+      their email with a 6-digit code per store, no password and no Cognito. Full accounts stay
+      out of scope.
+  - _Done 2026-11-15 with 7.4 (`/customer/rewards/*`)._
+- [x] 7.3 Unify the rewards redemption constant: `POINTS_TO_MONEY` / `POINTS_TO_DISCOUNT`.
+  - _Done 2026-11-15. `layers/core/rewards` `normalizeRedemptionMethod` reads the old
+    `REWARDS_REDEMPTION_*`; `updateStoreSettings` always saves the new spelling; the validator
+    still accepts both (an open tab of the older webapp mustn't fail to save).
+    `scripts/normalize-rewards-method.mjs` (dry run by default) rewrote nothing yet: 1 dev store
+    to change; owner runs `--write` for dev and prod._
+- [x] 7.4 Rewards: earn on paid orders, redeem inside the quote. (WA 7.2)
+  - _Done 2026-11-15. Rules in `layers/core/rewards`, data in `dynamo-entities/rewards`:
+    - Earn: `pointsPerDollarSpent` × whole units of the items paid for (after all discounts and
+      the reward; no delivery or tax), rounded down, at the rate when paid, once per order
+      (`REWARDS_EARN#<orderId>` marker, from `notifyOrderPaid`). Refunds take back the same share
+      (`refund-sync`); the balance can go below 0 when spent points are refunded.
+    - Spend: one reward per order, off the items before tax (`priceLines` `rewards`, Quote
+      `rewardsMinor`), so commission (`commissionBaseMinor`) and tax are on the price after it;
+      Stripe lines carry it spread to the cent (`allocate`). Create-order needs a live session
+      for that store, the checkout email = the rewards email, and the balance; the points are
+      taken in the order's own transaction (conditional `balance >= cost`), so two tabs can't
+      spend them twice (→ 409 REWARDS_BALANCE, the Stripe session is closed). Given back with
+      the cancel itself when never paid (`cancelPendingOrder`, once), or on a full refund
+      (`returnRewardsSpend`, once).
+    - Identity (owner: "someone can't try all combinations of a 6-digit number"): codes from
+      `crypto.randomInt`, kept salted and hashed, 10 min, single use, 5 guesses each, counted by
+      a conditional update before comparing (parallel guesses can't get more), a new code
+      replaces the old. Requests: 3 / 15 min and 10 / day per email (in the table, so a restart
+      doesn't reset them), 5 / 10 min and 20 / day per IP, 200 / h per store. Guesses: 20 / 10
+      min per IP. So at most ~50 guesses a day per email out of 1,000,000. The answer and the
+      work are the same whether or not the email has points; only an email with points is sent
+      the code (no spam to strangers), and the email has no link. Sessions: 32 random bytes,
+      kept hashed, 30 days, per store; sign-out deletes them.
+    - Shown: `rewardsMinor` on the shopper's order view, the emails and the PDF receipt.
+    Tests: `tests/rewards.test.ts` (an in-memory table that applies the conditions: brute
+    force, parallel guesses, expiry, single use, limits, earn/refund/return exactly once) and
+    redemption cases in `tests/create-order.test.ts`._
 - [x] 7.5 Reviews: `POST /customer/review` (completed orders only, token-gated), moderation,
       `GET /store/reviews/list/:storeId`. (WA 7.3)
   - _Done 2026-11-15 (L.7), owner's rules. `layers/aws/dynamodb/dynamo-entities/review`:
@@ -1400,6 +1435,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.7 / 7.2–7.4: rewards: emailed 6-digit code (hashed, 5 guesses, per-email limits in the table, per-IP limits), 30-day per-store sessions; earn once per paid order, refunds take back their share; one reward per order off the items before tax (commission on the price after it), spent in the order's own transaction, given back once if never paid or fully refunded; one spelling for the redemption method plus a migration script. |
 | 2026-11-15 | L.7 / 7.5: verified-buyer reviews (live at once), store replies and reports, admin keep/remove; public reviews + rating. |
 | 2026-11-15 | L.7 / 7.1: customer records from paid orders (exactly once, refunds both ways) + `GET /store/customers/list/:storeId`; backfill script. |
 | 2026-11-15 | L.6 / 1.5: `GET /store/overview/:storeId?tz=` (Store Overview numbers in the merchant's time zone; `layers/core/store-stats`). |

@@ -20,6 +20,7 @@ import {
 import { appConstants } from "../../../../../constants";
 import { STOCK_UNLIMITED } from "../../../../../constants/input-limits";
 import { DB_TABLE_NAME } from "../../../../../config";
+import { refundSpendInTransaction } from "../rewards";
 import {
   StoreItem,
   StoreOrder,
@@ -76,8 +77,22 @@ export function orderTokenMatches(order: StoreOrder, token: string): boolean {
 }
 
 /* Write a new order, its pointer and its sweeper row (5.7) together. Throws if the order or pointer exists. */
-export async function createOrderRecords(order: StoreOrder): Promise<void> {
+/** L.7: the rewards balance didn't cover the order's reward when it was saved (nothing was written). */
+export class RewardsBalanceError extends Error {}
+
+export async function createOrderRecords(order: StoreOrder, extra: NonNullable<TransactWriteCommandInput["TransactItems"]> = []): Promise<void> {
   const key = orderKey(order.storeId, order.storeOrderCreatedAt, order.storeOrderId);
+  try {
+    await sendCreateOrder(order, key, extra);
+  } catch (e) {
+    const err = e as { name?: string; CancellationReasons?: Array<{ Code?: string }> };
+    const failed = (err.CancellationReasons ?? []).findIndex((r) => r?.Code === "ConditionalCheckFailed");
+    if (err.name === "TransactionCanceledException" && extra.length && failed >= 3) throw new RewardsBalanceError("Not enough points");
+    throw e;
+  }
+}
+
+async function sendCreateOrder(order: StoreOrder, key: { pk: string; sk: string }, extra: NonNullable<TransactWriteCommandInput["TransactItems"]>): Promise<void> {
   await dynamoDbDocumentClient.send(
     new TransactWriteCommand({
       TransactItems: [
@@ -100,6 +115,8 @@ export async function createOrderRecords(order: StoreOrder): Promise<void> {
             },
           },
         },
+        // L.7: the rewards spend, conditional on the balance (spendInTransaction).
+        ...extra,
       ],
     })
   );
@@ -339,20 +356,61 @@ export async function markOrderPaid(order: StoreOrder, paymentIntentId: string, 
 
 /* PENDING_PAYMENT → CANCELLED (5.5c: the session expired or the payment failed). False if it wasn't pending. */
 export async function cancelPendingOrder(order: StoreOrder, reason: StoreOrderCancelReason, now = Date.now()): Promise<boolean> {
+  const cancel = {
+    TableName: TABLE,
+    Key: keyOf(order),
+    UpdateExpression: "SET #st = :cancelled, #why = :why, #upd = :now",
+    ConditionExpression: "#st = :pending",
+    ExpressionAttributeNames: { "#st": "storeOrderStatus", "#why": "storeOrderCancelReason", "#upd": "storeOrderUpdatedAt" } as Record<string, string>,
+    ExpressionAttributeValues: { ":cancelled": "CANCELLED", ":pending": "PENDING_PAYMENT", ":why": reason, ":now": now } as Record<string, unknown>,
+  };
+  const r = order.storeOrderRewards;
+  try {
+    if (r && !r.returned) {
+      // L.7: an order never paid gives its points back, in the same step as the cancel (once).
+      cancel.UpdateExpression += ", #rw.#ret = :true";
+      cancel.ExpressionAttributeNames["#rw"] = "storeOrderRewards";
+      cancel.ExpressionAttributeNames["#ret"] = "returned";
+      cancel.ExpressionAttributeValues[":true"] = true;
+      await dynamoDbDocumentClient.send(
+        new TransactWriteCommand({ TransactItems: [{ Update: cancel }, refundSpendInTransaction(order.storeId, r.customerId, r.points, now)] })
+      );
+    } else {
+      await dynamoDbDocumentClient.send(new UpdateCommand(cancel));
+    }
+    return true;
+  } catch (e) {
+    const name = (e as { name?: string })?.name;
+    if (name === "ConditionalCheckFailedException" || name === "TransactionCanceledException") return false;
+    throw e;
+  }
+}
+
+/** L.7: a fully refunded order gives its spent points back (once; false if already, or none). */
+export async function returnRewardsSpend(order: StoreOrder, now = Date.now()): Promise<boolean> {
+  const r = order.storeOrderRewards;
+  if (!r || r.returned) return false;
   try {
     await dynamoDbDocumentClient.send(
-      new UpdateCommand({
-        TableName: TABLE,
-        Key: keyOf(order),
-        UpdateExpression: "SET #st = :cancelled, #why = :why, #upd = :now",
-        ConditionExpression: "#st = :pending",
-        ExpressionAttributeNames: { "#st": "storeOrderStatus", "#why": "storeOrderCancelReason", "#upd": "storeOrderUpdatedAt" },
-        ExpressionAttributeValues: { ":cancelled": "CANCELLED", ":pending": "PENDING_PAYMENT", ":why": reason, ":now": now },
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Update: {
+              TableName: TABLE,
+              Key: keyOf(order),
+              UpdateExpression: "SET #rw.#ret = :true",
+              ConditionExpression: "#rw.#ret = :false",
+              ExpressionAttributeNames: { "#rw": "storeOrderRewards", "#ret": "returned" },
+              ExpressionAttributeValues: { ":true": true, ":false": false },
+            },
+          },
+          refundSpendInTransaction(order.storeId, r.customerId, r.points, now),
+        ],
       })
     );
     return true;
   } catch (e) {
-    if ((e as { name?: string })?.name === "ConditionalCheckFailedException") return false;
+    if ((e as { name?: string })?.name === "TransactionCanceledException") return false;
     throw e;
   }
 }
