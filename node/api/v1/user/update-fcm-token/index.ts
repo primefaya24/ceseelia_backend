@@ -3,9 +3,9 @@ import {Request, Response, Router} from 'express';
 import dotenv from 'dotenv';
 import {appConstants} from "../../../../constants";
 import {getAuth, validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
-import {IN_DEV} from "../../../../config";
 import {fetchUserUUID, updateFcmToken} from '../../../../layers/aws/dynamodb/dynamo-entities/user';
 import {sendUserLookupError} from "../user-errors";
+import { log } from "../../../../layers/core/logger";
 dotenv.config();
 
 /*
@@ -57,9 +57,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         if (sendUserLookupError(e, res)) {
             return;
         }
-        if (IN_DEV) {
-            console.error(e);
-        }
+        log.error({ err: e }, "In user/update-fcm-token");
         res.status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR).send({message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR});
     }
 }

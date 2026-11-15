@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import {kmsGetSecret} from "../../../../aws/secret-manager";
+import { log } from "../../../logger";
 const stripeConfig = {
     apiVersion: "2025-08-27.basil" as const,
 };
@@ -77,17 +78,17 @@ export async function handleStripeEvent(req: any, res: any): Promise<void> {
         //                     }
         //                 })
         //                 .catch((err) => {
-        //                     console.error("In dqs: wooHandleStripeEvent->kmsGetSecret", err);
+        //                     log.error({ err }, "In dqs: wooHandleStripeEvent->kmsGetSecret");
         //                 });
         //         }
         //     })
         //     .catch((err) => {
-        //     console.error("In dqs: wooHandleStripeEvent->getWebsiteInfo", err);
+        //     log.error({ err }, "In dqs: wooHandleStripeEvent->getWebsiteInfo");
         // });
         // res.sendStatus(200);
     }
     catch (err: any) {
-        console.error("In dqs: wooHandleStripeEvent", err);
+        log.error({ err }, "In dqs: wooHandleStripeEvent");
         res.status(400).send(`Webhook Error: ${err.message}`);
     }
 }

@@ -3,7 +3,6 @@ import {Request, Response, Router} from 'express';
 import dotenv from 'dotenv';
 import {appConstants} from "../../../../constants";
 import {getAuth, validateAndExecuteHttpApiRoute} from "../../../../layers/core/http";
-import {IN_DEV} from "../../../../config";
 import {
     createUserRecordsFromCognito,
     findUserIdByCognitoId,
@@ -14,6 +13,7 @@ import {
 import {getCognitoUserAttributes} from "../../../../layers/aws/cognito";
 import {claimStoreInvites, listUserStores} from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
 import {sendUserLookupError} from "../user-errors";
+import { log } from "../../../../layers/core/logger";
 dotenv.config();
 
 /*
@@ -86,7 +86,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         try {
             await claimStoreInvites(userId, profile.info["userEmailAddress"]);
         } catch (e) {
-            console.error("In get-my-profile: claiming store invites failed", e);
+            log.error({ err: e }, "In get-my-profile: claiming store invites failed");
         }
         // Stores this user is a member of, with their role (progress.md 1.2)
         profile.stores = await listUserStores(userId);
@@ -102,9 +102,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         if (sendUserLookupError(e, res)) {
             return;
         }
-        if (IN_DEV) {
-            console.error(e);
-        }
+        log.error({ err: e }, "In user/get-my-profile");
         res.status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR).send({message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR});
     }
 }

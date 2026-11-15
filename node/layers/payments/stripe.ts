@@ -1,6 +1,7 @@
 import Stripe from "stripe";
 import { APP_SECRET_ID, IN_DEV } from "../../config";
 import { readAppSecretString } from "../aws/secret-manager/app-secrets";
+import { log } from "../core/logger";
 
 /*
  * The platform's Stripe client (5.2). The keys come from the stage's app secret
@@ -101,12 +102,10 @@ export async function checkStripeConfig(): Promise<void> {
   try {
     const { secretKey, webhookSecret } = await getStripeSecrets();
     const mode = secretKey.includes("_live_") ? "live" : "test";
-    console.warn(
-      `[stripe] ${mode} key loaded from "${APP_SECRET_ID}"${webhookSecret ? "" : " (no webhook secret yet)"}`
-    );
+    log.info({ mode, secretId: APP_SECRET_ID, webhookSecret: !!webhookSecret }, "[stripe] key loaded");
   } catch (e) {
     if (!IN_DEV) throw e;
-    console.warn(`[stripe] ${(e as Error).message}. Payments routes will answer 503.`);
+    log.warn(`[stripe] ${(e as Error).message}. Payments routes will answer 503.`);
   }
 }
 

@@ -1,12 +1,12 @@
 // Imports
 import { Request, Response, Router } from "express";
 import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
-import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { MAX_COUNT } from "../../../../../constants/input-limits";
 import { createImageUploads, parseUploadCount } from "../../../../../layers/aws/s3/image-upload";
 import { storeChildExists } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { isUlid } from "../../../../../layers/core/utils";
+import { log } from "../../../../../layers/core/logger";
 
 /*
  * Upload slots for an existing item's images: 1–10 in total (MAX_COUNT.itemImages); 404 if the
@@ -50,9 +50,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const jpg = parseUploadCount(req.params.jpgCount)!;
     res.send(await createImageUploads(`store/${storeId}/item/${itemId}/images/`, png, jpg));
   } catch (e) {
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In store/inventory/get-item-image-upload-urls");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

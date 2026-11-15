@@ -33,6 +33,7 @@ import {
 } from "../../../../layers/payments/order-checkout";
 import { PaymentsNotConfiguredError } from "../../../../layers/payments/stripe";
 import { cartLinesWithinLimits, isLinePure } from "../quote";
+import { log } from "../../../../layers/core/logger";
 
 /*
  * POST /customer/create-order (public, guest checkout; progress.md 5.4)
@@ -268,12 +269,12 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // A session whose order wasn't saved mustn't be payable.
     if (sessionId) await expireOrderCheckout(sessionId, stripeAccount);
     if (e instanceof PaymentsNotConfiguredError) {
-      console.error("In customer/create-order", e.message);
+      log.error({ err: e }, "In customer/create-order");
       res.status(503).send({ code: "PAYMENTS_NOT_CONFIGURED", message: "Payments aren't available right now." });
       return;
     }
     if (e instanceof Stripe.errors.StripeError) {
-      console.error("In customer/create-order", `${e.type} ${e.code ?? ""} ${e.message} (request ${e.requestId ?? "-"})`);
+      log.error({ err: e }, "In customer/create-order: Stripe refused");
       res.status(502).send({ code: "STRIPE_ERROR", message: "We couldn't start the payment. Please try again." });
       return;
     }
@@ -281,7 +282,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       sendPublicError(res, e);
       return;
     }
-    console.error("In customer/create-order (saving the order)", e);
+    log.error({ err: e }, "In customer/create-order (saving the order)");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

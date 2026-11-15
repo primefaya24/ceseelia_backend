@@ -14,6 +14,7 @@ import {
     Route53DomainsClient,
 } from "@aws-sdk/client-route-53-domains";
 import {appConstants} from "../../../constants";
+import { log } from "../../core/logger";
 
 // Clients
 const route53Client: Route53Client = new Route53Client({
@@ -163,7 +164,7 @@ export async function deleteSubdomainRecord(
         const command: ChangeResourceRecordSetsCommand = new ChangeResourceRecordSetsCommand(params);
         return await route53Client.send(command);
     } catch (error) {
-        console.error("Error deleting subdomain record:", error);
+        log.error({ err: error }, "Error deleting subdomain record");
         throw error;
     }
 }

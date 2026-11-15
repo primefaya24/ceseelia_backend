@@ -2,6 +2,7 @@
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { BatchGetCommand, BatchWriteCommand, DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { appConstants } from "../../../../constants";
+import { log } from "../../../core/logger";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient = DynamoDBDocumentClient.from(
@@ -79,7 +80,7 @@ export async function dynamoWriteBatch(table: string | undefined, requestItems: 
                 `Batch write left ${pending.length} item(s) unprocessed after ${attempt} attempts`
             );
         }
-        console.warn(`dynamoWriteBatch: ${pending.length} unprocessed, retry ${attempt}`);
+        log.warn(`dynamoWriteBatch: ${pending.length} unprocessed, retry ${attempt}`);
         await sleep(batchRetry.baseDelayMs * 2 ** (attempt - 1));
     }
 }
@@ -95,7 +96,7 @@ export async function dynamoWriteManyItems(table: string | undefined, requestIte
     );
     const failed = results.filter((r): r is PromiseRejectedResult => r.status === "rejected");
     if (failed.length > 0) {
-        failed.forEach((r) => console.error("In dynamoWriteManyItems", r.reason));
+        failed.forEach((r) => log.error({ err: r.reason }, "In dynamoWriteManyItems"));
         throw new DynamoBatchError(`${failed.length} of ${results.length} write batch(es) failed`, {
             cause: failed[0].reason,
         });

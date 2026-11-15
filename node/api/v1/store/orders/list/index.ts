@@ -8,6 +8,7 @@ import {
   StoreOrderStatus,
 } from "../../../../../layers/core/interfaces/store";
 import { listStoreOrders, ORDER_SK_PATTERN } from "../../../../../layers/aws/dynamodb/dynamo-entities/order";
+import { log } from "../../../../../layers/core/logger";
 
 /*
  * GET /store/orders/list/:storeId?status=PAID,PREPARING&from=<ms>&to=<ms>&cursor=<c>&limit=<n>
@@ -73,7 +74,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     });
     res.send({ orders: orders.map(merchantOrderSummary), next });
   } catch (e) {
-    console.error("In store/orders/list", e);
+    log.error({ err: e }, "In store/orders/list");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

@@ -1,6 +1,7 @@
 import { appConstants } from "../../../../constants";
 import {QueueItem} from "./dqs";
 import { handleStripeEvent } from "./woo-handle-stripe-event";
+import { log } from "../../logger";
 
 export async function dqsHandler(item: QueueItem): Promise<void> {
     switch (item.topicId) {
@@ -8,7 +9,7 @@ export async function dqsHandler(item: QueueItem): Promise<void> {
             await handleStripeEvent(item.data.req, item.data.res);
             break;
         default:
-            console.error("In dqs: dqsHandler", "topic id not identified", item.topicId);
+            log.error({ topicId: item.topicId }, "In dqs: dqsHandler: topic id not identified");
             break;
     }
 }

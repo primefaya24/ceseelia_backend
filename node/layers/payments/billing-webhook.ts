@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import Stripe from "stripe";
 import { getStripe, getStripeSecrets, PaymentsNotConfiguredError } from "./stripe";
 import { forgetExpiredCheckout, syncSubscription } from "./subscription-sync";
+import { log } from "../core/logger";
 
 /*
  * POST /api/v1/billing/stripe-webhook (progress.md P.5): the platform account's subscription
@@ -59,7 +60,7 @@ export async function handleBillingWebhook(req: Request, res: Response): Promise
       return;
     }
   } catch (e) {
-    console.error("[billing webhook]", (e as Error).message);
+    log.error({ err: e }, "[billing webhook]");
     res.status(503).send({ code: "PAYMENTS_NOT_CONFIGURED" });
     return;
   }
@@ -79,7 +80,7 @@ export async function handleBillingWebhook(req: Request, res: Response): Promise
     }
     res.send({ received: true });
   } catch (e) {
-    console.error(`[billing webhook] ${event.type} ${event.id} failed`, e);
+    log.error({ err: e }, `[billing webhook] ${event.type} ${event.id} failed`);
     res.status(500).send({ code: "WEBHOOK_FAILED" });
   }
 }

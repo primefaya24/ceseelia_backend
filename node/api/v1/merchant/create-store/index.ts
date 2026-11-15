@@ -9,6 +9,7 @@ import { ALREADY_IN_A_STORE_MESSAGE, userStoreIds } from "../../../../layers/aws
 import { SlugTakenError } from "../../../../layers/aws/dynamodb/dynamo-entities/slug";
 import { findUserIdByCognitoId, UserDeactivatedError } from "../../../../layers/aws/dynamodb/dynamo-entities/user";
 import { ACCOUNT_DEACTIVATED, PROFILE_NOT_FOUND } from "../../user/user-errors";
+import { log } from "../../../../layers/core/logger";
 
 /*
  * POST /merchant/create-store (any signed-in user, progress.md P.3)
@@ -96,7 +97,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: e.message, code: PROFILE_NOT_FOUND });
       return;
     }
-    console.error("In merchant/create-store", e);
+    log.error({ err: e }, "In merchant/create-store");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

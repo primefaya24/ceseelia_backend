@@ -2,7 +2,7 @@
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
-import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
+import { S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import {
   isStoreItemPure,
@@ -15,6 +15,7 @@ import { cleanUpS3Folder, isUlid, isUlidOrEmpty } from "../../../../../layers/co
 import { markImagesKept } from "../../../../../layers/aws/s3/image-upload";
 import { queueItemCheck } from "../../../../../layers/aws/dynamodb/dynamo-entities/item-review";
 import { ITEM_CHECK_DELAY_MS } from "../../../../../layers/core/store-validation/item-check";
+import { log } from "../../../../../layers/core/logger";
 dotenv.config();
 
 /*
@@ -92,7 +93,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // L.2: the AI check looks at it a few minutes after the last save (only on a live store;
     // the sweep skips drafts, and saves that change nothing it reads). Never fails the save.
     await queueItemCheck(storeId, itemId, ITEM_CHECK_DELAY_MS).catch((e) =>
-      console.error(`[item check] couldn't queue item ${itemId}`, (e as Error)?.message ?? e)
+      log.error({ err: e }, `[item check] couldn't queue item ${itemId}`)
     );
 
     // Respond to user
@@ -102,9 +103,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: e.message });
       return;
     }
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In store/inventory/create-item");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

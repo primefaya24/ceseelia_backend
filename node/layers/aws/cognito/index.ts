@@ -25,6 +25,7 @@ import {
 import { createHmac } from 'crypto';
 import jwt, { JwtHeader } from "jsonwebtoken";
 import jwksClient, { JwksClient } from "jwks-rsa";
+import { log } from "../../core/logger";
 
 /*
 * Clients
@@ -168,7 +169,7 @@ export async function deleteUser(
             await cognitoClient.send(command);
         }
     } catch (e) {
-        console.error("In adminDeleteUser", e);
+        log.error({ err: e }, "In adminDeleteUser");
         throw new Error("Could not delete user in Cognito");
     }
 }
@@ -190,7 +191,7 @@ async function getSigningKey(kid: string, jwksClientInstance: jwksClient.JwksCli
             });
         });
     } catch (err) {
-        console.error("Error fetching signing key:", err);
+        log.error({ err }, "Error fetching signing key");
         throw new Error("Invalid token: Unable to retrieve signing key");
     }
 }
@@ -204,7 +205,7 @@ async function isTokenActive(accessToken: string): Promise<boolean> {
         await cognitoClient.send(command);
         return true;
     } catch (error: any) {
-        console.error("Error in isTokenActive:", error.message);
+        log.error({ err: error }, "Error in isTokenActive");
         return false;
     }
 }
@@ -274,7 +275,7 @@ export async function isCognitoTokenValid(
         const verified: jwt.JwtPayload = await verifyCognitoAccessToken(token, userPoolId);
         return !!verified;
     } catch (err) {
-        console.error("Invalid token:", err);
+        log.error({ err }, "Invalid token");
         return false;
     }
 }

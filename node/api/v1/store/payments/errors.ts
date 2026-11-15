@@ -4,6 +4,7 @@ import { appConstants } from "../../../../constants";
 import { StoreRecordNotFoundError } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { PaymentsNotConfiguredError } from "../../../../layers/payments/stripe";
 import { sendServerError } from "../../admin/route-errors";
+import { log } from "../../../../layers/core/logger";
 
 /*
  * Errors shared by the payments routes (5.2):
@@ -18,14 +19,14 @@ export function sendPaymentsError(e: unknown, res: Response, where: string): voi
     return;
   }
   if (e instanceof PaymentsNotConfiguredError) {
-    console.error(where, e.message);
+    log.error({ err: e }, where);
     res
       .status(503)
       .send({ message: "Payments aren't available right now.", code: "PAYMENTS_NOT_CONFIGURED" });
     return;
   }
   if (e instanceof Stripe.errors.StripeError) {
-    console.error(where, `${e.type} ${e.code ?? ""} ${e.message} (request ${e.requestId ?? "-"})`);
+    log.error({ err: e }, `${where}: Stripe refused`);
     res.status(502).send({
       message: "Stripe couldn't complete the request. Please try again.",
       code: "STRIPE_ERROR",

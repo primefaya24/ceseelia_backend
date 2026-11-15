@@ -18,6 +18,7 @@ import {
   StripeRefundReason,
 } from "../../../../../layers/payments/order-refund";
 import { PaymentsNotConfiguredError } from "../../../../../layers/payments/stripe";
+import { log } from "../../../../../layers/core/logger";
 
 /*
  * POST /store/orders/refund (store ADMINs and platform admins, progress.md 6.4)
@@ -152,7 +153,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         conflict(res, code, message, (await getOrderById(orderId)) ?? order);
         return;
       }
-      console.error(`In store/orders/refund: Stripe refused order ${orderId}`, (e as Error)?.message);
+      log.error({ err: e }, `In store/orders/refund: Stripe refused order ${orderId}`);
       res.status(502).send({ code: "STRIPE_ERROR", message: "Stripe couldn't make the refund. Please try again." });
       return;
     }
@@ -164,7 +165,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       await appendOrderRefund(order, entry);
       current = await syncOrderRefunds(orderId);
     } catch (e) {
-      console.error(`In store/orders/refund: refund ${result.refundId} made, but order ${orderId} not updated`, e);
+      log.error({ err: e }, `In store/orders/refund: refund ${result.refundId} made, but order ${orderId} not updated`);
     }
     if (!current) {
       const refundedTotal = (order.storeOrderRefundedMinor ?? 0) + amountMinor;
@@ -177,7 +178,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     }
     res.send({ order: merchantOrderView(current), refund: entry });
   } catch (e) {
-    console.error("In store/orders/refund", e);
+    log.error({ err: e }, "In store/orders/refund");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

@@ -3,6 +3,7 @@ import { StoreCategory, StoreInventoryData, StoreItem } from "../interfaces/stor
 import { AiBatch, AiBatchItem, AiFinding, reviewBatch } from "./ai";
 import { runRuleChecks, RuleHit } from "./rules";
 import { chunk, pickImageItems } from "./select";
+import { log } from "../logger";
 
 /*
  * The AI store check (progress.md P.4c / L.2, owner decisions 2026-11-14).
@@ -174,9 +175,16 @@ export async function runSmartStoreValidation(
       { signal, rng: opts.rng }
     )
   );
-  console.warn(
-    `[store check] store ${input.storeId}: ${items.length} items, ${result.findings.length} finding(s), ` +
-      `${result.usage.requests} request(s), ${result.usage.inputTokens} in / ${result.usage.outputTokens} out tokens`
+  log.info(
+    {
+      storeId: input.storeId,
+      items: items.length,
+      findings: result.findings.length,
+      requests: result.usage.requests,
+      inputTokens: result.usage.inputTokens,
+      outputTokens: result.usage.outputTokens,
+    },
+    "[store check] done"
   );
   if (result.findings.length === 0) return { ok: true, findings: [] };
   const names = new Map(items.map((i) => [i.storeItemId, i.storeItemName]));

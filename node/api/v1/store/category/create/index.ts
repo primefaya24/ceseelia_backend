@@ -2,7 +2,7 @@
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
-import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
+import { S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import {
   isStoreCategoryPure,
@@ -12,6 +12,7 @@ import { StoreRecordNotFoundError, updateStoreCategory } from "../../../../../la
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import { cleanUpS3Folder, isUlid, isUlidOrEmpty } from "../../../../../layers/core/utils";
 import { markImagesKept } from "../../../../../layers/aws/s3/image-upload";
+import { log } from "../../../../../layers/core/logger";
 dotenv.config();
 
 /*
@@ -99,9 +100,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: e.message });
       return;
     }
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In store/category/create");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

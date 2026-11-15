@@ -39,6 +39,7 @@ import { reserveSlugPut, SlugTakenError, slugKey, transactionFailedAt } from "..
 import { newStoreMembershipItems } from "../membership";
 import { StorePlan } from "../../../../core/plans";
 import { TransactWriteCommandInput } from "@aws-sdk/lib-dynamodb";
+import { log } from "../../../../core/logger";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient =
@@ -186,7 +187,7 @@ export async function createStore(
     }
     return storeOverview;
   } catch (e) {
-    if (!(e instanceof SlugTakenError) && !(e instanceof StoreOwnerNotFoundError)) console.error("In createStore", e);
+    if (!(e instanceof SlugTakenError) && !(e instanceof StoreOwnerNotFoundError)) log.error({ err: e }, "In createStore");
     throw e;
   }
 }
@@ -445,7 +446,7 @@ export async function updateStoreItem(
     }
     throw new Error("Item changed while saving; gave up after 3 tries");
   } catch (e) {
-    if (!(e instanceof StoreRecordNotFoundError)) console.error("In updateStoreItem", e);
+    if (!(e instanceof StoreRecordNotFoundError)) log.error({ err: e }, "In updateStoreItem");
     throw e;
   }
 }
@@ -482,7 +483,7 @@ export async function deleteStoreItem(storeId: string, storeItemId: string): Pro
     }
     throw new Error("Item changed while deleting; gave up after 3 tries");
   } catch (e) {
-    console.error("In deleteStoreItem", e);
+    log.error({ err: e }, "In deleteStoreItem");
     throw e;
   }
 }
@@ -516,7 +517,7 @@ export async function updateStoreCategory(
       })
     );
   } catch (e) {
-    console.error("In updateStoreCategory", e);
+    log.error({ err: e }, "In updateStoreCategory");
     throw e;
   }
 }
@@ -561,7 +562,7 @@ export async function deleteStoreCategory(
       const count = Number(typeof raw === "object" && raw !== null ? (raw as { N?: string }).N : raw);
       throw new CategoryNotEmptyError(Number.isFinite(count) && count > 0 ? count : 1);
     }
-    console.error("In deleteStoreCategory", e);
+    log.error({ err: e }, "In deleteStoreCategory");
     throw e;
   }
 }
@@ -611,7 +612,7 @@ export async function getStoreInventoryData(
       settings,
     };
   } catch (e) {
-    console.error("In getStoreInventoryData", e);
+    log.error({ err: e }, "In getStoreInventoryData");
     throw e;
   }
 }
@@ -669,7 +670,7 @@ export async function updateStoreSettings(
     });
     await dynamoDbDocumentClient.send(command);
   } catch (e) {
-    console.error("In updateStoreSettings", e);
+    log.error({ err: e }, "In updateStoreSettings");
     if (isConditionalCheckFailure(e)) throw new StoreRecordNotFoundError("Store");
     throw e;
   }
@@ -700,7 +701,7 @@ async function syncOverviewStoreName(storeId: string, rawName: unknown): Promise
       })
     );
   } catch (e) {
-    if (!isConditionalCheckFailure(e)) console.error("In syncOverviewStoreName", e);
+    if (!isConditionalCheckFailure(e)) log.error({ err: e }, "In syncOverviewStoreName");
   }
 }
 

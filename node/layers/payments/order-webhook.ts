@@ -13,6 +13,7 @@ import { updateStorePaymentsStatus } from "../aws/dynamodb/dynamo-entities/store
 import { getStripe, getStripeSecrets, PaymentsNotConfiguredError } from "./stripe";
 import { syncOrderRefunds } from "./refund-sync";
 import { notifyOrderPaid } from "../notifications/order-emails";
+import { log } from "../core/logger";
 
 /*
  * POST /api/v1/payments/stripe-connect-webhook (progress.md 5.5): events from the stores'
@@ -51,7 +52,7 @@ async function orderForSession(event: Stripe.Event, session: Stripe.Checkout.Ses
   const order = await getOrderById(orderId);
   if (!order) return null;
   if (order.storeOrderStripe.accountId !== event.account || order.storeOrderStripe.checkoutSessionId !== session.id) {
-    console.warn(`[connect webhook] ${event.id}: session ${session.id} doesn't match order ${orderId}`);
+    log.warn(`[connect webhook] ${event.id}: session ${session.id} doesn't match order ${orderId}`);
     return null;
   }
   return order;
@@ -65,7 +66,7 @@ async function orderForPaymentIntent(event: Stripe.Event, paymentIntentId: strin
   const order = pi.metadata?.orderId ? await getOrderById(pi.metadata.orderId) : null;
   if (!order) return null;
   if (order.storeOrderStripe.accountId !== event.account || order.storeOrderStripe.paymentIntentId !== paymentIntentId) {
-    console.warn(`[connect webhook] ${event.id}: payment ${paymentIntentId} doesn't match order ${order.storeOrderId}`);
+    log.warn(`[connect webhook] ${event.id}: payment ${paymentIntentId} doesn't match order ${order.storeOrderId}`);
     return null;
   }
   return order;
@@ -82,7 +83,7 @@ export async function handleConnectEvent(event: Stripe.Event): Promise<void> {
       if (!order) return;
       const result = await markOrderPaid(order, idOf(session.payment_intent));
       if (result === "PAID_SHORT") {
-        console.warn(`[connect webhook] order ${order.storeOrderId} paid but short of stock: the merchant must refund or restock`);
+        log.warn(`[connect webhook] order ${order.storeOrderId} paid but short of stock: the merchant must refund or restock`);
       }
       // Only the event that marked it paid sends the emails (6.5); repeats get ALREADY.
       if (result !== "ALREADY") await notifyOrderPaid(order.storeOrderId);
@@ -111,8 +112,9 @@ export async function handleConnectEvent(event: Stripe.Event): Promise<void> {
       if (!order) return;
       const synced = await syncOrderRefunds(order.storeOrderId);
       if (refund.status === "failed" || refund.status === "canceled") {
-        console.warn(
-          `[connect webhook] refund ${refund.id} on order ${order.storeOrderId} ${refund.status} (${refund.failure_reason ?? "no reason"}); refunded now ${synced?.storeOrderRefundedMinor ?? "?"}`
+        log.warn(
+          { refundId: refund.id, orderId: order.storeOrderId, refundStatus: refund.status, failureReason: refund.failure_reason ?? null, refundedMinor: synced?.storeOrderRefundedMinor ?? null },
+          "[connect webhook] refund failed or cancelled"
         );
       }
       return;
@@ -160,7 +162,7 @@ export async function handleConnectWebhook(req: Request, res: Response): Promise
       return;
     }
   } catch (e) {
-    console.error("[connect webhook]", (e as Error).message);
+    log.error({ err: e }, "[connect webhook]");
     res.status(503).send({ code: "PAYMENTS_NOT_CONFIGURED" });
     return;
   }
@@ -179,7 +181,7 @@ export async function handleConnectWebhook(req: Request, res: Response): Promise
     await markEventProcessed(event.id, event.type);
     res.send({ received: true });
   } catch (e) {
-    console.error(`[connect webhook] ${event.type} ${event.id} failed`, e);
+    log.error({ err: e }, `[connect webhook] ${event.type} ${event.id} failed`);
     res.status(500).send({ code: "WEBHOOK_FAILED" });
   }
 }

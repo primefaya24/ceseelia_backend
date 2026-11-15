@@ -1,3 +1,4 @@
+import { log } from "../../core/logger";
 // import { SQSClient, SendMessageBatchCommand, SendMessageBatchCommandInput } from "@aws-sdk/client-sqs";
 // import {appConstants} from "../../../constants";
 // import {STAGE} from "../../../config";
@@ -29,11 +30,11 @@
 //
 //                 await sqsClient.send(new SendMessageBatchCommand(params));
 //             } catch (err) {
-//                 console.error("Error processing batch in pushToQueue", err);
+//                 log.error({ err }, "Error processing batch in pushToQueue");
 //             }
 //         }
 //     } catch (err) {
-//         console.error("In pushToQueue", err);
+//         log.error({ err }, "In pushToQueue");
 //         throw err;
 //     }
 // }

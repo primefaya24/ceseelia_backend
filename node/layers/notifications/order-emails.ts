@@ -15,6 +15,7 @@ import {
   statusEmail,
   statusEmailFor,
 } from "./order-email-templates";
+import { log } from "../core/logger";
 
 /*
  * Sending the order emails (progress.md 6.5) through SES. Every function here is best effort: it
@@ -84,7 +85,7 @@ async function send(to: string, fromName: string, email: RenderedEmail, replyTo?
 const shopperFrom = (store: EmailStore) => `${store.storeName} via Ceseelia`;
 
 function logged(what: string, orderId: string) {
-  return (e: unknown) => console.error(`[order emails] ${what} for order ${orderId} failed`, (e as Error)?.message ?? e);
+  return (e: unknown) => log.error({ err: e }, `[order emails] ${what} for order ${orderId} failed`);
 }
 
 /* The receipt with its PDF; if the PDF can't be made, the email still goes, without it. */
@@ -94,7 +95,7 @@ async function sendReceipt(order: StoreOrder, store: StoreForEmail, link: string
   try {
     pdf = await receiptPdf(order, store);
   } catch (e) {
-    console.error(`[order emails] receipt PDF for order ${order.storeOrderId} failed`, (e as Error)?.message ?? e);
+    log.error({ err: e }, `[order emails] receipt PDF for order ${order.storeOrderId} failed`);
   }
   if (!pdf) return send(order.storeOrderCustomer.email, shopperFrom(store), email, store.storeEmail);
   const sent = await sendEmailWithAttachments(
@@ -125,7 +126,7 @@ export async function notifyOrderPaid(orderId: string): Promise<void> {
       send(to, "Ceseelia", alert)
     );
     const results = await Promise.all([receipt, ...alerts]);
-    if (!results[0]) console.error(`[order emails] receipt for order ${orderId} wasn't sent`);
+    if (!results[0]) log.error(`[order emails] receipt for order ${orderId} wasn't sent`);
   } catch (e) {
     logged("paid emails", orderId)(e);
   }
@@ -166,6 +167,6 @@ export async function notifyReviewDecision(storeId: string, approved: boolean, m
     const admins = [...new Set(members.filter((m) => m.role === "ADMIN").map((m) => m.email.trim().toLowerCase()).filter(Boolean))];
     await Promise.all(admins.map((to) => send(to, "Ceseelia", email)));
   } catch (e) {
-    console.error(`[order emails] review decision email for store ${storeId} failed`, (e as Error)?.message ?? e);
+    log.error({ err: e }, `[order emails] review decision email for store ${storeId} failed`);
   }
 }

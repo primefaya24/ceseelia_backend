@@ -1,11 +1,11 @@
 // Imports
 import { Request, Response, Router } from "express";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
-import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { isValidSlug } from "../../../../../constants/slug";
 import { getSlugOwner } from "../../../../../layers/aws/dynamodb/dynamo-entities/slug";
 import { CACHE_CONTROL, setCacheControl } from "../../../../../layers/core/http/cache";
+import { log } from "../../../../../layers/core/logger";
 
 /*
  * GET /store/public/resolve-slug/:slug → { storeId } (public, no auth; progress.md 1.8 / WA 3.1)
@@ -46,9 +46,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     setCacheControl(res, CACHE_CONTROL.slug);
     res.send({ storeId });
   } catch (e) {
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In store/public/resolve-slug");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

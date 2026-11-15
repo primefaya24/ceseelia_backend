@@ -2,11 +2,11 @@
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
 import { getAuth, validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
-import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { getStoreInventoryData, withoutAdminSettings } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { isUlid } from "../../../../../layers/core/utils";
 import { StoreInventoryData } from "../../../../../layers/core/interfaces/store";
+import { log } from "../../../../../layers/core/logger";
 dotenv.config();
 
 /*
@@ -53,9 +53,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // L.2: merchants see that an item is hidden and why in general terms, never the reasons.
     res.send(getAuth(res).isAdmin ? storeInventoryData : forMerchant(withoutAdminSettings(storeInventoryData)));
   } catch (e) {
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In store/inventory/get-data");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

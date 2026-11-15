@@ -16,6 +16,7 @@ import {
   writeStoreBilling,
 } from "../aws/dynamodb/dynamo-entities/billing";
 import { cancelSubscriptionNow, retrieveSubscriptionSnapshot } from "./billing";
+import { log } from "../core/logger";
 
 /*
  * Bring a store in line with its subscription (progress.md P.5). Always reads the subscription
@@ -50,7 +51,7 @@ export async function syncSubscription(subscriptionId: string, now: () => number
     if (!mayReplace(state.subscription, snap, t)) {
       if (isPaying(snap.status) && state.subscription && blocksNewSubscription(state.subscription, t)) {
         // A second subscription for a store that already has one (two checkouts paid at once).
-        console.error(`[billing] store ${storeId}: cancelling duplicate subscription ${snap.id}`);
+        log.error(`[billing] store ${storeId}: cancelling duplicate subscription ${snap.id}`);
         await cancelSubscriptionNow(snap.id);
         return "DUPLICATE_CANCELLED";
       }
@@ -110,7 +111,7 @@ export async function sweepExpiredGrace(now: () => number = Date.now): Promise<n
       if (!after?.subscription?.graceEndsAt || after.subscription.graceEndsAt <= now()) await deleteGraceEntry(storeId);
       done++;
     } catch (e) {
-      console.error(`[billing] grace sweep failed for store ${storeId}`, e);
+      log.error({ err: e }, `[billing] grace sweep failed for store ${storeId}`);
     }
   }
   return done;

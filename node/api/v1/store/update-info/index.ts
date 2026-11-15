@@ -8,6 +8,7 @@ import { isUlid } from "../../../../layers/core/utils";
 import { updateStoreInfo } from "../../../../layers/aws/dynamodb/dynamo-entities/admin";
 import { SlugTakenError } from "../../../../layers/aws/dynamodb/dynamo-entities/slug";
 import { StoreRecordNotFoundError } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { log } from "../../../../layers/core/logger";
 
 /*
  * POST /store/update-info (store ADMIN or platform admin, progress.md P.11)
@@ -73,7 +74,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ message: "Store not found", code: "STORE_NOT_FOUND" });
       return;
     }
-    console.error("In store/update-info", e);
+    log.error({ err: e }, "In store/update-info");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

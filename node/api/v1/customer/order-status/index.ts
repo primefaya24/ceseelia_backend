@@ -8,6 +8,7 @@ import { getClientIp, isUlid } from "../../../../layers/core/utils";
 import { StoreOrder } from "../../../../layers/core/interfaces/store";
 import { getOrderById, hashStatusToken } from "../../../../layers/aws/dynamodb/dynamo-entities/order";
 import { getStoreOverviewRow } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
+import { log } from "../../../../layers/core/logger";
 
 /*
  * GET /customer/order-status/:orderId (public; progress.md 6.4, used by WA 5.2's return page)
@@ -90,7 +91,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       })
     );
   } catch (e) {
-    console.error("In customer/order-status", e);
+    log.error({ err: e }, "In customer/order-status");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

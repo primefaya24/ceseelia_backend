@@ -10,6 +10,7 @@ import {
 } from "../../../../layers/payments/billing";
 import { StorePlan } from "../../../../layers/core/plans";
 import { sendPaymentsError } from "../payments/errors";
+import { log } from "../../../../layers/core/logger";
 
 /* The signed-in user's id (platform admins too: they pay with their own account). */
 export async function callerUserId(res: Response): Promise<string | null> {
@@ -59,7 +60,7 @@ export async function startPlanCheckout(input: {
 /* Payments errors, plus 503 BILLING_NOT_CONFIGURED when a plan's price isn't set up. */
 export function sendBillingError(e: unknown, res: Response, where: string): void {
   if (e instanceof BillingNotConfiguredError) {
-    console.error(where, e.message);
+    log.error({ err: e }, where);
     res.status(503).send({ code: "BILLING_NOT_CONFIGURED", message: "Paid plans aren't available right now." });
     return;
   }

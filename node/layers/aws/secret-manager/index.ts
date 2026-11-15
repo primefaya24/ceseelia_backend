@@ -5,6 +5,7 @@ import {
     GetSecretValueCommand,
     DeleteSecretCommand,
 } from "@aws-sdk/client-secrets-manager";
+import { log } from "../../core/logger";
 
 const client = new SecretsManagerClient({
     region: process.env.AWS_REGION || "us-east-1",
@@ -56,7 +57,7 @@ export async function kmsGetSecret(secretId: string): Promise<Record<string, any
         }
         return null;
     } catch (error) {
-        console.error("Secrets Manager can't find the specified secret.");
+        log.error("Secrets Manager can't find the specified secret.");
         return null;
     }
 }

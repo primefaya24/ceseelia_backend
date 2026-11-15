@@ -1,11 +1,11 @@
 // Imports
 import { Request, Response, Router } from "express";
 import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../layers/core/http";
-import { IN_DEV } from "../../../../config";
 import { appConstants } from "../../../../constants";
 import { MAX_COUNT } from "../../../../constants/input-limits";
 import { createImageUploads, parseUploadCount } from "../../../../layers/aws/s3/image-upload";
 import { isUlid } from "../../../../layers/core/utils";
+import { log } from "../../../../layers/core/logger";
 
 /*
  * Upload slots for promo images: 1–10 in total (MAX_COUNT.promoImages).
@@ -43,9 +43,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const jpg = parseUploadCount(req.params.jpgCount)!;
     res.send(await createImageUploads(`store/${storeId}/images/promo/`, png, jpg));
   } catch (e) {
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In store/get-promo-image-upload-urls");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

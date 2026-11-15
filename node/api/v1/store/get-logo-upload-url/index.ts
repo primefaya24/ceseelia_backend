@@ -1,10 +1,10 @@
 // Imports
 import { Request, Response, Router } from "express";
 import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../layers/core/http";
-import { IN_DEV } from "../../../../config";
 import { appConstants } from "../../../../constants";
 import { createImageUpload, parseImageType } from "../../../../layers/aws/s3/image-upload";
 import { isUlid } from "../../../../layers/core/utils";
+import { log } from "../../../../layers/core/logger";
 
 /*
  * Upload slot for the store logo.
@@ -39,9 +39,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const imageType = parseImageType(req.params.imageType)!;
     res.send(await createImageUpload(`store/${storeId}/images/logo/`, imageType));
   } catch (e) {
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In store/get-logo-upload-url");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

@@ -2,7 +2,7 @@
 import {Request, Response, Router} from 'express';
 import dotenv from 'dotenv';
 import {validateAndExecuteHttpApiRoute} from "../../layers/core/http";
-import {IN_DEV} from "../../config";
+import {log} from "../../layers/core/logger";
 import {appConstants} from "../../constants";
 dotenv.config();
 
@@ -49,9 +49,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         // Respond to user
         res.send();
     } catch (e) {
-        if (IN_DEV) {
-            console.error(e);
-        }
+        log.error({ err: e }, "In <area>/<route>");
         res.status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR).send({message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR});
     }
 }

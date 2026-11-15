@@ -2,11 +2,12 @@
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
-import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
+import { S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import { CategoryNotEmptyError, deleteStoreCategory } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { isUlid } from "../../../../../layers/core/utils";
+import { log } from "../../../../../layers/core/logger";
 dotenv.config();
 
 /*
@@ -76,9 +77,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       });
       return;
     }
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In store/category/delete");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

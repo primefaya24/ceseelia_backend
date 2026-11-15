@@ -6,6 +6,7 @@ import {
     SendEmailCommandOutput,
 } from "@aws-sdk/client-ses";
 import {appConstants} from "../../../constants";
+import { log } from "../../core/logger";
 
 /*
  * The From name: header-safe (no quotes, brackets, commas or line breaks, at most 70 chars), and
@@ -54,7 +55,7 @@ function createSendEmailCommand(
 
         return new SendEmailCommand(params);
     } catch (error) {
-        console.error("Error in createSendEmailCommand:", error);
+        log.error({ err: error }, "Error in createSendEmailCommand");
         throw error;
     }
 }
@@ -81,7 +82,7 @@ export async function sendEmail(
         );
         return await sesClient.send(command);
     } catch (error) {
-        console.error("In sendEmail:", error);
+        log.error({ err: error }, "In sendEmail");
         if (failStrict) throw error;
     }
 }
@@ -167,7 +168,7 @@ export async function sendEmailWithAttachments(
         });
         return await sesClient.send(new SendRawEmailCommand({ RawMessage: { Data: Buffer.from(raw, "utf8") } }));
     } catch (error) {
-        console.error("In sendEmailWithAttachments:", error);
+        log.error({ err: error }, "In sendEmailWithAttachments");
         if (failStrict) throw error;
     }
 }

@@ -8,6 +8,7 @@ import { deleteStore } from "../../../../layers/aws/dynamodb/dynamo-entities/sto
 import { getStoreBillingState } from "../../../../layers/aws/dynamodb/dynamo-entities/billing";
 import { cancelSubscriptionNow } from "../../../../layers/payments/billing";
 import { sendPaymentsError } from "../payments/errors";
+import { log } from "../../../../layers/core/logger";
 dotenv.config();
 
 /*
@@ -68,7 +69,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         }
         res.send({deleted: true});
     } catch (e) {
-        console.error("In store/delete", e);
+        log.error({ err: e }, "In store/delete");
         res.status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR).send({message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR});
     }
 }

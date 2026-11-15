@@ -30,15 +30,16 @@ ceseelia_backend/
 ├── iam/                                      # CeseeliaServerRole policy (prod server, least privilege)
 └── node/
     ├── index.ts           # starts the server, the sweeps and graceful shutdown
-    ├── app.ts             # createApp(): helmet, /healthz, CORS, Stripe webhooks, JSON body, host routing
-    ├── middleware.ts      # host-based router + request logger (only ALLOWED_API_HOSTS reach the API)
+    ├── app.ts             # createApp(): request logger, helmet, /healthz, CORS, Stripe webhooks, rate + body limits, host routing
+    ├── middleware.ts      # host-based router (only ALLOWED_API_HOSTS reach the API)
     ├── tests/             # vitest specs
     ├── config/index.ts    # env-driven config (STAGE, hosts, CORS, Cognito, table/bucket)
     ├── constants/index.ts # appConstants (entity names, HTTP codes, limits, etc.); input-limits.ts, slug.ts
     ├── scripts/           # one-off maintenance scripts (slug backfill, category item recount, item price migration, Free plan migration)
     ├── api/v1/<area>/<route>/index.ts   # one file per endpoint
     └── layers/
-        ├── core/http      # validateAndExecuteHttpApiRoute (auth + validation wrapper)
+        ├── core/http      # validateAndExecuteHttpApiRoute (auth + validation wrapper); api-limits (9.2), rate-limit (per route)
+        ├── core/logger    # pino `log` / `logFor(area)`, request ids, redaction (9.1)
         ├── core/interfaces/store   # StoreOverview, StoreSettings, StoreCategory, StoreItem, StoreOrder…
         ├── core/utils     # misc helpers, S3 cleanup, geo-IP currency, DQS
         ├── aws/dynamodb/dynamo-entities/{store,admin,user,membership,slug}   # data access
@@ -107,6 +108,9 @@ export default function registerRoute(router: Router): void {
   `constants/input-limits.ts` (same numbers as the webapp's `input-limits.constants.ts`).
 - The Express app is built in `app.ts` (`createApp()`, used by tests); `index.ts` only listens.
 - Add a test in `node/tests/` for any new validator or wrapper behaviour.
+- Logging (9.1): `import { log } from ".../layers/core/logger"`, never `console` in app code.
+  `log.error({ err: e }, "In <area>/<route>")` for errors (the serializer drops payloads);
+  log ids (storeId, orderId, Stripe ids), never names, emails, addresses or tokens.
 - DynamoDB single table `ceseelia_<stage>` with `pk`/`sk`:
   | Entity | pk | sk |
   |---|---|---|
@@ -211,7 +215,7 @@ Open:
    `/bin/bash` in front (owner).
 6. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency), so
    in dev a Canada delivery's tax estimate always falls back to the store's province.
-7. No structured logging or CI yet (helmet, `/healthz` and graceful shutdown are in). → Stage 9
+7. No CI yet (logging, limits, helmet, `/healthz` and graceful shutdown are in). → Stage 9.4
 
 Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
 `api.ceseelia.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);

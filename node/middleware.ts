@@ -7,15 +7,9 @@ import apiRouter from "./api/v1";
 const apiV1Router = express.Router();
 apiV1Router.use('/api/v1', apiRouter);
 
-export function domainRouterWithLogger(req: Request, res: Response, next: NextFunction): void | Promise<void> {
-    const now = new Date();
-    const datetime = now.toLocaleDateString('en-CA', { timeZone: 'America/Edmonton' }) + ' ' +
-        now.toLocaleTimeString('en-CA', { hour12: false, timeZone: 'America/Edmonton' });
-    const ip = req.ip || 'unknown'; // see TRUST_PROXY_HOPS; raw X-Forwarded-For can be spoofed
-    const path = req.path;
+/* Only ALLOWED_API_HOSTS reach the API (the request itself is logged by requestLogger, 9.1). */
+export function domainRouter(req: Request, res: Response, next: NextFunction): void | Promise<void> {
     const host: string = req.hostname.toLowerCase();
-
-    console.warn(`[${datetime}] IP: ${ip} | Host: ${host} | Path: ${path}`);
 
     if (isAllowedApiHost(host)) {
         return apiV1Router(req, res, next);

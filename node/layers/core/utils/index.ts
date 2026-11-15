@@ -7,6 +7,7 @@ import { deleteS3Keys, listPrefixFiles } from "../../aws/s3";
 import { StoreSettings } from "../interfaces/store";
 import { CaProvince, isCaProvince } from "../tax/canada";
 import geoip from "geoip-lite";
+import { log } from "../logger";
 
 /*
  * Checks whether user is admin
@@ -131,7 +132,7 @@ export function unzipBuffer(gzBuffer: any): Promise<any> {
   return new Promise(async (resolve, reject) => {
     zlib.unzip(gzBuffer, (err, buffer) => {
       if (err) {
-        console.error("In unzipBuffer", err);
+        log.error({ err }, "In unzipBuffer");
         reject(err);
       } else {
         resolve(buffer);
@@ -276,7 +277,7 @@ export function formatDateFromTimestamp(timestamp: any, timezone: any): string {
     const localTime = moment.tz(timestamp, timezone); // Convert timestamp to local time
     return localTime.format("DD-MM-YYYY"); // Format as "DD-MM-YYYY"
   } catch (error) {
-    console.error("Error processing date:", error);
+    log.error({ err: error }, "Error processing date");
     throw error;
   }
 }
@@ -395,7 +396,7 @@ export function registerTimer(
     try {
       await fn();
     } catch (err) {
-      console.error(`Error in registerTimer immediate execution:`, err);
+      log.error({ err }, `Error in registerTimer immediate execution:`);
     }
   })();
 
@@ -404,7 +405,7 @@ export function registerTimer(
     try {
       await fn();
     } catch (err) {
-      console.error(`Error in registerTimer interval execution:`, err);
+      log.error({ err }, `Error in registerTimer interval execution:`);
     }
   }, intervalInMs);
 }
@@ -464,7 +465,7 @@ export async function cleanUpS3Folder(
       await deleteS3Keys(S3_STORAGE_BUCKET_NAME, keysToDelete);
     }
   } catch (e) {
-    console.error("In cleanUpS3Folder", e);
+    log.error({ err: e }, "In cleanUpS3Folder");
   }
 }
 

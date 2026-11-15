@@ -25,6 +25,7 @@ import { pdfText, receiptPdf } from "../layers/notifications/receipt-pdf";
 import { addOrderLinkTokenHash, getOrderById, hashStatusToken } from "../layers/aws/dynamodb/dynamo-entities/order";
 import { listStoreMembers } from "../layers/aws/dynamodb/dynamo-entities/membership";
 import { getPublicStoreSettings } from "../layers/aws/dynamodb/dynamo-entities/store";
+import { log } from "../layers/core/logger";
 import { notifyOrderPaid, notifyOrderRefunded, notifyOrderStatus, notifyReviewDecision } from "../layers/notifications/order-emails";
 import {
   money,
@@ -178,11 +179,12 @@ describe("sending (6.5)", () => {
   });
 
   it("never throws: a failing lookup or send is logged", async () => {
+    const logged = vi.spyOn(log, "error");
     vi.mocked(getOrderById).mockRejectedValue(new Error("ddb down"));
     await expect(notifyOrderPaid(ORDER_ID)).resolves.toBeUndefined();
     vi.mocked(addOrderLinkTokenHash).mockRejectedValueOnce(new Error("ddb down"));
     await expect(notifyOrderStatus(order(), "READY")).resolves.toBeUndefined();
-    expect(console.error).toHaveBeenCalled();
+    expect(logged).toHaveBeenCalled();
   });
 });
 

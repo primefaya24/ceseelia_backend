@@ -11,6 +11,7 @@ import {
 import * as ULID from "ulid";
 import {appConstants} from "../../../../../constants";
 import {DB_TABLE_NAME} from "../../../../../config";
+import { log } from "../../../../core/logger";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient = DynamoDBDocumentClient.from(
@@ -162,7 +163,7 @@ export async function getMyProfile(
         }
         return myProfile;
     } catch (e) {
-        console.error("In getMyProfile", e);
+        log.error({ err: e }, "In getMyProfile");
         throw "Could not fetch profile";
     }
 }
@@ -193,7 +194,7 @@ export async function updateFcmToken(
         });
         await dynamoDbDocumentClient.send(command);
     } catch (e) {
-        console.error("In updateFcmToken", e);
+        log.error({ err: e }, "In updateFcmToken");
         throw "Could not update user fcm token";
     }
 }
@@ -221,7 +222,7 @@ export async function getUserNotificationSettings(
         }
         return userNotificationSettings["Item"];
     } catch (e) {
-        console.error("In getUserNotificationSettings", e);
+        log.error({ err: e }, "In getUserNotificationSettings");
         throw "Could not fetch user notification settings";
     }
 }
@@ -252,7 +253,7 @@ export async function updateUserLocale(
         });
         await dynamoDbDocumentClient.send(command);
     } catch (e) {
-        console.error("In updateFcmToken", e);
+        log.error({ err: e }, "In updateFcmToken");
         throw "Could not update user fcm token";
     }
 }
@@ -279,7 +280,7 @@ export async function peekUserByEmail(
         const userDocArr = await dynamoDbDocumentClient.send(command);
         return userDocArr["Items"];
     } catch (e) {
-        console.error("In peekUserByEmail", e);
+        log.error({ err: e }, "In peekUserByEmail");
         throw "Could not find user by email";
     }
 }
@@ -358,7 +359,7 @@ export async function fetchUserCognitoItems(
         const userDocArr = await dynamoDbDocumentClient.send(command);
         return userDocArr["Items"];
     } catch (e) {
-        console.error("In fetchUserCognitoItems", e);
+        log.error({ err: e }, "In fetchUserCognitoItems");
         throw "Could not fetch iser cognito data";
     }
 }
@@ -394,7 +395,7 @@ export async function updateUserProfile(
         });
         await dynamoDbDocumentClient.send(command);
     } catch (e) {
-        console.error("In updateUserProfile", e);
+        log.error({ err: e }, "In updateUserProfile");
         throw "Could not update user profile";
     }
 }
@@ -425,7 +426,7 @@ export async function updateUserPlan(
         });
         await dynamoDbDocumentClient.send(command);
     } catch (e) {
-        console.error("In updateUserPlan", e);
+        log.error({ err: e }, "In updateUserPlan");
         throw "Could not update user plan";
     }
 }
@@ -455,7 +456,7 @@ export async function adjustCounter(
         });
         await dynamoDbDocumentClient.send(command);
     } catch (e) {
-        console.error("In adjustCounter", e);
+        log.error({ err: e }, "In adjustCounter");
         throw "Could not adjust project counters";
     }
 }
@@ -483,7 +484,7 @@ export async function adjustUserRewardDollarsEarned(
         });
         await dynamoDbDocumentClient.send(command);
     } catch (e) {
-        console.error("In adjustCounter", e);
+        log.error({ err: e }, "In adjustCounter");
         throw "Could not adjust project counters";
     }
 }
@@ -510,7 +511,7 @@ export async function getMyRewards(
         }
         return 0;
     } catch (e) {
-        console.error("In getMyRewards", e);
+        log.error({ err: e }, "In getMyRewards");
         throw "Could not fetch rewards";
     }
 }
@@ -550,7 +551,7 @@ export async function getUserRecordKeys(
 
         return userRecordKeys;
     } catch (e) {
-        console.error("In getUserRecordKeys", e);
+        log.error({ err: e }, "In getUserRecordKeys");
         throw "Could not getUserRecordKeys";
     }
 }
@@ -565,7 +566,7 @@ export async function deleteUserDB(
     ) {
     try {
     } catch (e) {
-        console.error("In deleteUser", e);
+        log.error({ err: e }, "In deleteUser");
         throw "Could not delete user";
     }
 }

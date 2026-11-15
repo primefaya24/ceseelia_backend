@@ -27,6 +27,7 @@ import {
   SlugTakenError,
   transactionFailedAt,
 } from "../slug";
+import { log } from "../../../../core/logger";
 
 // Initialize DynamoDB Document Client
 const dynamoDbDocumentClient: DynamoDBDocumentClient =
@@ -84,7 +85,7 @@ export async function getAllStores() {
 
     return allStores;
   } catch (e) {
-    console.error("In getAllStores", e);
+    log.error({ err: e }, "In getAllStores");
     throw e;
   }
 }
@@ -171,7 +172,7 @@ export async function updateStoreInfo(
     throw new Error("Store info changed while saving; gave up after 3 tries");
   } catch (e) {
     if (!(e instanceof SlugTakenError) && !(e instanceof StoreRecordNotFoundError)) {
-      console.error("In updateStoreInfo", e);
+      log.error({ err: e }, "In updateStoreInfo");
     }
     throw e;
   }

@@ -1,3 +1,4 @@
+import { log } from "../../logger";
 export class EfficientQueue<T> {
     private inbox: T[] = [];
     private outbox: T[] = [];
@@ -58,7 +59,7 @@ export class DQS {
             try {
                 await this.handler(item);
             } catch (error) {
-                console.error(`❌ Error processing topic "${item.topicId}":`, error);
+                log.error({ err: error }, `❌ Error processing topic "${item.topicId}":`);
             }
         }
 

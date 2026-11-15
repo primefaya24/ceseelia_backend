@@ -1,6 +1,7 @@
 import { Response } from "express";
 import { appConstants } from "../../../constants";
 import { MembershipError } from "../../../layers/aws/dynamodb/dynamo-entities/membership";
+import { log } from "../../../layers/core/logger";
 
 const STATUS: Record<MembershipError["reason"], number> = {
   STORE_NOT_FOUND: appConstants.HTTP_STATUS_CODE_NOT_FOUND,
@@ -19,7 +20,7 @@ export function sendMembershipError(e: unknown, res: Response): boolean {
 }
 
 export function sendServerError(e: unknown, res: Response, where: string): void {
-  console.error(where, e);
+  log.error({ err: e }, where);
   res
     .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
     .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

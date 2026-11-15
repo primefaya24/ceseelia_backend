@@ -22,6 +22,7 @@ import { getStoreBillingState } from "../../../../../layers/aws/dynamodb/dynamo-
 import { blocksNewSubscription } from "../../../../../layers/core/billing";
 import { billingCurrencyFor } from "../../../../../layers/core/go-live";
 import { callerUserId, sendBillingError, startPlanCheckout } from "../../billing/shared";
+import { log } from "../../../../../layers/core/logger";
 
 /*
  * POST /store/go-live { storeId, plan: "SPARK" | "NOVA" } (store ADMINs and platform admins, P.4b)
@@ -123,7 +124,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         result = await runSmartStoreValidation({ storeId, data });
       } catch (e) {
         // Fail closed: a check that couldn't run sends the store to a human, never straight live.
-        console.error("In go-live: runSmartStoreValidation", (e as Error)?.message ?? e);
+        log.error({ err: e }, "In go-live: runSmartStoreValidation");
         result = { ok: false, reasons: [failedCheckReason(e)] };
       }
     }

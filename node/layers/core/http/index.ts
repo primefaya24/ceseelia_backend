@@ -7,6 +7,7 @@ import { COGNITO_USER_POOL_ID, IN_DEV } from "../../../config";
 import { isUlid } from "../utils";
 import { findUserIdByCognitoId, UserDeactivatedError } from "../../aws/dynamodb/dynamo-entities/user";
 import { getMembership, StoreRole } from "../../aws/dynamodb/dynamo-entities/membership";
+import { log } from "../logger";
 
 type RouteCheck = (req: Request) => boolean;
 type RouteCore = (req: Request, res: Response) => Promise<void> | void;
@@ -154,9 +155,8 @@ export async function validateAndExecuteHttpApiRoute(
                 }
                 claims = await verifyCognitoAccessToken(token, userPoolId);
             } catch (e) {
-                if (IN_DEV) {
-                    console.error("Auth failed:", (e as Error).message);
-                }
+                // A missing or expired token is normal (signed out, old tab): one line, no stack.
+                log.warn({ reason: (e as Error)?.message }, "Auth failed");
                 res.status(appConstants.HTTP_STATUS_CODE_UNAUTHORIZED).send({message: appConstants.HTTP_ERROR_MSG_FORBIDDEN_ACCESS});
                 return;
             }
@@ -192,7 +192,7 @@ export async function validateAndExecuteHttpApiRoute(
 
         await executeRouteCore(req, res);
     } catch (e) {
-        console.error("In validateAndExecuteHttpApiRoute", e);
+        log.error({ err: e }, "In validateAndExecuteHttpApiRoute");
         if (!res.headersSent) {
             res.status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR).send({message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR});
         }

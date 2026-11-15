@@ -1,11 +1,11 @@
 // Imports
 import { Request, Response, Router } from "express";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
-import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { isValidSlug } from "../../../../../constants/slug";
 import { getSlugOwner } from "../../../../../layers/aws/dynamodb/dynamo-entities/slug";
 import { sendPublicStorefront, storeNotFound } from "../../../../../layers/core/http/public-storefront";
+import { log } from "../../../../../layers/core/logger";
 
 /*
  * GET /store/public/storefront/:slug (public, no auth; progress.md 3.1 / WA 3.1)
@@ -41,7 +41,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     storeId = await getSlugOwner(slugParam(req));
   } catch (e) {
-    if (IN_DEV) console.error(e);
+    log.error({ err: e }, "In store/public/storefront");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

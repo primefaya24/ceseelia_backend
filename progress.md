@@ -1228,10 +1228,33 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 ## 11. Stage 9 — Production readiness
 
-- [ ] 9.1 Structured logging (pino) with request ids, and no PII or tokens in logs. Replace the
+- [x] 9.1 Structured logging (pino) with request ids, and no PII or tokens in logs. Replace the
       `console.warn` request logger and the `console.error(e)` calls in routes.
-- [ ] 9.2 `express-rate-limit` on public and auth-sensitive routes (needs S.13). Lower the JSON
+  - _Done 2026-11-15. `layers/core/logger` (pino 10.4.0): JSON lines on stdout, pretty in a dev
+    terminal (`pino-pretty`, dev dependency; `LOG_PRETTY=false` turns it off), `LOG_LEVEL`
+    (default info in prod, debug in dev, silent in tests). `requestLogger` is first in `app.ts`:
+    a request id (nginx's `$request_id` via `X-Request-Id` if well formed, else a UUID; echoed
+    back) on **every** line logged during the request (AsyncLocalStorage), and one line per
+    request: method, full path with emails masked (the invite routes have one in the URL), status,
+    ms, IP cut to /24 (IPv6 /48). Never the query string or headers. Redacted keys anywhere in the
+    first three levels (email, name, phone, address, postal code, tokens, secrets, authorization).
+    Errors go through `errSerializer`: type, message (emails masked), stack, code, Stripe type and
+    request id, AWS status and request id, cause; **never** the payloads AWS and Stripe attach.
+    All ~100 `console.*` calls in app code replaced (scripts keep `console`). **Route 500s used to
+    be logged in dev only; they are now logged in every stage.** "Auth failed" is a one-line warn.
+    Tests in `tests/logger.test.ts`._
+- [x] 9.2 `express-rate-limit` on public and auth-sensitive routes (needs S.13). Lower the JSON
       body limit per route where 1 MB isn't needed.
+  - _Done 2026-11-15. `layers/core/http/api-limits.ts` (express-rate-limit 8.7.4, in memory, new
+    counters per `createApp()`): 300/IP/min over `/api/v1`, 120/IP/min on the public storefront
+    reads (`store/public/*`, `get-data-public`); 429 `RATE_LIMITED` + `Retry-After` and draft-8
+    `RateLimit` headers, after CORS so the webapp can read it. The per-route limits (quote,
+    create-order, order-status, contact-store, create-store, update-info, Go Live) stay. Stripe
+    webhooks and `/healthz` are never limited. JSON bodies 100 KB (was 1 MB), 256 KB for
+    `create-item` and `update-settings`; 413 `BODY_TOO_LARGE` / 400 `INVALID_JSON` as JSON, and a
+    final error handler (logged, plain 500). nginx: `client_max_body_size` 1m (was 2m), passes
+    `X-Request-Id`, and **`/api/v1/store/go-live` gets `proxy_read_timeout 120s`** (60 s would
+    cut off Go Live's 90 s AI check with a 504). Tests in `tests/api-limits.test.ts`._
 - [x] 9.3 (2026-11-14) `GET /healthz` (before host routing; 503 while shutting down, `no-store`),
       graceful shutdown in `index.ts` (SIGTERM/SIGINT: stop the sweeps, stop taking
       connections, 10 s for in-flight requests), Docker `HEALTHCHECK`, nginx waits for healthy.
@@ -1281,6 +1304,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.4 9.1 + 9.2: pino logs (request ids, PII redacted, safe error serializer, route 500s logged in prod too), per-IP API limits (300/min, public reads 120/min), JSON body 100 KB (256 KB for item/settings saves), JSON 413/400; nginx passes `X-Request-Id`, 1 MB body cap, Go Live 120 s timeout (was cut off at 60 s). |
 | 2026-11-15 | L.2 AI store check (code): rule checks + Claude Opus 5.5 over all item text and ≤ 50 photos picked by risk; Go Live 90 s deadline, fails closed to review, 5/store/day, admin email; live stores' new or changed items checked in the background, flagged ones hidden and queued for admins (`get-item-review-queue`, `review-item`); eval set of 60 stores in `scripts/store-check-eval`. Needs `anthropicApiKey` and an eval run before launch. |
 | 2026-11-09 | QA Q.16 (WA): `storeInfo.showEmail` / `showPhone` (optional, missing = shown). When false, `toPublicSettings` blanks that detail in every public response (storefront and item link); `contactFormAvailable` (public only, worked out from the stored email, never saved) keeps Contact us offered; contact-store still emails the real address. |
 | 2026-11-09 | 4.4 done: Canadian sales tax by province (`taxMode: CANADA`): pickup in the store's province, delivery by the shopper's postal code; GST/HST/PST/RST/QST lines in the quote. |

@@ -1,6 +1,7 @@
 import { ADMIN_ALERT_EMAIL, WEBAPP_URL } from "../../config";
 import { sendEmail } from "../aws/ses";
 import { escapeHtml as e } from "../core/utils/validation";
+import { log } from "../core/logger";
 
 /*
  * Emails to the Ceseelia team (L.2, owner 2026-11-14): when the AI store check sends a store to
@@ -25,7 +26,7 @@ async function send(subject: string, html: string): Promise<void> {
     if (!ADMIN_ALERT_EMAIL) return;
     await sendEmail(subject, "Ceseelia store check", ADMIN_ALERT_EMAIL, html);
   } catch (err) {
-    console.error("[admin alerts] couldn't send", (err as Error)?.message ?? err);
+    log.error({ err }, "[admin alerts] couldn't send");
   }
 }
 

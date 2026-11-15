@@ -9,6 +9,7 @@ import {
 import { normalizeStoreLifecycle, StoreItem, StoreItemReview } from "../interfaces/store";
 import { notifyItemsFlagged } from "../../notifications/admin-alerts";
 import { checkCatalogue, formatFinding, itemCheckFingerprint, StoreCheckFinding, withDeadline } from ".";
+import { log } from "../logger";
 
 /*
  * The AI check of a LIVE store's new and changed items (progress.md L.2, owner 2026-11-14).
@@ -99,7 +100,7 @@ async function sweepStore(storeId: string, rows: ItemCheckRow[], now: number, ou
     findings = result.findings;
   } catch (e) {
     out.failed += toCheck.length;
-    console.error(`[item check] store ${storeId}: ${toCheck.length} item(s) not checked`, (e as Error)?.message ?? e);
+    log.error({ err: e }, `[item check] store ${storeId}: ${toCheck.length} item(s) not checked`);
     return;
   }
 
@@ -146,7 +147,7 @@ export async function sweepItemChecks(now: () => number = Date.now): Promise<Ite
       await sweepStore(storeId, storeRows, now(), out);
     } catch (e) {
       out.failed += storeRows.length;
-      console.error(`[item check] store ${storeId} failed`, (e as Error)?.message ?? e);
+      log.error({ err: e }, `[item check] store ${storeId} failed`);
     }
   }
   return out;

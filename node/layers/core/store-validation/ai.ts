@@ -3,6 +3,7 @@ import { getStorageImageUrl } from "../utils";
 import { readAppSecretString } from "../../aws/secret-manager/app-secrets";
 import { FINDING_CODES, FindingCode, STORE_CHECK_SYSTEM_PROMPT } from "./policy";
 import { RuleHit } from "./rules";
+import { log } from "../logger";
 
 /*
  * The Claude API side of the AI store check (L.2). One request per batch of items (see
@@ -177,7 +178,7 @@ export async function reviewBatch(b: AiBatch, signal?: AbortSignal): Promise<AiB
     // An image the API couldn't fetch (deleted, bad URL) fails the whole request: check the
     // text without photos rather than not at all.
     if (withImages && e instanceof Anthropic.BadRequestError) {
-      console.warn(`[store check] images rejected (${e.message}); checking text only`);
+      log.warn(`[store check] images rejected (${e.message}); checking text only`);
       res = await ask(client, b, false, signal);
     } else {
       throw e;

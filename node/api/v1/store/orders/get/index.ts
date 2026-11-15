@@ -5,6 +5,7 @@ import { CACHE_CONTROL, setCacheControl } from "../../../../../layers/core/http/
 import { isUlid } from "../../../../../layers/core/utils";
 import { merchantOrderView } from "../../../../../layers/core/interfaces/store";
 import { getOrderById } from "../../../../../layers/aws/dynamodb/dynamo-entities/order";
+import { log } from "../../../../../layers/core/logger";
 
 /*
  * GET /store/orders/get/:storeId/:orderId (store members, progress.md 6.2) → 200 MerchantOrderView
@@ -35,7 +36,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     }
     res.send(merchantOrderView(order));
   } catch (e) {
-    console.error("In store/orders/get", e);
+    log.error({ err: e }, "In store/orders/get");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

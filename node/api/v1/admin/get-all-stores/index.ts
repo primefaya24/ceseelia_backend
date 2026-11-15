@@ -2,11 +2,11 @@
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
-import { IN_DEV } from "../../../../config";
 import { appConstants } from "../../../../constants";
 import { StoreOverview } from "../../../../layers/core/interfaces/store";
 import { getAllStores } from "../../../../layers/aws/dynamodb/dynamo-entities/admin";
 import { getStoreSummaries } from "../../../../layers/aws/dynamodb/dynamo-entities/store-admin";
+import { log } from "../../../../layers/core/logger";
 dotenv.config();
 
 /*
@@ -51,9 +51,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const summaries = await getStoreSummaries(allStores.map((s) => String(s.storeId)));
     res.send(allStores.map((s) => ({ ...s, ...(summaries[String(s.storeId)] ?? {}) })));
   } catch (e) {
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In admin/get-all-stores");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

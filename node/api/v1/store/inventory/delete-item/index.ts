@@ -2,7 +2,7 @@
 import { Request, Response, Router } from "express";
 import dotenv from "dotenv";
 import { validateAndExecuteHttpApiRoute, storeMember } from "../../../../../layers/core/http";
-import { IN_DEV, S3_STORAGE_BUCKET_NAME } from "../../../../../config";
+import { S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import {
@@ -11,6 +11,7 @@ import {
 } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { removeItemReviewRow } from "../../../../../layers/aws/dynamodb/dynamo-entities/item-review";
 import { isUlid } from "../../../../../layers/core/utils";
+import { log } from "../../../../../layers/core/logger";
 dotenv.config();
 
 /*
@@ -64,7 +65,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     await deleteStoreItem(storeId, storeItemId);
     // L.2: off the admin queue of hidden items, if it was there (its pending check just lapses).
     await removeItemReviewRow(storeId, storeItemId).catch((e) =>
-      console.error(`[item check] couldn't clear review row of ${storeItemId}`, (e as Error)?.message ?? e)
+      log.error({ err: e }, `[item check] couldn't clear review row of ${storeItemId}`)
     );
 
     // Then its images. If this fails the item is already gone; the files are only orphans.
@@ -80,9 +81,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     // Respond to user
     res.send({});
   } catch (e) {
-    if (IN_DEV) {
-      console.error(e);
-    }
+    log.error({ err: e }, "In store/inventory/delete-item");
     res
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

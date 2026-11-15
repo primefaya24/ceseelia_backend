@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import geoip from "geoip-lite";
 
-import { IN_DEV } from "../../../config";
 import { appConstants } from "../../../constants";
 import {
   getPublicStoreInventoryData,
@@ -12,6 +11,7 @@ import {
 import { StoreCurrency, StoreInventoryData } from "../interfaces/store";
 import { getClientIp, resolveCurrencyFromGeo } from "../utils";
 import { CACHE_CONTROL, setCacheControl } from "./cache";
+import { log } from "../logger";
 
 export type PublicStorefront = StoreInventoryData & { storeId: string };
 
@@ -81,7 +81,7 @@ export function sendPublicError(res: Response, e: unknown): void {
     res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ code: "STORE_NOT_LIVE", message: "Store not live yet" });
     return;
   }
-  if (IN_DEV) console.error(e);
+  log.error({ err: e }, "In public storefront");
   res
     .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
     .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });

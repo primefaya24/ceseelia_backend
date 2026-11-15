@@ -2,7 +2,16 @@ import express, { Express } from 'express';
 import cors, { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import { CORS_ORIGINS, IN_DEV, TRUST_PROXY_HOPS } from './config';
-import { domainRouterWithLogger } from './middleware';
+import { domainRouter } from './middleware';
+import { requestLogger } from './layers/core/logger';
+import {
+    apiRateLimit,
+    bodyErrorHandler,
+    finalErrorHandler,
+    jsonBodyParsers,
+    PUBLIC_READ_PATHS,
+    publicReadRateLimit,
+} from './layers/core/http/api-limits';
 import { handleBillingWebhook } from './layers/payments/billing-webhook';
 import { handleConnectWebhook } from './layers/payments/order-webhook';
 
@@ -39,6 +48,9 @@ export function createApp(): Express {
     app.set('trust proxy', TRUST_PROXY_HOPS);
     app.disable('x-powered-by');
 
+    // 9.1: request id + one log line per request; first, so everything after runs in its context.
+    app.use(requestLogger);
+
     // S.14: standard security headers. The API serves JSON to the webapp on another origin, so
     // its responses may be read cross-origin (CORS still decides who may call it).
     app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
@@ -71,10 +83,17 @@ export function createApp(): Express {
         (req, res) => void handleBillingWebhook(req, res)
     );
 
-    app.use(express.json({ limit: "1mb" }));
+    // 9.2: per-IP limits (after CORS so a 429 is readable by the webapp, before body parsing so a
+    // flood isn't parsed), then JSON bodies capped at 100 KB (256 KB for the two big forms).
+    app.use("/api/v1", apiRateLimit());
+    app.use(PUBLIC_READ_PATHS, publicReadRateLimit());
+    jsonBodyParsers(app);
+    app.use(bodyErrorHandler);
 
     // Host-based routing to /api/v1
-    app.use(domainRouterWithLogger);
+    app.use(domainRouter);
+
+    app.use(finalErrorHandler);
 
     return app;
 }
