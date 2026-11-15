@@ -27,8 +27,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >    "Setup"). Then storefront → checkout → paid → Store › Orders → move it on → refund part of
 >    it → refund the rest. (Add the new refund events to the webhook, see 5.5 "Setup".)
 > 2. ~~5.7 lost-order sweeper~~ done 2026-11-14.
-> 3. ~~6.5 emails~~ done 2026-11-14 (HTML). Owner questions are under 6.5 (PDF, tax number,
->    alert recipients, SES sandbox).
+> 3. ~~6.5 emails~~ done 2026-11-14, with a PDF receipt, the store's tax number and alerts to
+>    the contact email (owner decisions under 6.5).
 > 4. WA 6.4 new-order notifications, then WA 6.5 Store Overview (needs BE 1.5 stats).
 > 5. S.14–S.17 before going live.
 > Owner TODOs are unchanged: the AI check in `runSmartStoreValidation`, the Stripe Billing setup
@@ -86,7 +86,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Merchant / customer APIs | ❌ Missing | `/merchant/path` stub (1.5 deferred) |
 | Cart, checkout, orders, payments | ❌ Not started | Stripe webhook returns 501 |
 | Admin stats, join requests, tickets | ❌ Not started | |
-| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging`; SES production access for contact-store; contact-store's in-memory rate limits need a shared store with >1 instance |
+| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging`; SES is in production (checked 2026-11-14); contact-store's in-memory rate limits need a shared store with >1 instance |
 
 **Health check (2026-11-11):** `npm test` 622/622 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 79 warnings · `npm audit --omit=dev` 0 vulnerabilities.
@@ -528,8 +528,8 @@ match the backend and webapp._
     sent. Rate limits in memory (`layers/core/http/rate-limit.ts`): 5/IP/10 min (honeypot hits
     count too), 30/store/hour → 429 `RATE_LIMITED` + `Retry-After`. 409 `CONTACT_UNAVAILABLE` with
     no store email; 500 `SEND_FAILED` if SES fails; the store's 404s. With more than one API
-    instance the limits need a shared store (9.2). SES sandbox: only verified recipients get
-    mail until production access is granted._
+    instance the limits need a shared store (9.2). SES has production access (checked
+    2026-11-14), so any address gets mail._
 
 ---
 
@@ -1066,20 +1066,25 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         its hash is kept, in `storeOrderLinkTokenHashes` (appended atomically, never returned),
         and order-status (6.6) accepts it as well as the checkout token. The fragment never
         reaches a server or its logs; WA saves the token and strips it from the address bar.
+      - **Store** also: the contact email gets the alert too, unless turned off (see c below).
       - Everything is best effort: it never throws and logs what failed. Routes answer first and
         send afterwards. Sender names are header-safe and MIME-encoded when they aren't ASCII.
-      **Open for the owner:**
-      - a. **No PDF invoice yet.** The legacy `layers/core/utils/pdf` is PrimeFaya's (its name
-           and address are hard-coded) and can't be reused. A PDF also needs a raw MIME email.
-           The HTML receipt has every tax line.
-      - b. **The merchant's GST/HST (or ABN / sales tax) number isn't stored**, so receipts can't
-           show it. Canadian receipts over $30 need it for business buyers to claim input tax
-           credits. A field in Settings › Store info would fix that.
-      - c. Alerts go to the members' account emails, not the store's contact email
-           (`storeInfo.emailaddress`, which may be a public inbox). Should they go there too?
-      - d. **SES is still in the sandbox:** dev only delivers to verified addresses, so test
-           shopper emails need a verified inbox. Production access (already a §5 item) is needed
-           before launch.
+      **Owner decisions (2026-11-14), all done:**
+      - a. ✅ **PDF receipt** attached to the receipt email (`layers/notifications/receipt-pdf.ts`,
+           pdfkit; sent as a raw MIME email by `sendEmailWithAttachments`). It shows the seller
+           (the store, its email, pickup address and tax number), "Billed to", "Deliver to" or
+           pickup, the lines with savings, the totals and tax lines, and the note. It never
+           shows the platform fee. Built-in Helvetica only prints Western European text, so
+           other characters print as "?" (a Unicode font can come later). If the PDF fails,
+           the email still goes, without it.
+      - b. ✅ **Tax registration number:** `storeInfo.taxNumber` (optional; letters, digits,
+           spaces, dots, dashes; ≤ 30), in Settings › Store info, printed on the receipt email
+           and PDF as "GST/HST no." (CAD), "ABN" (AUD) or "Tax ID" (USD).
+      - c. ✅ **New-order alerts** go to every member **and** the store's contact email, each
+           address once. Settings › Store info has a switch, `storeInfo.emailOrderAlerts`
+           (missing = on, never in public responses), that turns the contact-email copy off.
+      - d. ✅ **SES is in production** (checked 2026-11-14: `ProductionAccessEnabled`, 50,000 a
+           day, `ceseelia.com` verified with DKIM), so any address gets mail.
 - [x] 6.6 `GET /customer/order-status/:orderId` (done 2026-11-13, early, for WA 5.2's return
       page): the status token in header `X-Order-Token` (not the URL); a wrong token = unknown
       order = 404 `ORDER_NOT_FOUND`; shopper view only (no Stripe ids, fee, commission, hash);
@@ -1137,6 +1142,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-14 | 6.5 owner decisions done: PDF receipt attached (pdfkit, raw MIME `sendEmailWithAttachments`), `storeInfo.taxNumber` on receipts, new-order alerts also to the store's contact email (`storeInfo.emailOrderAlerts`, default on, never public). SES checked: production access on. |
 | 2026-11-14 | 6.5 done: order emails (receipt, new-order alert to members, ready / on its way, refunds, review decisions) in `layers/notifications`; per-email order links (`storeOrderLinkTokenHashes`, accepted by order-status); header-safe sender names. Owner questions under 6.5. |
 | 2026-11-14 | 5.7 done: lost-order sweeper (`sweepLostOrders`, every 10 min) over the new `APP_PENDING_ORDER` rows written by create-order; asks Stripe and marks PAID (missed webhook) or CANCELLED, keeps delayed payments; `scripts/backfill-pending-orders.mjs` (dev: nothing to list). |
 | 2026-11-14 | 6.4b done: refunds synced from Stripe's live list on every refund event and after our route (`syncOrderRefunds`, `orderRefundState`); failed / canceled refunds stop counting, REFUNDED goes back to the last step, `storeOrderFailedRefunds`. New Connect events: `charge.refund.updated`, `refund.created/updated/failed`. Owner: only store ADMINs refund. |

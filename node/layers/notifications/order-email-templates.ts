@@ -13,6 +13,8 @@ export interface EmailStore {
   /** The store's contact email (Reply-To for shopper emails), or "". */
   storeEmail: string;
   pickupAddress: string;
+  /** The store's tax registration number for receipts, or "". */
+  taxNumber?: string;
 }
 
 export interface RenderedEmail {
@@ -21,6 +23,13 @@ export interface RenderedEmail {
 }
 
 const LOCALES: Record<string, string> = { CAD: "en-CA", USD: "en-US", AUD: "en-AU" };
+
+/* What a tax registration number is called where the store sells (by the order's currency). */
+export function taxNumberLabel(currency: string): string {
+  if (currency === "CAD") return "GST/HST no.";
+  if (currency === "AUD") return "ABN";
+  return "Tax ID";
+}
 
 export function money(minor: number, currency: string): string {
   try {
@@ -93,8 +102,9 @@ export function receiptEmail(o: StoreOrder, store: EmailStore, orderUrl: string)
         linesTable(o, true),
         fulfilment(o, store),
         o.storeOrderNote ? p(`<strong>Your note:</strong> ${e(o.storeOrderNote)}`) : "",
+        store.taxNumber ? p(`<span style="color:#6b7280;font-size:13px">${e(store.storeName)} ${taxNumberLabel(o.storeOrderCurrency)} ${e(store.taxNumber)}</span>`) : "",
         button(orderUrl, "View your order"),
-        p(`<span style="color:#6b7280;font-size:13px">Keep this email: the link shows your order on any device. Don't share it.</span>`),
+        p(`<span style="color:#6b7280;font-size:13px">Your receipt is attached as a PDF. Keep this email: the link shows your order on any device. Don't share it.</span>`),
       ].join(""),
       shopperFooter(store)
     ),

@@ -1,6 +1,7 @@
 import { WEBAPP_URL } from "../../config";
 import { StoreOrder, StoreOrderStatus } from "../core/interfaces/store";
-import { sendEmail } from "../aws/ses";
+import { sendEmail, sendEmailWithAttachments } from "../aws/ses";
+import { receiptPdf } from "./receipt-pdf";
 import { addOrderLinkTokenHash, getOrderById, newStatusToken } from "../aws/dynamodb/dynamo-entities/order";
 import { getStoreOverviewRow, listStoreMembers } from "../aws/dynamodb/dynamo-entities/membership";
 import { getPublicStoreSettings } from "../aws/dynamodb/dynamo-entities/store";
@@ -20,7 +21,8 @@ import {
  * never throws (an email must never fail a webhook, a status step or a refund) and logs what it
  * couldn't send. Callers that answer an HTTP request don't wait for it (`void notify…`).
  *
- *   paid (webhook / sweeper, first time only) → shopper receipt + new-order alert to every member
+ *   paid (webhook / sweeper, first time only) → shopper receipt (with a PDF) + new-order alert
+ *     to every member and the store's contact email (unless Settings turned that off)
  *   status step to READY (pickup) / SHIPPED (delivery) → shopper
  *   refund recorded (ours or the dashboard's, `syncOrderRefunds`) → shopper
  *   review decision (P.8) → the store's ADMIN members
@@ -32,20 +34,38 @@ import {
 
 const base = () => WEBAPP_URL.replace(/\/$/, "");
 
-async function storeFor(storeId: string): Promise<EmailStore & { storeSlug: string }> {
+interface StoreForEmail extends EmailStore {
+  storeSlug: string;
+  taxNumber: string;
+  /** Send new-order alerts to `storeEmail` too (Settings, default on). */
+  emailOrderAlerts: boolean;
+}
+
+async function storeFor(storeId: string): Promise<StoreForEmail> {
   const overview = await getStoreOverviewRow(storeId).catch(() => null);
   let storeEmail = "";
   let pickupAddress = "";
+  let taxNumber = "";
+  let emailOrderAlerts = true;
   let storeName = String(overview?.storeName ?? "");
   try {
     const settings = await getPublicStoreSettings(storeId);
     storeEmail = settings.storeInfo?.emailaddress?.trim() ?? "";
     pickupAddress = settings.general?.pickupAddress?.trim() ?? "";
+    taxNumber = settings.storeInfo?.taxNumber?.trim() ?? "";
+    emailOrderAlerts = settings.storeInfo?.emailOrderAlerts !== false;
     storeName = settings.storeInfo?.storeName?.trim() || storeName;
   } catch {
     // A suspended or deleted store: the name from the overview is enough.
   }
-  return { storeName: storeName || "Your store", storeEmail, pickupAddress, storeSlug: String(overview?.storeSlug ?? "") };
+  return {
+    storeName: storeName || "Your store",
+    storeEmail,
+    pickupAddress,
+    taxNumber,
+    emailOrderAlerts,
+    storeSlug: String(overview?.storeSlug ?? ""),
+  };
 }
 
 /* A fresh link to the shopper's order page; its token's hash is saved on the order first. */
@@ -67,6 +87,27 @@ function logged(what: string, orderId: string) {
   return (e: unknown) => console.error(`[order emails] ${what} for order ${orderId} failed`, (e as Error)?.message ?? e);
 }
 
+/* The receipt with its PDF; if the PDF can't be made, the email still goes, without it. */
+async function sendReceipt(order: StoreOrder, store: StoreForEmail, link: string): Promise<boolean> {
+  const email = receiptEmail(order, store, link);
+  let pdf: Buffer | null = null;
+  try {
+    pdf = await receiptPdf(order, store);
+  } catch (e) {
+    console.error(`[order emails] receipt PDF for order ${order.storeOrderId} failed`, (e as Error)?.message ?? e);
+  }
+  if (!pdf) return send(order.storeOrderCustomer.email, shopperFrom(store), email, store.storeEmail);
+  const sent = await sendEmailWithAttachments(
+    email.subject,
+    shopperFrom(store),
+    order.storeOrderCustomer.email,
+    email.html,
+    [{ filename: `receipt-${order.storeOrderCode}.pdf`, contentType: "application/pdf", content: pdf }],
+    store.storeEmail || undefined
+  );
+  return !!sent;
+}
+
 /* After an order is first marked paid: the shopper's receipt and the store's alert. */
 export async function notifyOrderPaid(orderId: string): Promise<void> {
   try {
@@ -74,11 +115,13 @@ export async function notifyOrderPaid(orderId: string): Promise<void> {
     if (!order) return;
     const store = await storeFor(order.storeId);
     const link = await orderLink(order, store.storeSlug);
-    const receipt = send(order.storeOrderCustomer.email, shopperFrom(store), receiptEmail(order, store, link), store.storeEmail);
+    const receipt = sendReceipt(order, store, link);
 
+    // Every member, plus the store's contact email unless Settings turned that off; each once.
     const members = await listStoreMembers(order.storeId);
     const alert = newOrderEmail(order, store, `${base()}/store/orders/${order.storeId}?order=${order.storeOrderId}`);
-    const alerts = [...new Set(members.map((m) => m.email.trim().toLowerCase()).filter(Boolean))].map((to) =>
+    const recipients = [...members.map((m) => m.email), ...(store.emailOrderAlerts ? [store.storeEmail] : [])];
+    const alerts = [...new Set(recipients.map((a) => a.trim().toLowerCase()).filter(Boolean))].map((to) =>
       send(to, "Ceseelia", alert)
     );
     const results = await Promise.all([receipt, ...alerts]);

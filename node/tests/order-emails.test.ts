@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 vi.mock("../layers/aws/ses", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/ses")>()),
   sendEmail: vi.fn(async () => ({ MessageId: "m" })),
+  sendEmailWithAttachments: vi.fn(async () => ({ MessageId: "r" })),
 }));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/order", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/order")>()),
@@ -19,7 +20,8 @@ vi.mock("../layers/aws/dynamodb/dynamo-entities/store", async (orig) => ({
   getPublicStoreSettings: vi.fn(),
 }));
 
-import { senderName, sendEmail } from "../layers/aws/ses";
+import { buildRawEmail, senderName, sendEmail, sendEmailWithAttachments } from "../layers/aws/ses";
+import { pdfText, receiptPdf } from "../layers/notifications/receipt-pdf";
 import { addOrderLinkTokenHash, getOrderById, hashStatusToken } from "../layers/aws/dynamodb/dynamo-entities/order";
 import { listStoreMembers } from "../layers/aws/dynamodb/dynamo-entities/membership";
 import { getPublicStoreSettings } from "../layers/aws/dynamodb/dynamo-entities/store";
@@ -111,10 +113,11 @@ describe("order email templates (6.5)", () => {
 describe("sending (6.5)", () => {
   beforeEach(() => {
     vi.mocked(sendEmail).mockClear().mockResolvedValue({ MessageId: "m", $metadata: {} });
+    vi.mocked(sendEmailWithAttachments).mockClear().mockResolvedValue({ MessageId: "r" });
     vi.mocked(addOrderLinkTokenHash).mockClear();
     vi.mocked(getOrderById).mockReset().mockResolvedValue(order());
     vi.mocked(getPublicStoreSettings).mockReset().mockResolvedValue({
-      storeInfo: { storeName: "Northern Hoop", emailaddress: "shop@example.com" },
+      storeInfo: { storeName: "Northern Hoop", emailaddress: "shop@example.com", taxNumber: "123456789 RT0001" },
       general: { pickupAddress: "1 Main St" },
     } as unknown as StoreSettings);
     vi.mocked(listStoreMembers).mockReset().mockResolvedValue([
@@ -125,19 +128,32 @@ describe("sending (6.5)", () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  it("paid: a receipt from the store (Reply-To the store) with a fresh link, and one alert per member email", async () => {
+  it("paid: a receipt with its PDF from the store (Reply-To the store) and a fresh link", async () => {
     await notifyOrderPaid(ORDER_ID);
-    const calls = vi.mocked(sendEmail).mock.calls;
-    const receipt = calls.find((c) => c[2] === "ann@example.com")!;
-    expect(receipt[1]).toBe("Northern Hoop via Ceseelia");
-    expect(receipt[5]).toBe("shop@example.com");
-    const link = /order\/[0-9A-Z]+#t=([A-Za-z0-9_-]+)/.exec(receipt[3])![1];
+    const [subject, fromName, to, html, attachments, replyTo] = vi.mocked(sendEmailWithAttachments).mock.calls[0];
+    expect([subject, fromName, to, replyTo]).toEqual(["Your order K7Q2XM from Northern Hoop", "Northern Hoop via Ceseelia", "ann@example.com", "shop@example.com"]);
+    expect(attachments[0]).toMatchObject({ filename: "receipt-K7Q2XM.pdf", contentType: "application/pdf" });
+    expect(attachments[0].content.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(html).toContain("GST/HST no. 123456789 RT0001");
+    const link = /order\/[0-9A-Z]+#t=([A-Za-z0-9_-]+)/.exec(html)![1];
     expect(vi.mocked(addOrderLinkTokenHash)).toHaveBeenCalledWith(expect.objectContaining({ storeOrderId: ORDER_ID }), hashStatusToken(link));
-    expect(receipt[3]).toContain(`/s/northern-hoop/order/${ORDER_ID}#t=`);
+    expect(html).toContain(`/s/northern-hoop/order/${ORDER_ID}#t=`);
+  });
 
-    const alerts = calls.filter((c) => c[2] !== "ann@example.com").map((c) => c[2]).sort();
+  it("paid: one alert per member and the store's contact email, each address once; the switch turns the store email off", async () => {
+    await notifyOrderPaid(ORDER_ID);
+    let alerts = vi.mocked(sendEmail).mock.calls.map((c) => c[2]).sort();
+    expect(alerts).toEqual(["owner@example.com", "shop@example.com", "staff@example.com"]);
+    expect(vi.mocked(sendEmail).mock.calls.find((c) => c[2] === "staff@example.com")![3]).toContain(`/store/orders/${STORE}?order=${ORDER_ID}`);
+
+    vi.mocked(sendEmail).mockClear();
+    vi.mocked(getPublicStoreSettings).mockResolvedValue({
+      storeInfo: { storeName: "Northern Hoop", emailaddress: "shop@example.com", emailOrderAlerts: false },
+      general: { pickupAddress: "" },
+    } as unknown as StoreSettings);
+    await notifyOrderPaid(ORDER_ID);
+    alerts = vi.mocked(sendEmail).mock.calls.map((c) => c[2]).sort();
     expect(alerts).toEqual(["owner@example.com", "staff@example.com"]);
-    expect(calls.find((c) => c[2] === "staff@example.com")![3]).toContain(`/store/orders/${STORE}?order=${ORDER_ID}`);
   });
 
   it("status: READY for a pickup sends; PREPARING sends nothing", async () => {
@@ -167,5 +183,33 @@ describe("sending (6.5)", () => {
     vi.mocked(addOrderLinkTokenHash).mockRejectedValueOnce(new Error("ddb down"));
     await expect(notifyOrderStatus(order(), "READY")).resolves.toBeUndefined();
     expect(console.error).toHaveBeenCalled();
+  });
+});
+
+describe("receipt PDF and raw email (6.5)", () => {
+  it("makes a PDF; text it can't print becomes ?", async () => {
+    const pdf = await receiptPdf(order({ storeOrderNote: "thanks 🙂" }), { storeName: "Café Lune", storeEmail: "", pickupAddress: "", taxNumber: "" });
+    expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
+    expect(pdfText("Café – “ok” 🙂 漢")).toBe("Café – “ok” ? ?");
+  });
+
+  it("raw email: headers can't be injected; HTML and attachment are base64 parts", () => {
+    const raw = buildRawEmail({
+      subject: "Your order\r\nBcc: evil@x.com",
+      fromName: "Café Lune via Ceseelia",
+      fromAddress: "support@ceseelia.com",
+      to: "ann@example.com\r\nBcc: evil@x.com",
+      replyTo: "shop@example.com",
+      html: "<p>Hi</p>",
+      attachments: [{ filename: "receipt-K7.pdf", contentType: "application/pdf", content: Buffer.from("%PDF-1") }],
+      boundary: "B",
+    });
+    const headers = raw.split("\r\n\r\n")[0].split("\r\n");
+    expect(headers.some((h) => h.startsWith("Bcc"))).toBe(false);
+    expect(headers).toContain(`From: =?UTF-8?B?${Buffer.from("Café Lune via Ceseelia").toString("base64")}?= <support@ceseelia.com>`);
+    expect(headers).toContain("Reply-To: shop@example.com");
+    expect(raw).toContain('Content-Disposition: attachment; filename="receipt-K7.pdf"');
+    expect(raw).toContain(Buffer.from("<p>Hi</p>").toString("base64"));
+    expect(raw.endsWith("--B--\r\n")).toBe(true);
   });
 });

@@ -85,6 +85,13 @@ describe("store email on the storefront (showEmail)", () => {
     return { ...base, storeInfo: { ...base.storeInfo, emailaddress: "hi@hoop.test", ...(showEmail === undefined ? {} : { showEmail }) } };
   };
 
+  it("the order-alerts switch (6.5) never reaches shoppers; the tax number does (it's on receipts)", () => {
+    const base = liveStoreSettings();
+    const info = toPublicSettings({ ...base, storeInfo: { ...base.storeInfo, emailOrderAlerts: false, taxNumber: "123456789 RT0001" } }).storeInfo;
+    expect(info).not.toHaveProperty("emailOrderAlerts");
+    expect(info.taxNumber).toBe("123456789 RT0001");
+  });
+
   it("is shown by default (settings saved before the toggle) and when on", () => {
     expect(toPublicSettings(withEmail()).storeInfo).toMatchObject({ emailaddress: "hi@hoop.test", contactFormAvailable: true });
     expect(toPublicSettings(withEmail(true)).storeInfo.emailaddress).toBe("hi@hoop.test");

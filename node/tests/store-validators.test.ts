@@ -91,6 +91,20 @@ describe("showEmail / showPhone", () => {
   });
 });
 
+describe("taxNumber / emailOrderAlerts (6.5)", () => {
+  const base = initStoreSettings();
+  const info = (patch: object) => ({ ...base, storeInfo: { ...base.storeInfo, ...patch } }) as StoreSettings;
+  it("a tax number is optional: letters, digits, spaces, dots, dashes, at most 30", () => {
+    for (const ok of ["", "123456789 RT0001", "51 824 753 556", "12-3456789", "DE.123"]) expect(settingsOk(info({ taxNumber: ok }))).toBe(true);
+    for (const bad of ["<b>1</b>", "1".repeat(MAX_LENGTH.taxNumber + 1), "123\n456"]) expect(settingsOk(info({ taxNumber: bad }))).toBe(false);
+    expect(isStoreSettingsPure(info({ taxNumber: 123 }))).toBe(false);
+  });
+  it("emailOrderAlerts is optional and boolean", () => {
+    expect(settingsOk(info({ emailOrderAlerts: false }))).toBe(true);
+    expect(isStoreSettingsPure(info({ emailOrderAlerts: "yes" }))).toBe(false);
+  });
+});
+
 describe("a. max lengths", () => {
   it.each<[string, (s: any) => void]>([
     ["store name", (s) => (s.storeInfo.storeName = x(MAX_LENGTH.storeName + 1))],

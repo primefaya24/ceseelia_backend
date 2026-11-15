@@ -106,6 +106,17 @@ export interface StoreSettings {
     /* Show the phone number on the storefront; same rules as showEmail (missing = shown). */
     showPhone?: boolean;
     /*
+     * 6.5: the store's tax registration number (GST/HST in Canada, ABN in Australia, a sales tax
+     * id in the US), printed on receipts. Optional; missing = none. Letters, digits, spaces,
+     * dots and dashes, at most MAX_LENGTH.taxNumber.
+     */
+    taxNumber?: string;
+    /*
+     * 6.5: also send new-order alerts to `emailaddress` (members always get them). Missing = on.
+     * Never in public responses.
+     */
+    emailOrderAlerts?: boolean;
+    /*
      * Public responses only (set by toPublicInventory, never saved): the store has an email, so
      * the Contact us form can be offered even when the address itself is hidden.
      */
@@ -602,6 +613,11 @@ const isFiniteNumber = (v: unknown): v is number =>
 const allStrings = (obj: Record<string, any>, keys: string[]): boolean =>
   keys.every((k) => typeof obj[k] === "string");
 
+/* 6.5: a tax registration number as merchants write it ("123456789 RT0001", "51 824 753 556"). */
+export const TAX_NUMBER_PATTERN = /^[A-Za-z0-9 .-]*$/;
+const isTaxNumberOrEmpty = (v: unknown): boolean =>
+  v === undefined || (typeof v === "string" && v.length <= MAX_LENGTH.taxNumber && TAX_NUMBER_PATTERN.test(v));
+
 const STORE_INFO_STRING_KEYS = ["storeName", "slogan", "logoUri", "phoneNumber", "emailaddress"];
 const SOCIAL_MEDIA_KEYS = [
   "websiteLink", "facebook", "instagram", "tiktok", "twitter",
@@ -618,9 +634,10 @@ export function isStoreSettingsPure(storeSettings: StoreSettings): boolean {
   if (typeof s.templateId !== "string" || typeof s.themeId !== "string") return false;
 
   if (!isObject(s.storeInfo) || !allStrings(s.storeInfo, STORE_INFO_STRING_KEYS)) return false;
-  for (const key of ["showEmail", "showPhone"]) {
+  for (const key of ["showEmail", "showPhone", "emailOrderAlerts"]) {
     if (s.storeInfo[key] !== undefined && typeof s.storeInfo[key] !== "boolean") return false;
   }
+  if (s.storeInfo.taxNumber !== undefined && typeof s.storeInfo.taxNumber !== "string") return false;
 
   const r = s.purchaseRewards;
   if (
@@ -681,7 +698,8 @@ export function isStoreSettingsValid(storeSettings: StoreSettings, storeId: stri
     !isEmailOrEmpty(info.emailaddress) ||
     !isMaxLength(info.phoneNumber, MAX_LENGTH.phone) ||
     !isPhoneOrEmpty(info.phoneNumber) ||
-    !isImageKeyOrEmpty(info.logoUri, storeImageFolder.logo(storeId))
+    !isImageKeyOrEmpty(info.logoUri, storeImageFolder.logo(storeId)) ||
+    !isTaxNumberOrEmpty(info.taxNumber)
   ) return false;
 
   // Rewards

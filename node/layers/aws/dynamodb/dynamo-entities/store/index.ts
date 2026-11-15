@@ -842,7 +842,7 @@ export function comingSoonSettings(settings: StoreSettings): StoreSettings {
 export function toPublicSettings(settings: StoreSettings): StoreSettings {
   const info = settings.storeInfo ?? initStoreSettings().storeInfo;
   const email = (info.emailaddress ?? "").trim();
-  const { contactFormAvailable: _ignored, ...rest } = info;
+  const { contactFormAvailable: _ignored, emailOrderAlerts: _alerts, ...rest } = info;
   const { lifecycle, subscription: _s, billingCheckout: _c, ...others } = settings;
   return {
     ...others,

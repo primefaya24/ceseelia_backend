@@ -21,6 +21,8 @@ export const MAX_LENGTH = {
   promoRunnerText: 150,
   email: 254,
   phone: 20,
+  /** 6.5: GST/HST, ABN or sales tax id on receipts. */
+  taxNumber: 30,
   url: 300,
   imageUri: 200,
   templateId: 40,
