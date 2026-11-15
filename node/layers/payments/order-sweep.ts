@@ -8,6 +8,7 @@ import {
 } from "../aws/dynamodb/dynamo-entities/order";
 import { ORDER_CHECKOUT_LIFETIME_S } from "./order-checkout";
 import { getStripe } from "./stripe";
+import { notifyOrderPaid } from "../notifications/order-emails";
 
 /*
  * The lost-order sweeper (progress.md 5.7), every SERVER_WATCH_CHECK_FOR_LOST_ORDERS_INTERVAL
@@ -82,14 +83,14 @@ async function settle(orderId: string, stripe: Stripe): Promise<Outcome> {
   const paymentIntentId = idOf(session.payment_intent);
   if (session.payment_status === "paid") {
     console.warn(`[order sweep] order ${orderId} was paid but its webhook never came; marking it paid`);
-    await markOrderPaid(order, paymentIntentId);
+    if ((await markOrderPaid(order, paymentIntentId)) !== "ALREADY") await notifyOrderPaid(orderId);
     return "paid";
   }
   if (!paymentIntentId) return "kept";
   const pi = await stripe.paymentIntents.retrieve(paymentIntentId, {}, opts);
   if (pi.status === "succeeded") {
     console.warn(`[order sweep] order ${orderId}: delayed payment succeeded without a webhook; marking it paid`);
-    await markOrderPaid(order, paymentIntentId);
+    if ((await markOrderPaid(order, paymentIntentId)) !== "ALREADY") await notifyOrderPaid(orderId);
     return "paid";
   }
   if (pi.status === "canceled" || pi.status === "requires_payment_method") {

@@ -11,6 +11,12 @@ import {
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 
+vi.mock("../layers/notifications/order-emails", () => ({
+  notifyOrderPaid: vi.fn(async () => {}),
+  notifyOrderStatus: vi.fn(async () => {}),
+  notifyOrderRefunded: vi.fn(async () => {}),
+  notifyReviewDecision: vi.fn(async () => {}),
+}));
 vi.mock("../layers/aws/cognito", () => ({ verifyCognitoAccessToken: vi.fn() }));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/membership")>()),
@@ -21,6 +27,7 @@ import { lifecycleAfterReview, lifecycleWithAdminPlan } from "../layers/core/rev
 import { lifecycleAfter } from "../layers/core/billing";
 import { normalizeStoreLifecycle } from "../layers/core/interfaces/store";
 import { createApp } from "../app";
+import { notifyOrderPaid, notifyOrderRefunded, notifyOrderStatus, notifyReviewDecision } from "../layers/notifications/order-emails";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const app = createApp();
@@ -46,6 +53,7 @@ const inReview = (requestedPlan = "SPARK", extra: object = {}) =>
 const tx = () => ddb.commandCalls(TransactWriteCommand)[0]?.args[0].input.TransactItems ?? [];
 
 beforeEach(() => {
+  for (const fn of [notifyOrderPaid, notifyOrderStatus, notifyOrderRefunded, notifyReviewDecision]) vi.mocked(fn).mockClear();
   ddb.reset();
   vi.clearAllMocks();
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -208,6 +216,7 @@ describe("POST /admin/review-store (P.8)", () => {
       createdByUserId: "OWNER",
     });
     expect(queue.Delete!.Key).toEqual({ pk: "APP_REVIEW", sk: `STORE#${STORE}` });
+    expect(notifyReviewDecision).toHaveBeenCalledWith(STORE, true, "");
   });
 
   it("reject: DRAFT with the reason; a reason is required", async () => {

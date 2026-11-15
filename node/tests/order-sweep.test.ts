@@ -14,6 +14,12 @@ const stripe = {
   checkout: { sessions: { retrieve: vi.fn(), expire: vi.fn() } },
   paymentIntents: { retrieve: vi.fn() },
 };
+vi.mock("../layers/notifications/order-emails", () => ({
+  notifyOrderPaid: vi.fn(async () => {}),
+  notifyOrderStatus: vi.fn(async () => {}),
+  notifyOrderRefunded: vi.fn(async () => {}),
+  notifyReviewDecision: vi.fn(async () => {}),
+}));
 vi.mock("../layers/payments/stripe", async (orig) => ({
   ...(await orig<typeof import("../layers/payments/stripe")>()),
   getStripe: vi.fn(async () => stripe),
@@ -23,6 +29,7 @@ import { sweepLostOrders, SWEEP_MARGIN_MS } from "../layers/payments/order-sweep
 import { ORDER_CHECKOUT_LIFETIME_S } from "../layers/payments/order-checkout";
 import { getStripe } from "../layers/payments/stripe";
 import { StoreOrder } from "../layers/core/interfaces/store";
+import { notifyOrderPaid, notifyOrderRefunded, notifyOrderStatus, notifyReviewDecision } from "../layers/notifications/order-emails";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const STORE = "01JBZ0000000000000000000AA";
@@ -63,6 +70,7 @@ const cancelCall = () => ddb.commandCalls(UpdateCommand).map((c) => c.args[0].in
 const deleted = () => ddb.commandCalls(DeleteCommand).map((c) => c.args[0].input.Key);
 
 beforeEach(() => {
+  for (const fn of [notifyOrderPaid, notifyOrderStatus, notifyOrderRefunded, notifyReviewDecision]) vi.mocked(fn).mockClear();
   ddb.reset();
   vi.spyOn(console, "warn").mockImplementation(() => {});
   vi.spyOn(console, "error").mockImplementation(() => {});
@@ -125,6 +133,7 @@ describe("sweepLostOrders (5.7)", () => {
     const items = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
     expect(items[0].Update!.ExpressionAttributeValues).toMatchObject({ ":paid": "PAID", ":pi": "pi_1" });
     expect(deleted()).toHaveLength(1);
+    expect(notifyOrderPaid).toHaveBeenCalledExactlyOnceWith(ORDER_ID);
   });
 
   it.each([

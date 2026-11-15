@@ -2,6 +2,7 @@ import { StoreOrder } from "../core/interfaces/store";
 import { LiveRefund, orderRefundState, sameRefundState } from "../core/refunds";
 import { getOrderById, writeOrderRefundState } from "../aws/dynamodb/dynamo-entities/order";
 import { getStripe } from "./stripe";
+import { notifyOrderRefunded } from "../notifications/order-emails";
 
 /*
  * Sync an order's refunds from Stripe (6.4b): lists the payment's refunds on the store's
@@ -35,7 +36,12 @@ export async function syncOrderRefunds(orderId: string): Promise<StoreOrder | nu
     if (sameRefundState(order, state)) return order;
     const now = Date.now();
     if (await writeOrderRefundState(order, state, now)) {
-      return { ...order, ...state, storeOrderUpdatedAt: Math.max(now, order.storeOrderUpdatedAt + 1) };
+      const synced = { ...order, ...state, storeOrderUpdatedAt: Math.max(now, order.storeOrderUpdatedAt + 1) };
+      // Only the write that saw the total go up tells the shopper (6.5), so one email per refund
+      // whether it came from our route or the dashboard. A failed refund sends nothing.
+      const more = state.storeOrderRefundedMinor - (order.storeOrderRefundedMinor ?? 0);
+      if (more > 0) await notifyOrderRefunded(synced, more);
+      return synced;
     }
   }
   throw new Error(`Order ${orderId}: refunds kept changing while syncing`);

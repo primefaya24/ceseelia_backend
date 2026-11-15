@@ -75,7 +75,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   }
   try {
     const order = await getOrderById(String(req.params.orderId));
-    if (!order || !sameHash(order.storeOrderStatusTokenHash ?? "", hashStatusToken(req.header("x-order-token")!))) {
+    const given = hashStatusToken(req.header("x-order-token")!);
+    // The checkout's token, or one from an order email (6.5).
+    const known = order ? [order.storeOrderStatusTokenHash ?? "", ...(order.storeOrderLinkTokenHashes ?? [])] : [];
+    if (!order || !known.some((h) => sameHash(h, given))) {
       res.status(appConstants.HTTP_STATUS_CODE_NOT_FOUND).send({ code: "ORDER_NOT_FOUND", message: "Order not found" });
       return;
     }

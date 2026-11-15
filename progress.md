@@ -20,15 +20,15 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 ## 1. Where things stand
 
 > **▶ Start the next session here (2026-11-14).** Stages S, 0–4 and P are done, and so are
-> Stage 5 checkout (5.1–5.6) and Stage 6 order management (6.1–6.4, 6.6) in both repos. 6.4
+> Stage 5 checkout (5.1–5.7) and Stage 6 order management and emails (6.1–6.6) in both repos. 6.4
 > (refunds, 2026-11-14) is `POST /store/orders/refund`, for store ADMINs only. 6.4b syncs
 > refunds from Stripe, so failed refunds stop counting and are shown. **Next, in order:**
 > 1. **Owner: the first real test order** in Stripe test mode. Add the Connect webhook first (5.5
 >    "Setup"). Then storefront → checkout → paid → Store › Orders → move it on → refund part of
 >    it → refund the rest. (Add the new refund events to the webhook, see 5.5 "Setup".)
 > 2. ~~5.7 lost-order sweeper~~ done 2026-11-14.
-> 3. **6.5 emails** (SES + PDF): the shopper's receipt, the merchant's new-order alert,
->    status-change emails, and the merchant's review-decision emails.
+> 3. ~~6.5 emails~~ done 2026-11-14 (HTML). Owner questions are under 6.5 (PDF, tax number,
+>    alert recipients, SES sandbox).
 > 4. WA 6.4 new-order notifications, then WA 6.5 Store Overview (needs BE 1.5 stats).
 > 5. S.14–S.17 before going live.
 > Owner TODOs are unchanged: the AI check in `runSmartStoreValidation`, the Stripe Billing setup
@@ -1046,12 +1046,45 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       The write is conditional on `storeOrderUpdatedAt` (it retries up to 3 times), and the
       event's own snapshot is never trusted, so late or out-of-order events are harmless. This
       replaced `recordOrderRefund` and its "only goes up" rule.
-- [ ] 6.5 Emails (SES + pdf invoice): customer confirmation/receipt, merchant new-order alert,
-      status-change emails.
+- [x] 6.5 Emails (done 2026-11-14, HTML only; `layers/notifications/`, with the templates in
+      `order-email-templates.ts` as pure functions and the sending in `order-emails.ts`).
+      - **Shopper**, "<Store> via Ceseelia", with the store's email as Reply-To:
+        - a receipt when the order is first paid (webhook or 5.7 sweeper; a repeat event,
+          `ALREADY`, sends nothing). It has the lines, saving, delivery, each tax line and the
+          total, never the platform fee.
+        - "ready for pickup" (pickup → READY) and "on its way" (delivery → SHIPPED); other steps
+          send nothing.
+        - an email for each rise in the refunded total, whether from our route or the dashboard
+          (only the `syncOrderRefunds` write that saw the rise sends it). Failed refunds send
+          nothing.
+      - **Store:** a new-order alert to every member's account email (ADMIN and MERCHANT, each
+        address once), linking to `/store/orders/<storeId>?order=<id>`, with the out-of-stock
+        flag.
+      - **Review decision** (P.8): an approval or rejection (with the admin's message) to the
+        store's ADMIN members.
+      - **Order links:** each shopper email has its own token, `…/order/<id>#t=<token>`. Only
+        its hash is kept, in `storeOrderLinkTokenHashes` (appended atomically, never returned),
+        and order-status (6.6) accepts it as well as the checkout token. The fragment never
+        reaches a server or its logs; WA saves the token and strips it from the address bar.
+      - Everything is best effort: it never throws and logs what failed. Routes answer first and
+        send afterwards. Sender names are header-safe and MIME-encoded when they aren't ASCII.
+      **Open for the owner:**
+      - a. **No PDF invoice yet.** The legacy `layers/core/utils/pdf` is PrimeFaya's (its name
+           and address are hard-coded) and can't be reused. A PDF also needs a raw MIME email.
+           The HTML receipt has every tax line.
+      - b. **The merchant's GST/HST (or ABN / sales tax) number isn't stored**, so receipts can't
+           show it. Canadian receipts over $30 need it for business buyers to claim input tax
+           credits. A field in Settings › Store info would fix that.
+      - c. Alerts go to the members' account emails, not the store's contact email
+           (`storeInfo.emailaddress`, which may be a public inbox). Should they go there too?
+      - d. **SES is still in the sandbox:** dev only delivers to verified addresses, so test
+           shopper emails need a verified inbox. Production access (already a §5 item) is needed
+           before launch.
 - [x] 6.6 `GET /customer/order-status/:orderId` (done 2026-11-13, early, for WA 5.2's return
       page): the status token in header `X-Order-Token` (not the URL); a wrong token = unknown
       order = 404 `ORDER_NOT_FOUND`; shopper view only (no Stripe ids, fee, commission, hash);
-      60/IP/min. The token doesn't expire (it's the shopper's receipt link); revisit with 6.5.
+      60/IP/min. Tokens don't expire (they're the shopper's receipt links); 6.5 adds one token per
+      order email (`storeOrderLinkTokenHashes`).
 - [ ] 6.7 Optional FCM push to the merchant. (WA 6.4)
 
 ---
@@ -1104,6 +1137,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-14 | 6.5 done: order emails (receipt, new-order alert to members, ready / on its way, refunds, review decisions) in `layers/notifications`; per-email order links (`storeOrderLinkTokenHashes`, accepted by order-status); header-safe sender names. Owner questions under 6.5. |
 | 2026-11-14 | 5.7 done: lost-order sweeper (`sweepLostOrders`, every 10 min) over the new `APP_PENDING_ORDER` rows written by create-order; asks Stripe and marks PAID (missed webhook) or CANCELLED, keeps delayed payments; `scripts/backfill-pending-orders.mjs` (dev: nothing to list). |
 | 2026-11-14 | 6.4b done: refunds synced from Stripe's live list on every refund event and after our route (`syncOrderRefunds`, `orderRefundState`); failed / canceled refunds stop counting, REFUNDED goes back to the last step, `storeOrderFailedRefunds`. New Connect events: `charge.refund.updated`, `refund.created/updated/failed`. Owner: only store ADMINs refund. |
 | 2026-11-14 | 6.4 owner decisions: keep the platform fee on refunds; no automatic restock (WA reminds the merchant to adjust stock in Inventory). |

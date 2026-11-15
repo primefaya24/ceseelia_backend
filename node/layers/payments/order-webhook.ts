@@ -12,6 +12,7 @@ import {
 import { updateStorePaymentsStatus } from "../aws/dynamodb/dynamo-entities/store";
 import { getStripe, getStripeSecrets, PaymentsNotConfiguredError } from "./stripe";
 import { syncOrderRefunds } from "./refund-sync";
+import { notifyOrderPaid } from "../notifications/order-emails";
 
 /*
  * POST /api/v1/payments/stripe-connect-webhook (progress.md 5.5): events from the stores'
@@ -83,6 +84,8 @@ export async function handleConnectEvent(event: Stripe.Event): Promise<void> {
       if (result === "PAID_SHORT") {
         console.warn(`[connect webhook] order ${order.storeOrderId} paid but short of stock: the merchant must refund or restock`);
       }
+      // Only the event that marked it paid sends the emails (6.5); repeats get ALREADY.
+      if (result !== "ALREADY") await notifyOrderPaid(order.storeOrderId);
       return;
     }
     case "checkout.session.expired":

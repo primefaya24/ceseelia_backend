@@ -3,6 +3,12 @@ import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
 import { DynamoDBDocumentClient, GetCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
+vi.mock("../layers/notifications/order-emails", () => ({
+  notifyOrderPaid: vi.fn(async () => {}),
+  notifyOrderStatus: vi.fn(async () => {}),
+  notifyOrderRefunded: vi.fn(async () => {}),
+  notifyReviewDecision: vi.fn(async () => {}),
+}));
 vi.mock("../layers/aws/cognito", () => ({ verifyCognitoAccessToken: vi.fn() }));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/user", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/user")>()),
@@ -18,6 +24,7 @@ import { findUserIdByCognitoId } from "../layers/aws/dynamodb/dynamo-entities/us
 import { getMembership } from "../layers/aws/dynamodb/dynamo-entities/membership";
 import { createApp } from "../app";
 import { nextOrderStatuses, StoreOrder } from "../layers/core/interfaces/store";
+import { notifyOrderPaid, notifyOrderRefunded, notifyOrderStatus, notifyReviewDecision } from "../layers/notifications/order-emails";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const app = createApp();
@@ -60,6 +67,7 @@ function withOrder(o: StoreOrder | null) {
 }
 
 beforeEach(() => {
+  for (const fn of [notifyOrderPaid, notifyOrderStatus, notifyOrderRefunded, notifyReviewDecision]) vi.mocked(fn).mockClear();
   ddb.reset();
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.mocked(verifyCognitoAccessToken).mockResolvedValue({ sub: "s", "cognito:groups": [] });
@@ -166,6 +174,8 @@ describe("PUT /store/orders/update-status (6.3)", () => {
     const u = ddb.commandCalls(UpdateCommand)[0].args[0].input;
     expect(u.ConditionExpression).toBe("attribute_exists(pk) AND #st = :from");
     expect(u.ExpressionAttributeValues).toMatchObject({ ":from": "PAID", ":to": "READY", ":entry": [{ status: "READY", by: "U1" }] });
+    // 6.5: the email module decides whether the shopper hears about it.
+    expect(notifyOrderStatus).toHaveBeenCalledWith(expect.objectContaining({ storeOrderId: ORDER_ID, storeOrderStatus: "READY" }), "READY");
   });
 
   it("409 INVALID_TRANSITION: backwards, Shipped for a pickup, or an unpaid / cancelled order", async () => {
@@ -181,6 +191,7 @@ describe("PUT /store/orders/update-status (6.3)", () => {
       expect([res.status, res.body.code]).toEqual([409, "INVALID_TRANSITION"]);
     }
     expect(ddb.commandCalls(UpdateCommand)).toHaveLength(0);
+    expect(notifyOrderStatus).not.toHaveBeenCalled();
   });
 
   it("409 STATUS_CHANGED with the current order when someone moved it meanwhile", async () => {

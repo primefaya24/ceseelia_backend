@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
 
+vi.mock("../layers/notifications/order-emails", () => ({
+  notifyOrderPaid: vi.fn(async () => {}),
+  notifyOrderStatus: vi.fn(async () => {}),
+  notifyOrderRefunded: vi.fn(async () => {}),
+  notifyReviewDecision: vi.fn(async () => {}),
+}));
 vi.mock("../layers/aws/cognito", () => ({
   verifyCognitoAccessToken: vi.fn(),
 }));

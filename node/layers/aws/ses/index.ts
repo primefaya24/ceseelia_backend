@@ -6,6 +6,15 @@ import {
 } from "@aws-sdk/client-ses";
 import {appConstants} from "../../../constants";
 
+/*
+ * The From name: header-safe (no quotes, brackets, commas or line breaks, at most 70 chars), and
+ * MIME-encoded when it isn't plain ASCII (store names like "Café Lune"), as SES requires.
+ */
+export function senderName(name: string): string {
+    const clean = name.replace(/[\r\n"<>,;\\]/g, " ").replace(/\s+/g, " ").trim().slice(0, 70) || "Ceseelia";
+    return /^[\x20-\x7e]*$/.test(clean) ? clean : `=?UTF-8?B?${Buffer.from(clean, "utf8").toString("base64")}?=`;
+}
+
 // Create SES client
 const sesClient = new SESClient({ region: "us-east-1" });
 
@@ -37,7 +46,7 @@ function createSendEmailCommand(
                     Data: subject,
                 },
             },
-            Source: `${outerSubject} <${fromAddress}>`,
+            Source: `${senderName(outerSubject)} <${fromAddress}>`,
             // Replies go here; the From address is always ours (never a customer's, 3.4)
             ...(replyTo ? { ReplyToAddresses: [replyTo] } : {}),
         };

@@ -1212,6 +1212,8 @@ export interface StoreOrder {
   storeOrderStripe: { accountId: string; checkoutSessionId: string; paymentIntentId: string };
   /** SHA-256 (hex) of the shopper's status token. Never returned. */
   storeOrderStatusTokenHash: string;
+  /** 6.5: SHA-256s of the tokens in emailed order links (one per email). Never returned. */
+  storeOrderLinkTokenHashes?: string[];
   storeOrderCreatedAt: number;
   storeOrderUpdatedAt: number;
   storeOrderPaidAt?: number;
@@ -1282,7 +1284,7 @@ export function nextOrderStatuses(status: StoreOrderStatus, type: StoreOrderType
 }
 
 /* An order as the store sees it (6.1 / 6.2): everything but the shopper's status-token hash. */
-export type MerchantOrderView = Omit<StoreOrder, "storeOrderStatusTokenHash">;
+export type MerchantOrderView = Omit<StoreOrder, "storeOrderStatusTokenHash" | "storeOrderLinkTokenHashes">;
 
 /* One row of the store's order list (6.1). */
 export interface MerchantOrderSummary {
@@ -1304,7 +1306,7 @@ export interface MerchantOrderSummary {
 }
 
 export function merchantOrderView(o: StoreOrder): MerchantOrderView {
-  const { storeOrderStatusTokenHash: _hash, ...rest } = o;
+  const { storeOrderStatusTokenHash: _hash, storeOrderLinkTokenHashes: _links, ...rest } = o;
   return rest;
 }
 

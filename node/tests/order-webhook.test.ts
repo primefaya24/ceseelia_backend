@@ -19,6 +19,12 @@ const live = (...refunds: Array<{ id: string; amount: number; status?: string; f
   },
 });
 const secrets = { secretKey: "sk_test_123", webhookSecret: "whsec_connect", billingWebhookSecret: "whsec_billing" };
+vi.mock("../layers/notifications/order-emails", () => ({
+  notifyOrderPaid: vi.fn(async () => {}),
+  notifyOrderStatus: vi.fn(async () => {}),
+  notifyOrderRefunded: vi.fn(async () => {}),
+  notifyReviewDecision: vi.fn(async () => {}),
+}));
 vi.mock("../layers/payments/stripe", async (orig) => ({
   ...(await orig<typeof import("../layers/payments/stripe")>()),
   getStripe: vi.fn(async () => stripe),
@@ -28,6 +34,7 @@ vi.mock("../layers/payments/stripe", async (orig) => ({
 import { createApp } from "../app";
 import { stockUpdates } from "../layers/aws/dynamodb/dynamo-entities/order";
 import { StoreItem, StoreOrder } from "../layers/core/interfaces/store";
+import { notifyOrderPaid, notifyOrderRefunded, notifyOrderStatus, notifyReviewDecision } from "../layers/notifications/order-emails";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const app = createApp();
@@ -113,6 +120,7 @@ const cancelled = (codes: string[]) =>
 const tx = (i = 0) => ddb.commandCalls(TransactWriteCommand)[i].args[0].input.TransactItems!;
 
 beforeEach(() => {
+  for (const fn of [notifyOrderPaid, notifyOrderStatus, notifyOrderRefunded, notifyReviewDecision]) vi.mocked(fn).mockClear();
   ddb.reset();
   stripe.paymentIntents.retrieve.mockReset();
   stripe.refunds.list.mockReset().mockReturnValue(live());
@@ -172,6 +180,8 @@ describe("paid (5.5c / 5.6)", () => {
     expect(items[3].Update).toMatchObject({ Key: { pk: "APP_STORE", sk: `STORE#${STORE}#OVERVIEW` }, UpdateExpression: "ADD #count :one" });
     expect(items[4].Put!.Item).toMatchObject({ pk: "APP", storeId: STORE, orderId: ORDER_ID, totalMinor: 12000, platformFeeMinor: 145 });
     expect(items[4].Put!.Item!.sk).toMatch(new RegExp(`^ORDER#\\d+#STORE#${STORE}#${ORDER_ID}$`));
+    // 6.5: the receipt and the store's alert, once.
+    expect(notifyOrderPaid).toHaveBeenCalledExactlyOnceWith(ORDER_ID);
   });
 
   it("a delayed payment method: nothing until async_payment_succeeded", async () => {
@@ -187,6 +197,7 @@ describe("paid (5.5c / 5.6)", () => {
     ddb.on(TransactWriteCommand).rejects(cancelled(["ConditionalCheckFailed", "None", "None", "None", "None"]));
     expect((await send("checkout.session.completed", session())).status).toBe(200);
     expect(ddb.commandCalls(TransactWriteCommand)).toHaveLength(1);
+    expect(notifyOrderPaid).not.toHaveBeenCalled();
   });
 
   it("stock ran out after paying: still PAID, flagged short, no stock change", async () => {
@@ -257,11 +268,18 @@ describe("expired, failed, refunds, disputes, account (5.5c/d)", () => {
       ":ref": order().storeOrderTotalMinor,
       ":st": "REFUNDED",
     });
+    // 6.5: one refund email for the amount that was added.
+    expect(notifyOrderRefunded).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ storeOrderStatus: "REFUNDED" }),
+      order().storeOrderTotalMinor
+    );
+    vi.mocked(notifyOrderRefunded).mockClear();
 
     ddb.resetHistory();
     stripe.refunds.list.mockReturnValue(live({ id: "re_1", amount: 500 }));
     await send("charge.refunded", { id: "ch_1", object: "charge", payment_intent: "pi_1" });
     expect(ddb.commandCalls(UpdateCommand)[0].args[0].input.ExpressionAttributeValues).toMatchObject({ ":ref": 500, ":st": "PAID" });
+    expect(notifyOrderRefunded).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ storeOrderRefundedMinor: 500 }), 500);
 
     ddb.resetHistory();
     stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_2", metadata: { orderId: ORDER_ID } });
@@ -294,6 +312,8 @@ describe("expired, failed, refunds, disputes, account (5.5c/d)", () => {
       expect(v[":f"]).toEqual([
         { refundId: "re_1", amountMinor: total, status: "failed", reason: "expired_or_canceled_card", at: 1_700_000_100_000 },
       ]);
+      // A failed refund tells nobody by email; the merchant sees the warning.
+      expect(notifyOrderRefunded).not.toHaveBeenCalled();
     }
   );
 

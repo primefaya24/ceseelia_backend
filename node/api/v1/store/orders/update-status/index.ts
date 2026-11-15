@@ -9,6 +9,7 @@ import {
   StoreOrderStatus,
 } from "../../../../../layers/core/interfaces/store";
 import { getOrderById, updateOrderStatus } from "../../../../../layers/aws/dynamodb/dynamo-entities/order";
+import { notifyOrderStatus } from "../../../../../layers/notifications/order-emails";
 
 /*
  * PUT /store/orders/update-status (store members, progress.md 6.3)
@@ -93,14 +94,15 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       });
       return;
     }
-    res.send(
-      merchantOrderView({
-        ...order,
-        storeOrderStatus: to,
-        storeOrderUpdatedAt: now,
-        storeOrderStatusHistory: [...(order.storeOrderStatusHistory ?? []), { status: to, at: now, by }],
-      })
-    );
+    const updated = {
+      ...order,
+      storeOrderStatus: to,
+      storeOrderUpdatedAt: now,
+      storeOrderStatusHistory: [...(order.storeOrderStatusHistory ?? []), { status: to, at: now, by }],
+    };
+    res.send(merchantOrderView(updated));
+    // 6.5: pickup ready / delivery on its way; best effort, after answering.
+    void notifyOrderStatus(updated, to);
   } catch (e) {
     console.error("In store/orders/update-status", e);
     res

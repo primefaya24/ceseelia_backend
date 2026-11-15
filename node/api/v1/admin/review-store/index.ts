@@ -16,6 +16,7 @@ import {
 import { blocksNewSubscription } from "../../../../layers/core/billing";
 import { cancelSubscriptionNow } from "../../../../layers/payments/billing";
 import { sendPaymentsError } from "../../store/payments/errors";
+import { notifyReviewDecision } from "../../../../layers/notifications/order-emails";
 
 /*
  * POST /admin/review-store { storeId, decision: "APPROVE" | "REJECT", message? } (admin, P.8)
@@ -70,7 +71,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       message: req.body.message,
     });
     await saveReviewDecision(storeId, lifecycle);
-    res.send({ status: lifecycle.status, plan: lifecycle.plan, approved: lifecycle.reviewApprovedAt !== undefined });
+    const approved = lifecycle.reviewApprovedAt !== undefined;
+    res.send({ status: lifecycle.status, plan: lifecycle.plan, approved });
+    // 6.5: tell the store's admins; best effort, after answering.
+    void notifyReviewDecision(storeId, approved, typeof req.body.message === "string" ? req.body.message.trim() : "");
   } catch (e) {
     if (e instanceof StoreStatusChangedError) {
       res.status(appConstants.HTTP_STATUS_CODE_CONFLICT).send({ code: "STATUS_CHANGED", message: "Someone else just decided. Reload." });

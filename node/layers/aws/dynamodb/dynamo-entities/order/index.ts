@@ -95,6 +95,24 @@ export async function createOrderRecords(order: StoreOrder): Promise<void> {
   );
 }
 
+/*
+ * 6.5: keep the hash of a token sent in an order email, so its link opens the order on any
+ * device. Appended atomically (two emails at once both keep theirs); an order gets a handful of
+ * emails at most (receipt, one status step, refunds).
+ */
+export async function addOrderLinkTokenHash(order: StoreOrder, hash: string): Promise<void> {
+  await dynamoDbDocumentClient.send(
+    new UpdateCommand({
+      TableName: TABLE,
+      Key: orderKey(order.storeId, order.storeOrderCreatedAt, order.storeOrderId),
+      UpdateExpression: "SET #h = list_append(if_not_exists(#h, :empty), :h)",
+      ConditionExpression: "attribute_exists(pk)",
+      ExpressionAttributeNames: { "#h": "storeOrderLinkTokenHashes" },
+      ExpressionAttributeValues: { ":h": [hash], ":empty": [] },
+    })
+  );
+}
+
 /* An order by its id (via the pointer), or null. */
 export async function getOrderById(orderId: string): Promise<StoreOrder | null> {
   const pointer = await dynamoDbDocumentClient.send(

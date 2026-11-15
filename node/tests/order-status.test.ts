@@ -13,6 +13,7 @@ const STORE = "01JBZ0000000000000000000AA";
 const ORDER_ID = "01JBZ0000000000000000000RD";
 const SK = `ORDER#1#${ORDER_ID}`;
 const { token, hash } = newStatusToken();
+const emailed = newStatusToken();
 
 function world(exists = true) {
   ddb.on(GetCommand).callsFake((input) => {
@@ -33,6 +34,7 @@ function world(exists = true) {
           storeOrderCommission: { source: "PLAN" },
           storeOrderStripe: { accountId: "acct_x", checkoutSessionId: "cs_1", paymentIntentId: "pi_1" },
           storeOrderStatusTokenHash: hash,
+          storeOrderLinkTokenHashes: ["0".repeat(64), emailed.hash],
           storeOrderLines: [],
         },
       };
@@ -60,6 +62,13 @@ describe("GET /customer/order-status/:orderId (6.4)", () => {
     expect(res.body).toMatchObject({ orderId: ORDER_ID, orderCode: "K7Q2XM", status: "PAID", totalMinor: 3024, storeSlug: "northern-hoop" });
     const text = JSON.stringify(res.body);
     for (const secret of ["acct_x", "cs_1", "pi_1", "145", hash, "Commission"]) expect(text).not.toContain(secret);
+  });
+
+  it("a token from an order email (6.5) works too; its hashes are never returned", async () => {
+    world();
+    const res = await get(emailed.token);
+    expect(res.status).toBe(200);
+    expect(JSON.stringify(res.body)).not.toContain(emailed.hash);
   });
 
   it("a wrong token and an unknown order are the same 404", async () => {

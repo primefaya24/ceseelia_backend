@@ -3,6 +3,12 @@ import request from "supertest";
 import { mockClient } from "aws-sdk-client-mock";
 import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
+vi.mock("../layers/notifications/order-emails", () => ({
+  notifyOrderPaid: vi.fn(async () => {}),
+  notifyOrderStatus: vi.fn(async () => {}),
+  notifyOrderRefunded: vi.fn(async () => {}),
+  notifyReviewDecision: vi.fn(async () => {}),
+}));
 vi.mock("../layers/aws/cognito", () => ({ verifyCognitoAccessToken: vi.fn() }));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/user", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/user")>()),
@@ -31,6 +37,7 @@ import { getStripe, PaymentsNotConfiguredError } from "../layers/payments/stripe
 import { refundRefusal } from "../layers/payments/order-refund";
 import { createApp } from "../app";
 import { refundableMinor, StoreOrder } from "../layers/core/interfaces/store";
+import { notifyOrderPaid, notifyOrderRefunded, notifyOrderStatus, notifyReviewDecision } from "../layers/notifications/order-emails";
 
 const ddb = mockClient(DynamoDBDocumentClient);
 const app = createApp();
@@ -78,6 +85,7 @@ const refund = (b: object = {}) =>
     .send({ storeId: STORE, orderId: ORDER_ID, amountMinor: 1000, refundedMinor: 0, ...b });
 
 beforeEach(() => {
+  for (const fn of [notifyOrderPaid, notifyOrderStatus, notifyOrderRefunded, notifyReviewDecision]) vi.mocked(fn).mockClear();
   ddb.reset();
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.mocked(verifyCognitoAccessToken).mockResolvedValue({ sub: "s", "cognito:groups": [] });
@@ -112,6 +120,8 @@ describe("POST /store/orders/refund (6.4)", () => {
     expect(updates[0].ExpressionAttributeNames!["#r"]).toBe("storeOrderRefunds");
     expect(updates[1].ConditionExpression).toContain("#upd = :seen");
     expect(updates[1].ExpressionAttributeValues).toMatchObject({ ":ref": 1000, ":st": "PAID", ":seen": 1_700_000_000_001 });
+    // 6.5: the shopper hears about the 10.00 that was refunded.
+    expect(notifyOrderRefunded).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ storeOrderRefundedMinor: 1000 }), 1000);
   });
 
   it("refunding what's left makes the order REFUNDED", async () => {
