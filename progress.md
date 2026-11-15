@@ -19,18 +19,22 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 ## 1. Where things stand
 
-> **▶ Start the next session here (2026-11-11).** The owner's QA pass is done for now
-> (`../ceseelia_webapp/progress.md` §1a: Q.1–Q.26 all fixed).
-> Backend fixes from QA: Q.16 (hide email/phone), Q.21 (`private, no-cache`), Q.23 (Canadian
-> delivery tax estimated from geo-IP, no postal code in the quote). **Stage 5 started:** 5.1 is
-> decided (Stripe Connect **Standard**, direct charges; commission is a fixed amount per order in
-> each currency, `admin.salesCommissions`) and 5.1a is done. 5.1b (2026-11-12) adds a per-store
-> `PERCENT` mode (see §7). 5.2 (onboarding routes, keys in
-> Secrets Manager) is done, and so is WA 5.4 (Payments card); onboarding was tested end to end
-> in the Stripe sandbox. **Next: Stage P** (§6a, plans SPARK/NOVA (FREE dropped 2026-11-13, P.10), self-serve stores, Go
-> Live with `runSmartStoreValidation`, a TODO stub for now), then 5.3. Payments are online only
-> (no pay at pickup, owner 2026-11-12).
-> Both repos are on `dev_v1.0.0_customer_store_front`, pushed to origin.
+> **▶ Start the next session here (2026-11-14).** Stages S, 0–4 and P are done, and so are
+> Stage 5 checkout (5.1–5.6) and Stage 6 order management (6.1–6.4, 6.6) in both repos. 6.4
+> (refunds, 2026-11-14) is `POST /store/orders/refund`, for store ADMINs only. **Next, in order:**
+> 1. **Owner: the first real test order** in Stripe test mode. Add the Connect webhook first (5.5
+>    "Setup"). Then storefront → checkout → paid → Store › Orders → move it on → refund part of
+>    it → refund the rest. Also confirm the **6.4 open questions** below.
+> 2. **5.7** sweeper for abandoned `PENDING_PAYMENT` orders, a fallback for missed `expired`
+>    events.
+> 3. **6.5 emails** (SES + PDF): the shopper's receipt, the merchant's new-order alert,
+>    status-change emails, and the merchant's review-decision emails.
+> 4. WA 6.4 new-order notifications, then WA 6.5 Store Overview (needs BE 1.5 stats).
+> 5. S.14–S.17 before going live.
+> Owner TODOs are unchanged: the AI check in `runSmartStoreValidation`, the Stripe Billing setup
+> (P.5 "Setup"), `PAID_PLANS_ENABLED=true` in prod, and S.2 password rotation.
+> Both repos are on `dev_v1.0.0_customer_store_front`. **Push from your own shell:** Claude's
+> shell has no GitHub credentials.
 
 > **2026-11-13: no Free plan any more (P.10).** Only Spark and Nova. A new store is a draft with
 > no plan (`plan: "NONE"`), visible to its members only; going live and subscribing are one step
@@ -40,7 +44,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > order limit) is dropped. `scripts/migrate-free-plan.mjs --write` was run on dev (2026-11-13:
 > the 4 dev stores are now drafts with no plan).
 >
-> **Pick up here (2026-11-12):** Stages S, 0–4 and **Stage P (P.1–P.6, P.8, P.10, P.11)** are done in both
+> **Earlier notes (2026-11-12, kept for the rules; the list above is current):** Stages S, 0–4 and **Stage P (P.1–P.6, P.8, P.10, P.11)** are done in both
 > repos, plus 5.1 (Stripe Connect Standard, commission rules) and 5.2 (merchant onboarding).
 > Latest commits: see `git log` (P.8 is the last one). **Next steps, in order:**
 > 0. ~~Owner's Stage P QA in the UI~~ done 2026-11-13 (`../ceseelia_webapp/progress.md` §1b,
@@ -991,7 +995,25 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       `storeOrderStatusHistory` `{status, at, by}`. 409 `INVALID_TRANSITION` / `STATUS_CHANGED`
       with the current order. No cancel: a paid order is cancelled by refunding (6.4). No
       completed/cancelled counters yet (nothing reads them; add with 8.1). (WA 6.2)
-- [ ] 6.4 `POST /store/orders/refund` (full/partial, via Stripe). (WA 6.3)
+- [x] 6.4 `POST /store/orders/refund` `{storeId, orderId, amountMinor, refundedMinor, reason?}`
+      (done 2026-11-14; store ADMINs and platform admins, never MERCHANT members, since money
+      moves). It refunds part or all of a paid order on the connected account (direct charge),
+      and only from the refunded total the merchant saw (409 `REFUND_CHANGED`). The idempotency
+      key is `ceseelia-refund-<orderId>-<refundedMinor>-<amountMinor>`, so a double click makes
+      one refund. Afterwards the charge's `amount_refunded` from Stripe goes on the order, and
+      `recordOrderRefund` now only raises the total, so a late webhook can't lower it. Refunding
+      the remainder makes the order REFUNDED. Each refund is kept in `storeOrderRefunds`
+      `{refundId, amountMinor, status, reason, at, by}`. 409s: `NOT_REFUNDABLE`,
+      `AMOUNT_TOO_LARGE`, `ORDER_DISPUTED` (open or lost dispute), `INSUFFICIENT_BALANCE`;
+      503 / 502 for Stripe being unavailable or refusing. (WA 6.3)
+      **Open questions for the owner (defaults chosen):**
+      - a. Ceseelia keeps its fee on a refund (`REFUND_APPLICATION_FEE = false`, in
+           `layers/payments/order-refund.ts`), the same as a refund in Stripe's dashboard.
+           Should a full refund return the fee to the merchant?
+      - b. Stock isn't put back on a refund. Should there be a "restock" checkbox?
+      - c. Only store ADMINs can refund; MERCHANT staff can't. Is that right?
+      - d. A refund that's `pending` and later fails isn't handled (`charge.refund.updated`
+           isn't listened to yet). This is rare, and it's for 6.5 / 9.x.
 - [ ] 6.5 Emails (SES + pdf invoice): customer confirmation/receipt, merchant new-order alert,
       status-change emails.
 - [x] 6.6 `GET /customer/order-status/:orderId` (done 2026-11-13, early, for WA 5.2's return
@@ -1050,6 +1072,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-14 | 6.4 done: `POST /store/orders/refund` (store ADMINs; part or full refund on the connected account, conditional on the refunded total seen, idempotency key from it; `storeOrderRefunds`; 409 `NOT_REFUNDABLE` / `REFUND_CHANGED` / `AMOUNT_TOO_LARGE` / `ORDER_DISPUTED` / `INSUFFICIENT_BALANCE`). `recordOrderRefund` now only raises the total. Owner questions under 6.4. "Start here" refreshed. |
 | 2026-11-13 | 6.1–6.3 done: `/store/orders/list`, `/get`, `/update-status` (members; forward-only steps with history, conditional on the status seen); `MerchantOrderView` / `MerchantOrderSummary`, `nextOrderStatuses`. |
 | 2026-11-13 | `POST /customer/quote` takes an optional delivery `postalCode` (WA 5.1 checkout), so the total shown is taxed exactly as create-order will; the cart still sends none and gets the geo-IP estimate (QA Q.23). |
 | 2026-11-13 | 5.5 + 5.6 done: Connect webhook `/api/v1/payments/stripe-connect-webhook` (signature, account/session checks, event ids; paid / expired / async failed / refunds / disputes / account.updated), `markOrderPaid` (one transaction: PAID, stock by item or variant row, order count, APP sale record; shortfall → paid and flagged). 6.6 `GET /customer/order-status/:orderId` (token header). Old 501 stub removed. |

@@ -57,6 +57,7 @@ const STORE_ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [
   ["post", "/store/update-info", { storeId: STORE }],
   ["post", "/store/go-live", { storeId: STORE }],
   ["post", "/store/payments/create-connect-account-link", { storeId: STORE }],
+  ["post", "/store/orders/refund", { storeId: STORE }],
 ];
 const ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [
   ["post", "/store/create", {}],

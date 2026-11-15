@@ -182,6 +182,7 @@ export default function registerRoute(router: Router): void {
 | Store orders (6.1) | `GET /store/orders/list/:storeId?status=&from=&to=&cursor=&limit=` (store members) | ✅ newest first, `MerchantOrderSummary` rows, default all but PENDING_PAYMENT, cursor = last sort key |
 | Store orders (6.2) | `GET /store/orders/get/:storeId/:orderId` (store members) | ✅ `MerchantOrderView` (no token hash); other store's = 404 `ORDER_NOT_FOUND` |
 | Store orders (6.3) | `PUT /store/orders/update-status` `{storeId, orderId, status, fromStatus}` (store members) | ✅ forward only (`nextOrderStatuses`), conditional on `fromStatus`, `storeOrderStatusHistory`; 409 `INVALID_TRANSITION` / `STATUS_CHANGED` {order}; cancelling a paid order = refund (6.4) |
+| Store orders (6.4) | `POST /store/orders/refund` `{storeId, orderId, amountMinor, refundedMinor, reason?}` (store ADMINs) | ✅ part or full refund on the connected account (`layers/payments/order-refund.ts`; platform keeps its fee), only from the refunded total seen (409 `REFUND_CHANGED`), idempotent on it; the charge's refunded total goes on the order (only ever up), the remainder → REFUNDED, each refund in `storeOrderRefunds`; 409 `NOT_REFUNDABLE` / `AMOUNT_TOO_LARGE` / `ORDER_DISPUTED` / `INSUFFICIENT_BALANCE` {order}; 503 / 502. Stock isn't put back |
 | Customer (6.6) | `GET /customer/order-status/:orderId` + header `X-Order-Token` (no auth) | ✅ the shopper's view (no Stripe ids, fee, commission); wrong token = unknown = 404 `ORDER_NOT_FOUND`; 60/IP/min |
 
 Infra helpers ready to reuse: SES `sendEmail` + templates, PDF invoice generator (`pdfkit`),
@@ -324,8 +325,8 @@ Full plan in `progress.md` §6a. Key rules:
     - Events from those charges reach a **Connect** webhook endpoint (its own signing secret,
       `event.account` names the store's account), not the platform endpoint.
     - Merchants can refund or cancel in their own dashboard, so the webhook must sync
-      `charge.refunded` / `charge.dispute.*` onto the order; our own refund route (6.2) refunds
-      on the connected account.
+      `charge.refunded` / `charge.dispute.*` onto the order; our own refund route
+      (`/store/orders/refund`, progress 6.4) refunds on the connected account.
     **Platform commission (decided 2026-11-11, percentage added 2026-11-12 as 5.1b):** set per
     store by platform admins, in one of two modes (`admin.commissionMode`, missing = `FIXED`):
     - `FIXED`: `admin.salesCommissions` per order in the order's currency (cents:

@@ -23,6 +23,7 @@ import {
   StoreOrder,
   StoreOrderCancelReason,
   StoreOrderLine,
+  StoreOrderRefund,
   StoreOrderStatus,
 } from "../../../../core/interfaces/store";
 import { findVariant, hasVariants } from "../../../../core/variants";
@@ -308,19 +309,23 @@ export async function cancelPendingOrder(order: StoreOrder, reason: StoreOrderCa
   }
 }
 
+const PAID_STATUSES = ["PAID", "PREPARING", "READY", "SHIPPED", "COMPLETED", "REFUNDED"];
+
 /*
- * A refund made in the merchant's Stripe dashboard (or by us, 6.2), 5.5d: the amount refunded so
- * far; a full refund makes a paid order REFUNDED. Never touches an order that wasn't paid.
+ * A refund made in the merchant's Stripe dashboard or by our refund route (6.4), 5.5d: the
+ * amount Stripe says is refunded so far; a full refund makes a paid order REFUNDED. Never touches
+ * an order that wasn't paid. The amount only goes up, so an older `charge.refunded` event that
+ * arrives late can't lower it.
  */
 export async function recordOrderRefund(order: StoreOrder, refundedMinor: number, full: boolean, now = Date.now()): Promise<void> {
-  const paidStatuses = ["PAID", "PREPARING", "READY", "SHIPPED", "COMPLETED", "REFUNDED"];
+  const paidStatuses = PAID_STATUSES;
   try {
     await dynamoDbDocumentClient.send(
       new UpdateCommand({
         TableName: TABLE,
         Key: keyOf(order),
         UpdateExpression: `SET #ref = :ref, #upd = :now${full ? ", #st = :refunded" : ""}`,
-        ConditionExpression: `#st IN (${paidStatuses.map((_, i) => `:s${i}`).join(", ")})`,
+        ConditionExpression: `#st IN (${paidStatuses.map((_, i) => `:s${i}`).join(", ")}) AND (attribute_not_exists(#ref) OR #ref <= :ref)`,
         ExpressionAttributeNames: { "#ref": "storeOrderRefundedMinor", "#upd": "storeOrderUpdatedAt", "#st": "storeOrderStatus" },
         ExpressionAttributeValues: {
           ":ref": refundedMinor,
@@ -333,6 +338,23 @@ export async function recordOrderRefund(order: StoreOrder, refundedMinor: number
   } catch (e) {
     if ((e as { name?: string })?.name !== "ConditionalCheckFailedException") throw e;
   }
+}
+
+/*
+ * A refund made through Ceseelia (6.4): who made it, kept on the order for the merchant's
+ * timeline (`storeOrderRefunds`, oldest first). Dashboard refunds only show in the total.
+ */
+export async function appendOrderRefund(order: StoreOrder, entry: StoreOrderRefund): Promise<void> {
+  await dynamoDbDocumentClient.send(
+    new UpdateCommand({
+      TableName: TABLE,
+      Key: keyOf(order),
+      UpdateExpression: "SET #r = list_append(if_not_exists(#r, :empty), :entry), #upd = :now",
+      ConditionExpression: "attribute_exists(pk)",
+      ExpressionAttributeNames: { "#r": "storeOrderRefunds", "#upd": "storeOrderUpdatedAt" },
+      ExpressionAttributeValues: { ":empty": [], ":entry": [entry], ":now": entry.at },
+    })
+  );
 }
 
 /* The latest dispute on an order's payment (5.5d). */

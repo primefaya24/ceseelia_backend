@@ -1226,7 +1226,28 @@ export interface StoreOrder {
   storeOrderDispute?: { status: string; amountMinor: number; updatedAt: number };
   /** 6.3: the merchant's status changes, oldest first (`by`: the member's userId, or "ADMIN"). */
   storeOrderStatusHistory?: StoreOrderStatusChange[];
+  /** 6.4: refunds made through Ceseelia, oldest first (dashboard refunds only change the total). */
+  storeOrderRefunds?: StoreOrderRefund[];
 }
+
+export interface StoreOrderRefund {
+  /** Stripe's refund id (re_…), on the store's connected account. */
+  refundId: string;
+  amountMinor: number;
+  /** Stripe's refund status when it was made: `succeeded`, or `pending` for some methods. */
+  status: string;
+  reason: string | null;
+  at: number;
+  /** The member's userId, or "ADMIN". */
+  by: string;
+}
+
+/* Statuses a refund can be made from (6.4): paid and not yet refunded in full. */
+export const REFUNDABLE_ORDER_STATUSES: StoreOrderStatus[] = ["PAID", "PREPARING", "READY", "SHIPPED", "COMPLETED"];
+
+/* What's left to refund on an order, in minor units. */
+export const refundableMinor = (o: Pick<StoreOrder, "storeOrderTotalMinor" | "storeOrderRefundedMinor">): number =>
+  Math.max(0, o.storeOrderTotalMinor - (o.storeOrderRefundedMinor ?? 0));
 
 export interface StoreOrderStatusChange {
   status: StoreOrderStatus;
