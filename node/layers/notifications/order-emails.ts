@@ -16,6 +16,7 @@ import {
   statusEmailFor,
 } from "./order-email-templates";
 import { log } from "../core/logger";
+import { recordCustomerOrder } from "../aws/dynamodb/dynamo-entities/customer";
 import { alertNewOrder } from "./order-alerts";
 
 /*
@@ -128,8 +129,11 @@ export async function notifyOrderPaid(orderId: string): Promise<void> {
     );
     // L.5: the dashboard's alert (toast, sound, bell) and web push to the members' browsers.
     const dashboard = alertNewOrder(order, store.storeName, members.map((m) => m.userId));
+    // L.7 / 7.1: the store's customer record (best effort; idempotent, so retries are safe).
+    const customer = recordCustomerOrder(order).catch(logged("customer record", orderId));
     const results = await Promise.all([receipt, ...alerts]);
     await dashboard;
+    await customer;
     if (!results[0]) log.error(`[order emails] receipt for order ${orderId} wasn't sent`);
   } catch (e) {
     logged("paid emails", orderId)(e);

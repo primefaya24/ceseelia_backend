@@ -57,6 +57,7 @@ const MEMBER_ROUTES: Array<[Method, string, object | undefined]> = [
   ["get", `/store/orders/list/${STORE}`, undefined],
   ["get", `/store/orders/new/${STORE}`, undefined],
   ["get", `/store/overview/${STORE}`, undefined],
+  ["get", `/store/customers/list/${STORE}`, undefined],
   ["get", `/store/orders/get/${STORE}/${ID}`, undefined],
   ["put", "/store/orders/update-status", { storeId: STORE }],
 ];

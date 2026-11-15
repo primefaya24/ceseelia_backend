@@ -9,6 +9,7 @@ vi.mock("../layers/notifications/order-emails", () => ({
   notifyOrderRefunded: vi.fn(async () => {}),
   notifyReviewDecision: vi.fn(async () => {}),
 }));
+vi.mock("../layers/aws/dynamodb/dynamo-entities/customer", () => ({ recordCustomerOrder: vi.fn(async () => "UPDATED") }));
 vi.mock("../layers/aws/cognito", () => ({ verifyCognitoAccessToken: vi.fn() }));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/user", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/user")>()),
@@ -37,6 +38,7 @@ import { getStripe, PaymentsNotConfiguredError } from "../layers/payments/stripe
 import { refundRefusal } from "../layers/payments/order-refund";
 import { createApp } from "../app";
 import { refundableMinor, StoreOrder } from "../layers/core/interfaces/store";
+import { recordCustomerOrder } from "../layers/aws/dynamodb/dynamo-entities/customer";
 import { notifyOrderPaid, notifyOrderRefunded, notifyOrderStatus, notifyReviewDecision } from "../layers/notifications/order-emails";
 
 const ddb = mockClient(DynamoDBDocumentClient);
@@ -122,6 +124,7 @@ describe("POST /store/orders/refund (6.4)", () => {
     expect(updates[1].ExpressionAttributeValues).toMatchObject({ ":ref": 1000, ":st": "PAID", ":seen": 1_700_000_000_001 });
     // 6.5: the shopper hears about the 10.00 that was refunded.
     expect(notifyOrderRefunded).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ storeOrderRefundedMinor: 1000 }), 1000);
+    expect(recordCustomerOrder).toHaveBeenCalledWith(expect.objectContaining({ storeOrderRefundedMinor: 1000 }));
   });
 
   it("refunding what's left makes the order REFUNDED", async () => {

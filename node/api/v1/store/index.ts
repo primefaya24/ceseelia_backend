@@ -8,6 +8,7 @@ import storePaymentsRouter from "./payments";
 import storeGoLiveRouter from "./go-live";
 import storeBillingRouter from "./billing";
 import storeOrdersRouter from "./orders";
+import storeCustomersRouter from "./customers";
 import route_create from './create/index';
 import route_delete from './delete/index';
 import route_get_header_strip_image_upload_url from './get-header-strip-image-upload-url/index';
@@ -38,6 +39,7 @@ storeRouter.use("/payments", storePaymentsRouter);
 storeRouter.use("/go-live", storeGoLiveRouter);
 storeRouter.use("/billing", storeBillingRouter);
 storeRouter.use("/orders", storeOrdersRouter);
+storeRouter.use("/customers", storeCustomersRouter);
 
 // Export Router
 export default storeRouter;

@@ -96,7 +96,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >       read-only on Northern Hoop (no paid orders yet, so zeros). One-store merchants still
 >       land on Orders; say if Overview should be the home page instead.
 > - [ ] **L.7 Stage 7:** Store › Customers (7.1), unified rewards and earn/redeem (7.3, 7.4),
->       reviews (7.5). 7.2 (optional customer accounts) included.
+>       reviews (7.5). 7.2 (optional customer accounts) included. **7.1 Customers done 2026-11-15**
+>       (rewards, accounts, reviews: waiting on the owner's answers).
 > - [ ] **L.8 Stage 8 admin console:** real admin overview stats (8.1), support tickets (8.3),
 >       commission reporting (8.4). (8.2 join requests stay superseded by P.3.)
 > - [ ] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
@@ -1246,8 +1247,17 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 ## 9. Stage 7 — Customers, rewards & reviews
 
-- [ ] 7.1 Customer records per store, built from orders, plus `GET /store/customers/list/:storeId`.
+- [x] 7.1 Customer records per store, built from orders, plus `GET /store/customers/list/:storeId`.
       (WA 7.1)
+  - _Done 2026-11-15 (L.7). `STORE#<id> / CUSTOMER#<sha256(email) 32 hex>` (email, name,
+    phone from the newest order, `orders`, `spent_<CUR>` net of refunds, first/last order) and a
+    per-order marker `CUSTOMER_ORDER#<orderId>` (`customerId`, `currency`, `refundedMinor`).
+    `recordCustomerOrder(order)` is the only writer and idempotent (marker + counters in one
+    conditional transaction; a refund applies only the change, both ways; a lost race re-reads):
+    called from `notifyOrderPaid` (best effort) and after `syncOrderRefunds` writes. List: every
+    customer (≤ 5,000, `partial`), most recent first. `scripts/backfill-customers.mjs` (dry run
+    by default) for orders paid before this; dev and prod have none, so not run. Tests in
+    `tests/customers.test.ts`._
 - [ ] 7.2 Optional customer accounts (a separate Cognito app client or pool).
 - [ ] 7.3 Unify the rewards redemption constant (`POINTS_TO_*` vs `REWARDS_REDEMPTION_*`) with a
       data migration, then drop the dual acceptance in the validator.
@@ -1373,6 +1383,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.7 / 7.1: customer records from paid orders (exactly once, refunds both ways) + `GET /store/customers/list/:storeId`; backfill script. |
 | 2026-11-15 | L.6 / 1.5: `GET /store/overview/:storeId?tz=` (Store Overview numbers in the merchant's time zone; `layers/core/store-stats`). |
 | 2026-11-15 | L.5 / 6.7: new-order alert rows + `GET /store/orders/new/:storeId` for the dashboard; Web Push (VAPID) to members' browsers with an allow-list of push services; `/user/push/*`; `scripts/setup-vapid.mjs`; Stripe event rows get the table's `ttl`. |
 | 2026-11-15 | L.4 9.4–9.6: backend CI (lint, typecheck, test, audit, build, image + /healthz); CloudFormation: PITR + deletion protection on the table (was off in prod), versioned buckets, pool deletion protection, `Retain`s, trigger on nodejs22.x with least privilege, API log group + error metric, SNS alarms (API errors, DynamoDB, sign-up trigger, SES reputation), cfn-lint before deploy; compose ships API logs to CloudWatch and caps nginx's. |

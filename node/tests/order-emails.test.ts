@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 vi.mock("../layers/notifications/order-alerts", () => ({ alertNewOrder: vi.fn(async () => {}) }));
+vi.mock("../layers/aws/dynamodb/dynamo-entities/customer", () => ({ recordCustomerOrder: vi.fn(async () => "ADDED") }));
 vi.mock("../layers/aws/ses", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/ses")>()),
   sendEmail: vi.fn(async () => ({ MessageId: "m" })),
@@ -28,6 +29,7 @@ import { listStoreMembers } from "../layers/aws/dynamodb/dynamo-entities/members
 import { getPublicStoreSettings } from "../layers/aws/dynamodb/dynamo-entities/store";
 import { log } from "../layers/core/logger";
 import { alertNewOrder } from "../layers/notifications/order-alerts";
+import { recordCustomerOrder } from "../layers/aws/dynamodb/dynamo-entities/customer";
 import { notifyOrderPaid, notifyOrderRefunded, notifyOrderStatus, notifyReviewDecision } from "../layers/notifications/order-emails";
 import {
   money,
@@ -150,6 +152,13 @@ describe("sending (6.5)", () => {
       "Northern Hoop",
       ["U1", "U2", "U3"]
     );
+  });
+
+  it("paid: also adds the order to the store's customer record (L.7); a failure there sends the emails anyway", async () => {
+    vi.mocked(recordCustomerOrder).mockRejectedValueOnce(new Error("ddb down"));
+    await notifyOrderPaid(ORDER_ID);
+    expect(vi.mocked(recordCustomerOrder)).toHaveBeenCalledWith(expect.objectContaining({ storeOrderId: ORDER_ID }));
+    expect(vi.mocked(alertNewOrder)).toHaveBeenCalled();
   });
 
   it("paid: one alert per member and the store's contact email, each address once; the switch turns the store email off", async () => {
