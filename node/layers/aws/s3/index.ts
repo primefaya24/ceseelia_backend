@@ -166,7 +166,3 @@ export async function copyFiles(sourceBucket: string, sourcePrefix: string, dest
     await Promise.allSettled(copyPromises);
 }
 
-export async function getAndroidEnterpriseServiceAccount(): Promise<Record<string, any>> {
-    const content = await getObject(appConstants.SECRET_STORAGE_BUCKET!, "eem/service-account.json", 'String');
-    return JSON.parse(content as string);
-}

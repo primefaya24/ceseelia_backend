@@ -44,15 +44,6 @@ export const appConstants = {
 
   // Admin
   ADMIN_CONTACT_EMAIL_ADDRESS: "shukybadeer@gmail.com",
-  COMPANY_LOGO_URL: "https://public.primefaya.com/company_logo.png",
-  COMPANY_LOGO_COMPACT_URL:
-    "https://public.primefaya.com/company_logo_compact.png",
-  COMPANY_LOGO_WIDTH: 200,
-  COMPANY_LOGO_HEIGHT: 55,
-
-  // Paypal
-  PAYPAL_PAYMENT_LINK_CA: "https://www.paypal.com/ncp/payment/HNZKGJRCCFA88",
-  PAYPAL_PAYMENT_LINK_US: "https://www.paypal.com/ncp/payment/P8TFGRSNR574Q ",
 
   // Business Locale
   BUSINESS_LOCALE_CA: "CA",
@@ -64,8 +55,6 @@ export const appConstants = {
 
   // S3
   S3_STORAGE_BUCKET_PREFIX: "ceseelia-storage-",
-  SECRET_STORAGE_BUCKET: "secrets.primefaya.com",
-  PUBLIC_STORAGE_BUCKET: "public.primefaya.com",
 
   // DynamoDB
   DYNAMO_TABLE_PREFIX: "ceseelia_",
@@ -108,8 +97,6 @@ export const appConstants = {
   INDEX_NAME_USER_EMAIL_GSI: "UserEmailGSI",
 
   // S3
-  S3_BUCKET_PRIMEFAYA_PRIVATE_STORAGE: "secrets.primefaya.com",
-  S3_BUCKET_PRIMEFAYA_GCP_FCM_PKEY: "gcp/fcm_pkey.json",
   S3_UPLOAD_URL_EXPIRY_SECONDS: 3600, // 1 hour
   S3_DOWNLOAD_URL_EXPIRY_SECONDS: 1800, // # 30 minutes
   S3_FOLDER_USER_ASSETS: "user-assets",

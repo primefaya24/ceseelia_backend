@@ -12,7 +12,7 @@ stage usually touches both repos.
 
 - Node 24, TypeScript (CommonJS, `strict`), Express 5
 - AWS: DynamoDB (single table), Cognito (auth), S3 (images via presigned URLs), SES (email),
-  Secrets Manager, Route53; Stripe SDK installed but not wired up
+  Secrets Manager, Route53; Stripe (Connect + Billing, `layers/payments`)
 - Deployed as Docker containers on EC2: `node` (port 3100) behind `nginx` (TLS via certbot)
 - **Infrastructure lives in `../ceseelia_cloudformation`** (AWS SAM, stacks `ceseelia-dev` /
   `ceseelia-prod`): the Cognito user pool and client, the `ceseelia_<stage>` table and its GSIs
@@ -28,8 +28,8 @@ ceseelia_backend/
 ├── docker-compose.yml, nginx/nginx.conf      # prod runtime (node + nginx + certbot)
 ├── *.sh / *.ps1                              # EC2 ops scripts (certs, swap, scp image, reboot)
 └── node/
-    ├── index.ts           # starts the server (listen only)
-    ├── app.ts             # createApp(): CORS, Stripe webhook stub, JSON body, host routing
+    ├── index.ts           # starts the server, the sweeps and graceful shutdown
+    ├── app.ts             # createApp(): helmet, /healthz, CORS, Stripe webhooks, JSON body, host routing
     ├── middleware.ts      # host-based router + request logger (only ALLOWED_API_HOSTS reach the API)
     ├── tests/             # vitest specs
     ├── config/index.ts    # env-driven config (STAGE, hosts, CORS, Cognito, table/bucket)
@@ -39,14 +39,15 @@ ceseelia_backend/
     └── layers/
         ├── core/http      # validateAndExecuteHttpApiRoute (auth + validation wrapper)
         ├── core/interfaces/store   # StoreOverview, StoreSettings, StoreCategory, StoreItem, StoreOrder…
-        ├── core/utils     # misc helpers, S3 cleanup, geo-IP currency, PDF invoice, DQS
+        ├── core/utils     # misc helpers, S3 cleanup, geo-IP currency, DQS
         ├── aws/dynamodb/dynamo-entities/{store,admin,user,membership,slug}   # data access
         ├── aws/dynamodb/{dynamo-batch-ops,dynamo-query}   # batch read/write with retries; paged queries
         ├── aws/{cognito,s3,ses,sqs,route53,secret-manager}
-        └── stripe         # generateStripeCheckoutLink (legacy, from a previous project)
+        ├── payments       # Stripe: Connect, checkout, webhooks, refunds, Billing
+        └── notifications  # order emails, templates, receipt PDF
 ```
 
-Note: much of `layers/` (user entity, cognito, stripe, pdf, ses templates, DQS stripe handler,
+Note: some of `layers/` (user entity, cognito, ses templates, DQS stripe handler,
 `websiteId` naming) was carried over from earlier projects (DinersXpress / PrimeFaya). Treat it as
 a toolbox — reuse, but verify before relying on it.
 
@@ -188,9 +189,9 @@ export default function registerRoute(router: Router): void {
 | Background (5.7) | `sweepLostOrders` every 10 min (`index.ts`) | ✅ orders listed under `APP_PENDING_ORDER` whose checkout ended: asks Stripe (session, then PaymentIntent) → PAID (missed webhook) / CANCELLED `PAYMENT_EXPIRED` or `PAYMENT_FAILED` / kept while a delayed payment is processing |
 | Customer (6.6) | `GET /customer/order-status/:orderId` + header `X-Order-Token` (no auth) | ✅ the checkout's token or an emailed one (6.5); the shopper's view (no Stripe ids, fee, commission); wrong token = unknown = 404 `ORDER_NOT_FOUND`; 60/IP/min |
 
-Infra helpers ready to reuse: SES `sendEmail` (sender names made header-safe by `senderName`) + templates, the legacy PDF generator (`pdfkit`; PrimeFaya-branded, not usable as is),
-Secrets Manager CRUD, Route53 subdomain records, S3 helpers, Stripe checkout link helper, the
-in-process DQS queue.
+Infra helpers ready to reuse: SES `sendEmail` / `sendEmailWithAttachments` (sender names made
+header-safe by `senderName`) + templates, Secrets Manager CRUD, Route53 subdomain records, S3
+helpers, the in-process DQS queue. `GET /healthz` (no auth, any host) for Docker and nginx.
 
 ## 5. Known issues & risks
 
@@ -202,10 +203,11 @@ Open:
    been rotated (S.2).
 4. Rewards redemption method has two spellings: the backend default is `POINTS_TO_*`, the webapp
    saves `REWARDS_REDEMPTION_*`. The validator accepts both. → unify in Stage 7.3
-5. `certbot-renew.sh` still uses `/home/ec2-user/primedine/...` paths; check them on the server.
+5. ~~`certbot-renew.sh` paths~~ fixed 2026-11-14 (S.17); the cron line on the server needs
+   `/bin/bash` in front (owner).
 6. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency), so
    in dev a Canada delivery's tax estimate always falls back to the store's province.
-7. No structured logging, rate limiting or CI yet. → Stage 9
+7. No structured logging or CI yet (helmet, `/healthz` and graceful shutdown are in). → Stage 9
 
 Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
 `api.ceseelia.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);

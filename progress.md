@@ -19,10 +19,42 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 ## 1. Where things stand
 
+> **🚀 Launch checklist (owner, 2026-11-14): EVERY item below must be done before launch.**
+> Nothing here is optional or "after launch". Work order agreed 2026-11-14: L.1 is the owner's
+> (2026-11-15); Claude works on L.2–L.9 in the order shown, starting with L.3 (certbot).
+> - [ ] **L.0 Owner: the first real test order** in Stripe test mode (Connect webhook first,
+>       with the refund events, BE 5.5 "Setup"): checkout → paid (receipt + PDF, alerts) →
+>       Store › Orders → steps (ready / on its way emails) → refund part → refund the rest.
+> - [ ] **L.1 Owner: Stripe and secrets.** Stripe Billing setup (P.5 "Setup") and a Spark
+>       checkout test; `PAID_PLANS_ENABLED=true` in prod; live Stripe keys and webhook secrets
+>       in `ceseelia/prod/stripe`; S.2 password rotation.
+> - [ ] **L.2 The AI store check** in `runSmartStoreValidation` (P.4c; today every store
+>       passes). Needs the owner's rules for what to flag.
+> - [x] **L.3 Security hardening, S.14–S.17** (done 2026-11-14; owner: fix the cron line on
+>       primehost-0, see S.17): helmet and nginx headers (HSTS,
+>       `server_tokens off`), a hardened Docker image (`npm ci --omit=dev`, non-root), legacy
+>       DinersXpress / PrimeFaya code removed, and **`certbot-renew.sh` fixed** (critical:
+>       "Permission denied" on primehost-0, `~/tasks.md`; wrong `primedine` paths).
+> - [ ] **L.4 Production basics, Stage 9:** structured logs with no PII (9.1), rate limits and
+>       body limits (9.2), a health check and graceful shutdown (9.3), CI (9.4), infrastructure
+>       as code (9.5), backups (DynamoDB PITR), lifecycle rules and alarms (9.6).
+> - [ ] **L.5 WA 6.4 new-order notifications** in the dashboard (a toast and a sound; web push,
+>       BE 6.7).
+> - [ ] **L.6 Store Overview:** WA 6.5 with BE 1.5 merchant stats (today's orders, revenue,
+>       best sellers).
+> - [ ] **L.7 Stage 7:** Store › Customers (7.1), unified rewards and earn/redeem (7.3, 7.4),
+>       reviews (7.5). 7.2 (optional customer accounts) included.
+> - [ ] **L.8 Stage 8 admin console:** real admin overview stats (8.1), support tickets (8.3),
+>       commission reporting (8.4). (8.2 join requests stay superseded by P.3.)
+> - [ ] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
+>       SEO / link previews, account delete (BE `delete-user`, WA 1.6d), custom domains
+>       (P.9 / 9.8), the admin menu's review-queue badge, paging Admin › Stores.
+
 > **▶ Start the next session here (2026-11-14).** Stages S, 0–4 and P are done, and so are
 > Stage 5 checkout (5.1–5.7) and Stage 6 order management and emails (6.1–6.6) in both repos. 6.4
 > (refunds, 2026-11-14) is `POST /store/orders/refund`, for store ADMINs only. 6.4b syncs
-> refunds from Stripe, so failed refunds stop counting and are shown. **Next, in order:**
+> refunds from Stripe, so failed refunds stop counting and are shown. **The launch checklist above is the work list;** the notes below are
+> what was decided along the way.
 > 1. **Owner: the first real test order** in Stripe test mode. Add the Connect webhook first (5.5
 >    "Setup"). Then storefront → checkout → paid → Store › Orders → move it on → refund part of
 >    it → refund the rest. (Add the new refund events to the webhook, see 5.5 "Setup".)
@@ -232,19 +264,35 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
     1 = nginx). `getClientIp` and the request logger use `req.ip`; `cf-connecting-ip` is no longer
     read (no Cloudflare in front). **When CloudFront goes in front (3.2), set
     `TRUST_PROXY_HOPS=2`.** Tests in `tests/client-ip.test.ts`._
-- [ ] 🟡 **S.14 Security headers:** add `helmet`. In nginx, add `server_tokens off`, HSTS,
-      `ssl_protocols TLSv1.2 TLSv1.3`, and pin `nginx:<version>` in compose.
-- [ ] 🟡 **S.15 Harden the Docker image:** `npm ci --omit=dev`, run as the non-root `node` user,
-      and add a `HEALTHCHECK` once 9.3 exists.
-- [ ] ⚪ **S.16 Quarantine legacy code** (from DinersXpress / PrimeFaya):
-  - [ ] a. `cognito.signIn` passes the decoded token to `isUserAdmin` (wrong argument), and
-        `processAuthCode` trusts an unverified decode. Delete both or fix them before any use.
-  - [ ] b. `layers/stripe` hard-codes `order.dinersxpress.com` URLs and per-merchant secret keys.
-        Mark it "do not use" until Stage 5 rewrites it.
-  - [ ] c. Remove PrimeFaya constants (`secrets.primefaya.com`, PayPal links, logo URLs) and
-        `getAndroidEnterpriseServiceAccount`.
-  - [ ] d. Remove the duplicate `intervalInMs` check in `registerTimer`.
-- [ ] ⚪ **S.17 Ops scripts:** fix the `certbot-renew.sh` paths (`/home/ec2-user/primedine/...`).
+- [x] 🟡 **S.14 Security headers** (2026-11-14): `helmet` 8.1.0 in `app.ts` (HSTS, nosniff,
+      frame options; `Cross-Origin-Resource-Policy: cross-origin` so the webapp can read the
+      API). nginx: `server_tokens off`, TLS 1.2/1.3 only, session tickets off, client timeouts,
+      an HTTPS default server that refuses unknown names (`ssl_reject_handshake`). HSTS comes
+      from helmet only, so it isn't sent twice. Images pinned: `nginx:1.30.6-alpine`,
+      `certbot/certbot:v5.10.0` (compose and both cert scripts). Checked with `nginx -t` in the
+      pinned image.
+- [x] 🟡 **S.15 Harden the Docker image** (2026-11-14): `npm ci --omit=dev --ignore-scripts`,
+      `NODE_ENV=production`, runs as `node` (not root), `HEALTHCHECK` on `/healthz`; nginx
+      starts once node is healthy. Built and run locally: user `node`, no dev tools, healthy,
+      SIGTERM → "closed cleanly", exit 0. `npm audit --omit=dev`: 0 vulnerabilities.
+- [x] ⚪ **S.16 Legacy code removed** (2026-11-14), not just quarantined:
+  - [x] a. `cognito.signIn` and `processAuthCode` deleted (and `decodeJwtToken`,
+        `isUserAdminByDecodedToken`, `attachCookie`; the `jwt-decode` package is gone).
+  - [x] b. `layers/stripe` (DinersXpress checkout) deleted; `layers/payments` is the only Stripe code.
+  - [x] c. PrimeFaya constants (buckets, PayPal links, logo URLs), `getPaymentLink`,
+        `getAndroidEnterpriseServiceAccount` and the PrimeFaya PDF (`layers/core/utils/pdf`)
+        deleted; receipts use `layers/notifications/receipt-pdf.ts`.
+  - [x] d. Duplicate `intervalInMs` check in `registerTimer` removed.
+- [x] ⚪ **S.17 Ops scripts** (2026-11-14): `certbot-renew.sh` rewritten. It works from the
+      folder it's in (no `primedine` paths), the cron line runs it with `/bin/bash` (the
+      "Permission denied" on primehost-0: the script wasn't executable), and nginx is reloaded
+      from the host when a certificate renews (the old `--deploy-hook` ran `docker compose`
+      inside the certbot container, so a renewed cert was never loaded). Every `*.sh` is
+      executable in git. `generate-cert.sh`: runs from its own folder, `CERT_EMAIL` (default
+      support@ceseelia.com), reloads nginx instead of restarting node. `system-init.sh` takes
+      `PROJECT_DIR`.
+      **On the server (owner):** after copying the files, fix the existing cron line, which
+      still runs the script without bash. See 2026-11-14 in the changelog.
       Add a confirmation prompt to `docker-close-all.sh`, which removes every container and image
       on the host.
 
@@ -1128,7 +1176,9 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       `console.warn` request logger and the `console.error(e)` calls in routes.
 - [ ] 9.2 `express-rate-limit` on public and auth-sensitive routes (needs S.13). Lower the JSON
       body limit per route where 1 MB isn't needed.
-- [ ] 9.3 `GET /health` endpoint, graceful shutdown (SIGTERM), docker/nginx health checks.
+- [x] 9.3 (2026-11-14) `GET /healthz` (before host routing; 503 while shutting down, `no-store`),
+      graceful shutdown in `index.ts` (SIGTERM/SIGINT: stop the sweeps, stop taking
+      connections, 10 s for in-flight requests), Docker `HEALTHCHECK`, nginx waits for healthy.
 - [ ] 9.4 CI (GitHub Actions): lint, typecheck, test, `npm audit --omit=dev`, build image.
 - [ ] 9.5 IaC (CDK/Terraform): table and GSIs, buckets (private, CloudFront OAC, CORS), Cognito
       plus triggers, IAM least-privilege instance role.
@@ -1142,6 +1192,8 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-14 | L.3 done: S.14 helmet + nginx hardening + pinned images; S.15 non-root image with `npm ci --omit=dev` and HEALTHCHECK; S.16 legacy auth/PayPal/PrimeFaya/DinersXpress code deleted; S.17 certbot renewal fixed (paths, executable bit, nginx reload from the host). 9.3 `/healthz` + graceful shutdown. Server step: `crontab -e`, make the line `0 2,14 * * * /bin/bash <project>/certbot-renew.sh >> <project>/certbot-renew.log 2>&1`. |
+| 2026-11-14 | Launch checklist L.0–L.9 added at the top of §1 (owner: everything in it must be done before launch). |
 | 2026-11-14 | 6.5 owner decisions done: PDF receipt attached (pdfkit, raw MIME `sendEmailWithAttachments`), `storeInfo.taxNumber` on receipts, new-order alerts also to the store's contact email (`storeInfo.emailOrderAlerts`, default on, never public). SES checked: production access on. |
 | 2026-11-14 | 6.5 done: order emails (receipt, new-order alert to members, ready / on its way, refunds, review decisions) in `layers/notifications`; per-email order links (`storeOrderLinkTokenHashes`, accepted by order-status); header-safe sender names. Owner questions under 6.5. |
 | 2026-11-14 | 5.7 done: lost-order sweeper (`sweepLostOrders`, every 10 min) over the new `APP_PENDING_ORDER` rows written by create-order; asks Stripe and marks PAID (missed webhook) or CANCELLED, keeps delayed payments; `scripts/backfill-pending-orders.mjs` (dev: nothing to list). |

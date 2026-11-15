@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import request from "supertest";
-import { buildCorsOptions, createApp } from "../app";
+import { buildCorsOptions, createApp, markShuttingDown } from "../app";
 import { isAllowedApiHost } from "../middleware";
 
 function originAllowed(options: ReturnType<typeof buildCorsOptions>, origin: string | undefined) {
@@ -46,5 +46,27 @@ describe("host routing", () => {
       .set("Content-Type", "application/json")
       .send("{}");
     expect([400, 503]).toContain(res.status);
+  });
+});
+
+describe("security headers and /healthz (S.14, 9.3)", () => {
+  it("helmet headers are on every response; no x-powered-by", async () => {
+    const res = await request(createApp()).get("/healthz");
+    expect(res.headers["x-content-type-options"]).toBe("nosniff");
+    expect(res.headers["strict-transport-security"]).toContain("max-age=");
+    expect(res.headers["x-frame-options"]).toBe("SAMEORIGIN");
+    expect(res.headers["cross-origin-resource-policy"]).toBe("cross-origin");
+    expect(res.headers["x-powered-by"]).toBeUndefined();
+  });
+
+  it("/healthz answers on any host, uncached; 503 once shutting down", async () => {
+    const app = createApp();
+    const ok = await request(app).get("/healthz").set("Host", "127.0.0.1:3100");
+    expect(ok.status).toBe(200);
+    expect(ok.body).toEqual({ ok: true });
+    expect(ok.headers["cache-control"]).toBe("no-store");
+    markShuttingDown();
+    const down = await request(app).get("/healthz");
+    expect(down.status).toBe(503);
   });
 });

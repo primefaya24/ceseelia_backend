@@ -31,7 +31,8 @@ until docker info >/dev/null 2>&1; do
 done
 
 # Define your project directory
-PROJECT_DIR=/home/ec2-user/primedine
+# The folder scp-fs.sh copies the project to (override: PROJECT_DIR=... ./system-init.sh).
+PROJECT_DIR="${PROJECT_DIR:-/home/ec2-user/primedine}"
 
 if [ ! -d "$PROJECT_DIR" ]; then
   echo "❌ ERROR: Project directory $PROJECT_DIR does not exist!"
@@ -60,7 +61,8 @@ echo "⏰ Setting up certbot renewal cron job for ec2-user..."
 # Add the cron job only if it doesn't already exist
 crontab -l 2>/dev/null | grep -q 'certbot-renew.sh' || (
   crontab -l 2>/dev/null > /tmp/ec2user_cron_backup || true
-  echo "0 2,14 * * * /home/ec2-user/primedine/certbot-renew.sh >> /home/ec2-user/primedine/certbot-renew.log 2>&1" >> /tmp/ec2user_cron_backup
+  # Run with bash, so a lost executable bit can't stop renewals ("Permission denied").
+  echo "0 2,14 * * * /bin/bash $PROJECT_DIR/certbot-renew.sh >> $PROJECT_DIR/certbot-renew.log 2>&1" >> /tmp/ec2user_cron_backup
   crontab /tmp/ec2user_cron_backup
   rm /tmp/ec2user_cron_backup
 )

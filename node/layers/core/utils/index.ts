@@ -3,7 +3,6 @@ import moment from "moment-timezone";
 import type { Request as ExpressRequest } from "express";
 import { appConstants } from "../../../constants";
 import { IN_DEV, S3_STORAGE_BUCKET_NAME, S3_STORAGE_BUCKET_ORIGIN, STAGE } from "../../../config";
-import { jwtDecode } from "jwt-decode";
 import { deleteS3Keys, listPrefixFiles } from "../../aws/s3";
 import { StoreSettings } from "../interfaces/store";
 import { CaProvince, isCaProvince } from "../tax/canada";
@@ -305,22 +304,6 @@ export function getDaysBetweenTimestamps(
   return Math.ceil(differenceInMilliseconds / millisecondsPerDay); // Always round up
 }
 
-export function getPaymentLink(businessLocale: any): string {
-  let paymentLink;
-  switch (businessLocale) {
-    case appConstants.BUSINESS_LOCALE_CA:
-      paymentLink = appConstants.PAYPAL_PAYMENT_LINK_CA;
-      break;
-    case appConstants.BUSINESS_LOCALE_US:
-      paymentLink = appConstants.PAYPAL_PAYMENT_LINK_US;
-      break;
-    default:
-      paymentLink = appConstants.PAYPAL_PAYMENT_LINK_US;
-      break;
-  }
-  return paymentLink;
-}
-
 export function getWebsiteCurrency(businessLocale: any): string {
   let currency;
   switch (businessLocale) {
@@ -342,13 +325,6 @@ export function formatAmountForStripe(amount: string | number): number {
 }
 
 /*
- * Decode JWT token
- */
-export function decodeJwtToken(token: string): any {
-  return jwtDecode(token);
-}
-
-/*
  * Encode to base64
  */
 export function encodeBase64(data: any): string {
@@ -360,49 +336,6 @@ export function encodeBase64(data: any): string {
  */
 export function decodeBase64(base64Str: string): string {
   return Buffer.from(base64Str, "base64").toString("ascii");
-}
-
-/*
- * Checks whether user is admin
- */
-export function isUserAdminByDecodedToken(decodedToken: any) {
-  if (decodedToken) {
-    if (decodedToken["cognito:groups"]) {
-      const cognitoGroups = decodedToken["cognito:groups"];
-      for (const cognitoGroupName of cognitoGroups) {
-        if (cognitoGroupName.valueOf() === appConstants.COGNITO_GROUP_ADMINS) {
-          return true;
-        }
-      }
-      return false;
-    } else {
-      return false;
-    }
-  } else {
-    return false;
-  }
-}
-
-/*
- * Attach cookie to response
- */
-export function attachCookie(
-  res: any,
-  sessionId: string,
-  rememberMe: boolean
-): void {
-  res.cookie(
-    `SessionData`,
-    { SessionId: sessionId, RememberMe: rememberMe },
-    {
-      maxAge: rememberMe
-        ? appConstants.COOKIE_TIMEOUT_MILLIS_YEAR
-        : appConstants.COOKIE_TIMEOUT_MILLIS,
-      secure: !IN_DEV,
-      httpOnly: appConstants.COOKIE_HTTP_ONLY,
-      sameSite: appConstants.COOKIE_SAME_SITE,
-    }
-  );
 }
 
 /*
@@ -453,10 +386,6 @@ export function registerTimer(
   intervalInMs: number,
   fn: () => void | Promise<void>
 ): ReturnType<typeof setInterval> {
-  if (intervalInMs <= 0) {
-    throw new Error("Interval must be greater than 0ms");
-  }
-
   if (intervalInMs <= 0) {
     throw new Error("Interval must be greater than 0ms");
   }

@@ -13,7 +13,8 @@ services:
 
   nginx:
     container_name: nginx
-    image: nginx:latest
+    # S.14: a pinned stable release (update on purpose, never by accident).
+    image: nginx:1.30.6-alpine
     ports:
       - "80:80"
       - "443:443"
@@ -22,13 +23,14 @@ services:
       - ./certbot/webroot:/var/www/certbot
       - ./certbot/ssl:/etc/letsencrypt
     depends_on:
-      - node
+      node:
+        condition: service_healthy
     restart: always
     networks:
       - internal
 
   certbot:
-    image: certbot/certbot
+    image: certbot/certbot:v5.10.0
     container_name: certbot
     volumes:
       - ./certbot/webroot:/var/www/certbot

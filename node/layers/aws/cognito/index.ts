@@ -7,10 +7,7 @@ import {
     ConfirmSignUpCommand,
     ConfirmSignUpCommandInput,
     ConfirmSignUpCommandOutput,
-    AdminInitiateAuthCommand,
-    AdminInitiateAuthCommandInput,
     AdminInitiateAuthCommandOutput,
-    AuthFlowType,
     ResendConfirmationCodeCommand,
     ResendConfirmationCodeCommandInput,
     ForgotPasswordCommand,
@@ -21,16 +18,13 @@ import {
 } from "@aws-sdk/client-cognito-identity-provider";
 import {appConstants} from "../../../constants";
 import {
-    COGNITO_AUTH_DOMAIN, COGNITO_FEDERATION_REDIRECT_URL,
     COGNITO_USER_POOL_CLIENT_ID,
     COGNITO_USER_POOL_CLIENT_SECRET,
-    COGNITO_USER_POOL_ID, IN_DEV
+    COGNITO_USER_POOL_ID
 } from "../../../config";
 import { createHmac } from 'crypto';
 import jwt, { JwtHeader } from "jsonwebtoken";
 import jwksClient, { JwksClient } from "jwks-rsa";
-import {UserCognitoInfo} from "../../core/interfaces/cognito";
-import {decodeJwtToken, encodeBase64, isUserAdmin} from "../../core/utils";
 
 /*
 * Clients
@@ -93,31 +87,6 @@ export async function confirmSignup(email: string, code: string): Promise<Confir
 }
 
 /*
-* User SignIn
-*/
-export async function signIn(email: string, password: string): Promise<UserCognitoInfo> {
-    const adminInitiateAuthCommandInput: AdminInitiateAuthCommandInput = {
-        ClientId: COGNITO_USER_POOL_CLIENT_ID,
-        UserPoolId: COGNITO_USER_POOL_ID,
-        AuthFlow: AuthFlowType.ADMIN_USER_PASSWORD_AUTH,
-        AuthParameters: {
-            USERNAME: email,
-            PASSWORD: password,
-            SECRET_HASH: calcCognitoSecretHash(email),
-        },
-    };
-    const command = new AdminInitiateAuthCommand(adminInitiateAuthCommandInput);
-    const adminInitiateAuthCommandOutput: AdminInitiateAuthCommandOutput = await cognitoClient.send(command);
-    const accessToken = adminInitiateAuthCommandOutput.AuthenticationResult?.AccessToken!;
-    const decodedToken = decodeJwtToken(accessToken);
-    const cognitoId = decodedToken["sub"];
-    return {
-        cognitoId: cognitoId,
-        isAdmin: isUserAdmin(decodedToken),
-    }
-}
-
-/*
 * Resend confirmation code
 */
 export async function resendConfirmationCode(email: string): Promise<AdminInitiateAuthCommandOutput> {
@@ -156,43 +125,6 @@ export async function finalizeForgotPasswordFlow(email: string, password: string
     };
     const command = new ConfirmForgotPasswordCommand(confirmForgotPasswordCommandInput);
     return await cognitoClient.send(command);
-}
-
-/*
-* Process auth code
-*/
-export async function processAuthCode(code: string): Promise<UserCognitoInfo | null> {
-    const reqBody = {
-        grant_type: appConstants.COGNITO_GRANT_TYPE_CODE,
-        client_id: COGNITO_USER_POOL_CLIENT_ID,
-        code: code,
-        redirect_uri: COGNITO_FEDERATION_REDIRECT_URL,
-    };
-    const params: string = `grant_type=${reqBody.grant_type}&client_id=${reqBody.client_id}&code=${reqBody.code}&redirect_uri=${reqBody.redirect_uri}`;
-    const base64Auth = encodeBase64(`${COGNITO_USER_POOL_CLIENT_ID}:${COGNITO_USER_POOL_CLIENT_SECRET}`);
-    const res = await fetch(COGNITO_AUTH_DOMAIN + `?${params}`, {
-        method: "POST",
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            "Authorization": `Basic ${base64Auth}`
-        },
-    });
-    if (res.ok) {
-        const resBody = await res.json();
-        const accessToken: string = resBody["access_token"];
-        const decodedToken = decodeJwtToken(accessToken);
-        const cognitoId = decodedToken["sub"];
-        return {
-            cognitoId: cognitoId,
-            isAdmin: isUserAdmin(decodedToken),
-        }
-    } else {
-        if (IN_DEV) {
-            const errBody = await res.json();
-            console.error(errBody);
-        }
-        return null;
-    }
 }
 
 /**
