@@ -126,6 +126,17 @@ describe("POST /customer/create-order (5.4)", () => {
     expect(params.payment_intent_data!.application_fee_amount).toBe(145);
     expect(params.success_url).toContain("/s/northern-hoop/order/");
 
+    // 5.7: listed for the lost-order sweeper in the same transaction.
+    const items = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems!;
+    expect(items).toHaveLength(3);
+    expect(items[2].Put!.Item).toMatchObject({
+      pk: "APP_PENDING_ORDER",
+      sk: items[0].Put!.Item!.sk,
+      storeId: STORE,
+      orderId: res.body.orderId,
+      orderSk: items[0].Put!.Item!.sk,
+    });
+
     const order = savedOrder();
     expect(order).toMatchObject({
       pk: `STORE#${STORE}`,

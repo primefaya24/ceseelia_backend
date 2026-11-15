@@ -125,6 +125,7 @@ export default function registerRoute(router: Router): void {
   | Order pointer | `ORDER#<orderId>` | `ORDER` (`storeId`, `orderSk`: find an order by id; never changes) |
   | Sale (admin graphs) | `APP` | `ORDER#<paidAt>#STORE#<storeId>#<orderId>` (`currency`, `totalMinor`, `platformFeeMinor`; written when paid, 5.6d) |
   | Processed Stripe event | `STRIPE_EVENT#<eventId>` | `EVENT` (`type`, `processedAt`, `expiresAt`; Connect webhook, 5.5b) |
+  | Pending order (sweeper list) | `APP_PENDING_ORDER` | `ORDER#<createdAt>#<orderId>` (`storeId`, `orderId`, `orderSk`; written by create-order with the order, removed by the 5.7 sweeper once settled) |
   GSIs used by user code: `CognitoIdentifierGSI`, `UserEmailGSI`.
 - S3 keys: `store/<storeId>/images/{logo,header,promo}/<ulid>.<ext>`,
   `store/<storeId>/category/<categoryId>/…`, `store/<storeId>/item/<itemId>/…`. Uploads are
@@ -183,6 +184,7 @@ export default function registerRoute(router: Router): void {
 | Store orders (6.2) | `GET /store/orders/get/:storeId/:orderId` (store members) | ✅ `MerchantOrderView` (no token hash); other store's = 404 `ORDER_NOT_FOUND` |
 | Store orders (6.3) | `PUT /store/orders/update-status` `{storeId, orderId, status, fromStatus}` (store members) | ✅ forward only (`nextOrderStatuses`), conditional on `fromStatus`, `storeOrderStatusHistory`; 409 `INVALID_TRANSITION` / `STATUS_CHANGED` {order}; cancelling a paid order = refund (6.4) |
 | Store orders (6.4) | `POST /store/orders/refund` `{storeId, orderId, amountMinor, refundedMinor, reason?}` (store ADMINs) | ✅ part or full refund on the connected account (`layers/payments/order-refund.ts`; platform keeps its fee), only from the refunded total seen (409 `REFUND_CHANGED`), idempotent on it; then the order's refunds are synced from Stripe (`syncOrderRefunds`), all of it → REFUNDED, each refund in `storeOrderRefunds`; 409 `NOT_REFUNDABLE` / `AMOUNT_TOO_LARGE` / `ORDER_DISPUTED` / `INSUFFICIENT_BALANCE` {order}; 503 / 502. Stock isn't put back |
+| Background (5.7) | `sweepLostOrders` every 10 min (`index.ts`) | ✅ orders listed under `APP_PENDING_ORDER` whose checkout ended: asks Stripe (session, then PaymentIntent) → PAID (missed webhook) / CANCELLED `PAYMENT_EXPIRED` or `PAYMENT_FAILED` / kept while a delayed payment is processing |
 | Customer (6.6) | `GET /customer/order-status/:orderId` + header `X-Order-Token` (no auth) | ✅ the shopper's view (no Stripe ids, fee, commission); wrong token = unknown = 404 `ORDER_NOT_FOUND`; 60/IP/min |
 
 Infra helpers ready to reuse: SES `sendEmail` + templates, PDF invoice generator (`pdfkit`),

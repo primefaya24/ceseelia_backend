@@ -26,8 +26,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > 1. **Owner: the first real test order** in Stripe test mode. Add the Connect webhook first (5.5
 >    "Setup"). Then storefront → checkout → paid → Store › Orders → move it on → refund part of
 >    it → refund the rest. (Add the new refund events to the webhook, see 5.5 "Setup".)
-> 2. **5.7** sweeper for abandoned `PENDING_PAYMENT` orders, a fallback for missed `expired`
->    events.
+> 2. ~~5.7 lost-order sweeper~~ done 2026-11-14.
 > 3. **6.5 emails** (SES + PDF): the shopper's receipt, the merchant's new-order alert,
 >    status-change emails, and the merchant's review-decision emails.
 > 4. WA 6.4 new-order notifications, then WA 6.5 Store Overview (needs BE 1.5 stats).
@@ -977,8 +976,25 @@ pickup or delivery, goes through Stripe Checkout (5.4).
   - [x] c. `storeOrderCount` +1 on the overview row (completed / cancelled counts come with 6.3).
   - [x] d. `APP / ORDER#<paidAt>#STORE#<storeId>#<orderId>` {currency, totalMinor,
         platformFeeMinor} for admin graphs (8.1) and fee reporting (8.4).
-- [ ] 5.7 Sweeper for abandoned `PENDING_PAYMENT` orders (`registerTimer` +
-      `SERVER_WATCH_CHECK_FOR_LOST_ORDERS_INTERVAL`).
+- [x] 5.7 Lost-order sweeper (done 2026-11-14; `layers/payments/order-sweep.ts`, registered in
+      `index.ts` every `SERVER_WATCH_CHECK_FOR_LOST_ORDERS_INTERVAL`, 10 min).
+      create-order now also writes `APP_PENDING_ORDER / ORDER#<createdAt>#<orderId>`
+      `{storeId, orderId, orderSk}` in the same transaction. Once the checkout should have
+      ended (30 min lifetime + 15 min margin), the sweeper asks Stripe, on the store's account,
+      what happened:
+      - order gone, or already settled → the row is dropped;
+      - session expired, or missing → CANCELLED `PAYMENT_EXPIRED`;
+      - session still open → it's expired first, then cancelled;
+      - session complete and paid → `markOrderPaid` (stock, counters, sale), logged as a missed
+        webhook;
+      - complete but unpaid (a bank debit on its way) → it checks the PaymentIntent: succeeded
+        → PAID; canceled or needs a new method → CANCELLED `PAYMENT_FAILED`; still processing →
+        the row is kept.
+      It makes the same conditional writes as the webhook, so the two can't clash. Up to 200
+      orders per run; a row whose check fails stays for the next run. It runs on one server,
+      like the grace sweep (fine with more, since it's idempotent).
+      `scripts/backfill-pending-orders.mjs` lists older pending orders. The dev dry run found
+      none, so it wasn't run.
 
 ---
 
@@ -1088,6 +1104,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-14 | 5.7 done: lost-order sweeper (`sweepLostOrders`, every 10 min) over the new `APP_PENDING_ORDER` rows written by create-order; asks Stripe and marks PAID (missed webhook) or CANCELLED, keeps delayed payments; `scripts/backfill-pending-orders.mjs` (dev: nothing to list). |
 | 2026-11-14 | 6.4b done: refunds synced from Stripe's live list on every refund event and after our route (`syncOrderRefunds`, `orderRefundState`); failed / canceled refunds stop counting, REFUNDED goes back to the last step, `storeOrderFailedRefunds`. New Connect events: `charge.refund.updated`, `refund.created/updated/failed`. Owner: only store ADMINs refund. |
 | 2026-11-14 | 6.4 owner decisions: keep the platform fee on refunds; no automatic restock (WA reminds the merchant to adjust stock in Inventory). |
 | 2026-11-14 | 6.4 done: `POST /store/orders/refund` (store ADMINs; part or full refund on the connected account, conditional on the refunded total seen, idempotency key from it; `storeOrderRefunds`; 409 `NOT_REFUNDABLE` / `REFUND_CHANGED` / `AMOUNT_TOO_LARGE` / `ORDER_DISPUTED` / `INSUFFICIENT_BALANCE`). `recordOrderRefund` now only raises the total. Owner questions under 6.4. "Start here" refreshed. |

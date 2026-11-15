@@ -2,6 +2,7 @@ import * as appConfig from './config/index';
 import { createApp } from './app';
 import { checkStripeConfig } from './layers/payments/stripe';
 import { sweepExpiredGrace } from './layers/payments/subscription-sync';
+import { sweepLostOrders } from './layers/payments/order-sweep';
 import { registerTimer } from './layers/core/utils';
 
 const app = createApp();
@@ -15,6 +16,13 @@ checkStripeConfig()
             registerTimer(appConfig.BILLING_GRACE_SWEEP_INTERVAL, async () => {
                 const n = await sweepExpiredGrace();
                 if (n > 0) console.warn(`[billing] grace sweep: ${n} store(s) re-synced`);
+            });
+            // 5.7: orders whose Checkout ended without a webhook (paid → PAID, else CANCELLED).
+            registerTimer(appConfig.SERVER_WATCH_CHECK_FOR_LOST_ORDERS_INTERVAL, async () => {
+                const r = await sweepLostOrders();
+                if (r.paid + r.cancelled + r.failed > 0) {
+                    console.warn(`[order sweep] checked ${r.checked}: ${r.paid} paid, ${r.cancelled} cancelled, ${r.cleared} cleared, ${r.kept} kept, ${r.failed} failed`);
+                }
             });
         });
     })

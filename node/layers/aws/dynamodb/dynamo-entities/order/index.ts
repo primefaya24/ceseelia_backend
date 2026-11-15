@@ -2,11 +2,13 @@
 //
 //   STORE#<storeId> / ORDER#<createdAt>#<orderId>   the order (StoreOrder), newest last
 //   ORDER#<orderId> / ORDER                         pointer { storeId, sk } to find it by id
+//   APP_PENDING_ORDER / ORDER#<createdAt>#<orderId> the 5.7 sweeper's list { storeId, orderId, orderSk }
 // Both are written in one transaction when checkout creates the order (5.4); the pointer never
 // changes. The ORDER#<createdAt> sort key lets the merchant's list (6.1) page by date.
 import { createHash, randomBytes, randomInt } from "crypto";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
+  DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
@@ -41,6 +43,12 @@ export const orderKey = (storeId: string, createdAt: number, orderId: string) =>
   sk: `${ORDER}#${createdAt}#${orderId}`,
 });
 export const orderPointerKey = (orderId: string) => ({ pk: `${ORDER}#${orderId}`, sk: ORDER });
+/* 5.7: every new order is listed here until the sweeper has seen it settle (paid or cancelled). */
+export const PENDING_ORDERS_PK = "APP_PENDING_ORDER";
+export const pendingOrderKey = (createdAt: number, orderId: string) => ({
+  pk: PENDING_ORDERS_PK,
+  sk: `${ORDER}#${createdAt}#${orderId}`,
+});
 
 /* Crockford base32 without look-alikes: what a shopper reads out to the merchant. */
 const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
@@ -57,7 +65,7 @@ export function newStatusToken(): { token: string; hash: string } {
 }
 export const hashStatusToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
-/* Write a new order and its pointer together. Throws if either already exists. */
+/* Write a new order, its pointer and its sweeper row (5.7) together. Throws if the order or pointer exists. */
 export async function createOrderRecords(order: StoreOrder): Promise<void> {
   const key = orderKey(order.storeId, order.storeOrderCreatedAt, order.storeOrderId);
   await dynamoDbDocumentClient.send(
@@ -69,6 +77,17 @@ export async function createOrderRecords(order: StoreOrder): Promise<void> {
             TableName: TABLE,
             Item: { ...orderPointerKey(order.storeOrderId), storeId: order.storeId, orderSk: key.sk },
             ConditionExpression: "attribute_not_exists(pk)",
+          },
+        },
+        {
+          Put: {
+            TableName: TABLE,
+            Item: {
+              ...pendingOrderKey(order.storeOrderCreatedAt, order.storeOrderId),
+              storeId: order.storeId,
+              orderId: order.storeOrderId,
+              orderSk: key.sk,
+            },
           },
         },
       ],
@@ -487,4 +506,33 @@ export async function updateOrderStatus(
     if ((e as { name?: string })?.name === "ConditionalCheckFailedException") return false;
     throw e;
   }
+}
+
+/*
+ * 5.7: listed orders created before `before` (ms), oldest first, at most `limit`. The sweeper
+ * checks each one and deletes its row once the order is settled.
+ */
+export async function listStalePendingOrders(before: number, limit: number): Promise<Array<{ orderId: string; storeId: string; sk: string }>> {
+  const out: Array<{ orderId: string; storeId: string; sk: string }> = [];
+  let start: Record<string, unknown> | undefined;
+  do {
+    const res = await dynamoDbDocumentClient.send(
+      new QueryCommand({
+        TableName: TABLE,
+        KeyConditionExpression: "pk = :pk AND sk < :before",
+        ExpressionAttributeValues: { ":pk": PENDING_ORDERS_PK, ":before": `${ORDER}#${before}` },
+        Limit: Math.min(100, limit - out.length),
+        ...(start ? { ExclusiveStartKey: start } : {}),
+      })
+    );
+    for (const i of res.Items ?? []) {
+      if (typeof i.orderId === "string" && typeof i.storeId === "string") out.push({ orderId: i.orderId, storeId: i.storeId, sk: i.sk as string });
+    }
+    start = res.LastEvaluatedKey;
+  } while (start && out.length < limit);
+  return out;
+}
+
+export async function deletePendingOrderRow(sk: string): Promise<void> {
+  await dynamoDbDocumentClient.send(new DeleteCommand({ TableName: TABLE, Key: { pk: PENDING_ORDERS_PK, sk } }));
 }
