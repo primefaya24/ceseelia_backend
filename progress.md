@@ -24,7 +24,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > (refunds, 2026-11-14) is `POST /store/orders/refund`, for store ADMINs only. **Next, in order:**
 > 1. **Owner: the first real test order** in Stripe test mode. Add the Connect webhook first (5.5
 >    "Setup"). Then storefront → checkout → paid → Store › Orders → move it on → refund part of
->    it → refund the rest. Also confirm the **6.4 open questions** below.
+>    it → refund the rest. Also settle 6.4 c and d below.
 > 2. **5.7** sweeper for abandoned `PENDING_PAYMENT` orders, a fallback for missed `expired`
 >    events.
 > 3. **6.5 emails** (SES + PDF): the shopper's receipt, the merchant's new-order alert,
@@ -1006,14 +1006,15 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       `{refundId, amountMinor, status, reason, at, by}`. 409s: `NOT_REFUNDABLE`,
       `AMOUNT_TOO_LARGE`, `ORDER_DISPUTED` (open or lost dispute), `INSUFFICIENT_BALANCE`;
       503 / 502 for Stripe being unavailable or refusing. (WA 6.3)
-      **Open questions for the owner (defaults chosen):**
-      - a. Ceseelia keeps its fee on a refund (`REFUND_APPLICATION_FEE = false`, in
+      **Owner decisions (2026-11-14):**
+      - a. ✅ Ceseelia keeps its fee on every refund (`REFUND_APPLICATION_FEE = false` in
            `layers/payments/order-refund.ts`), the same as a refund in Stripe's dashboard.
-           Should a full refund return the fee to the merchant?
-      - b. Stock isn't put back on a refund. Should there be a "restock" checkbox?
-      - c. Only store ADMINs can refund; MERCHANT staff can't. Is that right?
-      - d. A refund that's `pending` and later fails isn't handled (`charge.refund.updated`
-           isn't listened to yet). This is rare, and it's for 6.5 / 9.x.
+      - b. ✅ Stock is never put back automatically; the merchant adjusts it by hand in
+           Inventory. WA reminds them in the refund form, the confirm dialog and the toast,
+           and with a note linking to Inventory on any order with a refund.
+      - c. Still open: only store ADMINs can refund, not MERCHANT staff.
+      - d. Still open: a refund that's `pending` and later fails isn't handled
+           (`charge.refund.updated` isn't listened to yet). This is rare; for 6.5 / 9.x.
 - [ ] 6.5 Emails (SES + pdf invoice): customer confirmation/receipt, merchant new-order alert,
       status-change emails.
 - [x] 6.6 `GET /customer/order-status/:orderId` (done 2026-11-13, early, for WA 5.2's return
@@ -1072,6 +1073,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-14 | 6.4 owner decisions: keep the platform fee on refunds; no automatic restock (WA reminds the merchant to adjust stock in Inventory). |
 | 2026-11-14 | 6.4 done: `POST /store/orders/refund` (store ADMINs; part or full refund on the connected account, conditional on the refunded total seen, idempotency key from it; `storeOrderRefunds`; 409 `NOT_REFUNDABLE` / `REFUND_CHANGED` / `AMOUNT_TOO_LARGE` / `ORDER_DISPUTED` / `INSUFFICIENT_BALANCE`). `recordOrderRefund` now only raises the total. Owner questions under 6.4. "Start here" refreshed. |
 | 2026-11-13 | 6.1–6.3 done: `/store/orders/list`, `/get`, `/update-status` (members; forward-only steps with history, conditional on the status seen); `MerchantOrderView` / `MerchantOrderSummary`, `nextOrderStatuses`. |
 | 2026-11-13 | `POST /customer/quote` takes an optional delivery `postalCode` (WA 5.1 checkout), so the total shown is taxed exactly as create-order will; the cart still sends none and gets the geo-IP estimate (QA Q.23). |
