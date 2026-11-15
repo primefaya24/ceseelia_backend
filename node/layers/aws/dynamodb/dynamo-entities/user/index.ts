@@ -570,3 +570,22 @@ export async function deleteUserDB(
         throw "Could not delete user";
     }
 }
+/*
+ * L.8 / 8.3: who is asking, for a support ticket: the user id, their verified sign-in email (the
+ * Cognito row) and their name (the profile). Throws like fetchUserUUID.
+ */
+export async function getUserContact(cognitoId: string): Promise<{ userId: string; email: string; name: string }> {
+    const doc = await fetchUserUUID(cognitoId, false);
+    const userId = String(doc["pk"]).split("#")[1];
+    const info = (
+        await dynamoDbDocumentClient.send(
+            new GetCommand({
+                TableName: DB_TABLE_NAME,
+                Key: { pk: `${appConstants.DYNAMO_ENTITY_USER}#${userId}`, sk: `${appConstants.DYNAMO_ENTITY_PROFILE}#${appConstants.DYNAMO_ENTITY_INFO}` },
+                ProjectionExpression: "userFirstName, userLastName",
+            })
+        )
+    ).Item;
+    const name = [info?.userFirstName, info?.userLastName].map((s) => String(s ?? "").trim()).filter(Boolean).join(" ");
+    return { userId, email: String(doc["userEmail"] ?? ""), name };
+}

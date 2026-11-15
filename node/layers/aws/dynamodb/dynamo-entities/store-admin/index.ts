@@ -42,6 +42,8 @@ export interface AdminStoreSummary {
   plan: StoreLifecycle["plan"];
   suspended: boolean;
   planSetByAdmin: boolean;
+  /** L.8 / 8.4: the connected Stripe account ("" if none), to match Stripe's fee list. Admins only. */
+  stripeAccountId: string;
   subscription: {
     plan: StoreSubscription["plan"];
     status: string;
@@ -59,6 +61,7 @@ export function summarize(row: Record<string, unknown> | undefined): AdminStoreS
     plan: lc.plan,
     suspended: normalizeAdminSettings(row?.admin).suspended,
     planSetByAdmin: lc.planSetByAdmin === true,
+    stripeAccountId: String((row?.payments as { stripeAccountId?: string } | undefined)?.stripeAccountId ?? ""),
     subscription: sub
       ? {
           plan: sub.plan,

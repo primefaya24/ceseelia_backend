@@ -290,6 +290,12 @@ export async function getMembership(storeId: string, userId: string): Promise<Me
 }
 
 /* A store's members with their current name and email, oldest first. */
+/** L.8 / 8.1: just the members' user ids (no profile reads), for platform counts. */
+export async function listStoreMemberIds(storeId: string): Promise<string[]> {
+  const rows = await queryAllWithPrefix(storePk(storeId), `${appConstants.DYNAMO_ENTITY_MEMBER}#`, TABLE);
+  return rows.map((r) => String(r.storeMemberId));
+}
+
 export async function listStoreMembers(storeId: string): Promise<StoreMemberView[]> {
   const rows = await queryAllWithPrefix(storePk(storeId), `${appConstants.DYNAMO_ENTITY_MEMBER}#`, TABLE);
   if (rows.length === 0) return [];

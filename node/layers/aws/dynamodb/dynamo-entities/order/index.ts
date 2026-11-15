@@ -634,13 +634,14 @@ export const STATS_ORDER_CAP = 3000;
 export async function listStatsOrders(
   storeId: string,
   from: number,
-  cap = STATS_ORDER_CAP
+  cap = STATS_ORDER_CAP,
+  to?: number
 ): Promise<{ orders: StoreOrder[]; partial: boolean }> {
   const statuses = STORE_ORDER_STATUSES.filter((s) => s !== "PENDING_PAYMENT" && s !== "CANCELLED");
   const orders: StoreOrder[] = [];
   let cursor: string | undefined;
   for (;;) {
-    const page = await listStoreOrders(storeId, { statuses, from, cursor, limit: Math.min(500, cap - orders.length) });
+    const page = await listStoreOrders(storeId, { statuses, from, ...(to !== undefined ? { to } : {}), cursor, limit: Math.min(500, cap - orders.length) });
     orders.push(...page.orders);
     if (!page.next) return { orders, partial: false };
     if (orders.length >= cap) return { orders, partial: true };

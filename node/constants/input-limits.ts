@@ -7,6 +7,8 @@ export const MAX_LENGTH = {
   reviewComment: 2000,
   reviewReply: 1000,
   reviewReportNote: 500,
+  ticketSubject: 120,
+  ticketMessage: 4000,
   storeName: 60,
   // A Canadian postal code with a space or dash ("K1A 0B1"); a little slack for stray spaces (4.4)
   postalCode: 10,

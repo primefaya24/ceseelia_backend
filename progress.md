@@ -103,8 +103,10 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >       7.2 accounts); commission is on the price after a rewards discount. **7.2 (light), 7.3 and
 >       7.4 rewards done 2026-11-15** (backend and webapp); owner step: run
 >       `scripts/normalize-rewards-method.mjs --write` on dev and prod (one dev store found).
-> - [ ] **L.8 Stage 8 admin console:** real admin overview stats (8.1), support tickets (8.3),
->       commission reporting (8.4). (8.2 join requests stay superseded by P.3.)
+> - [x] **L.8 Stage 8 admin console:** real admin overview stats (8.1), support tickets (8.3),
+>       commission reporting (8.4). (8.2 join requests stay superseded by P.3.) **Done
+>       2026-11-15** (backend and webapp); checked read-only on dev (6 draft stores, 7 merchants,
+>       no orders or tickets yet).
 > - [ ] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
 >       SEO / link previews, account delete (BE `delete-user`, WA 1.6d), custom domains
 >       (P.9 / 9.8), the admin menu's review-queue badge, paging Admin › Stores.
@@ -1321,16 +1323,38 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 ## 10. Stage 8 — Admin console & support
 
-- [ ] 8.1 Fill in the real admin overview (`quickStats`, `salesActivity`, store counts). Today
+- [x] 8.1 Fill in the real admin overview (`quickStats`, `salesActivity`, store counts). Today
       they're empty objects. (WA 8.1)
+  - _Done 2026-11-15. `GET /admin/get-overview-data?tz=` → `{ stats, allStores }`
+    (`layers/core/admin-stats`, same definitions as Store Overview): stores by status, merchants
+    (people in at least one store), plans, past-due subscriptions, last 30 days vs the 30 before
+    (paid orders, net sales, commission: the fee is kept on refunds), 30-day chart, top 5 stores,
+    to-do counts (stores and items to review, reported reviews, open tickets). Reads 60 days of
+    orders per store (≤ 3,000 each, `partial`), 8 stores at a time, cached 60 s. The made-up
+    counters (Profit, Expenses, Requests, Conversions) are gone: nothing measures them. Fine at
+    today's size; past a few hundred stores this wants a daily stats row written on payment._
 - [ ] 8.2 Merchant join requests (**superseded by P.3**, 2026-11-12: anyone can create a store;
       checks happen at Go Live. Keep only if the owner still wants an application form):
   - [ ] a. Public `POST /merchant/join-request` (rate-limited, bot check)
   - [ ] b. Admin list, approve and deny
   - [ ] c. Approval creates the store and membership (1.4)
   - [ ] d. Fix the `joinRequestt…` field typo before the first write. (WA 8.2)
-- [ ] 8.3 Support tickets: merchant create/list/reply, admin list/reply/close, SES notices. (WA 8.3)
-- [ ] 8.4 Commission reporting per store, from Stripe application fees. (WA 8.4)
+- [x] 8.3 Support tickets: merchant create/list/reply, admin list/reply/close, SES notices. (WA 8.3)
+  - _Done 2026-11-15. `dynamo-entities/support-ticket` (`APP_TICKET / TICKET#id`, a pointer
+    under the user, messages under `TICKET#id`). Any signed-in user: `/user/support/tickets`
+    (list, create with subject / topic / message / optional store they belong to, read, reply,
+    close); someone else's ticket is a 404. 5 new a day, 10 open, 30 replies an hour, 100
+    messages a ticket, 4,000 characters, text cleaned like reviews. Admins: `/admin/support/
+    tickets` (list ≤ 1,000, read, reply signed "Ceseelia support", close). Status OPEN → ANSWERED
+    → CLOSED; a user's reply reopens. Emails: the team (ADMIN_ALERT_EMAIL) on a new ticket or
+    reply, the user when we reply: subject and a link only, never the message._
+- [x] 8.4 Commission reporting per store, from Stripe application fees. (WA 8.4)
+  - _Done 2026-11-15. `GET /admin/commission-report?month=YYYY-MM&tz=[&reconcile=1][&format=csv]`
+    (`layers/core/commission`): per store for the month, orders, sales, refunds and the fee saved
+    on each order (exactly the `application_fee_amount`), per currency, with totals; cached 60 s.
+    `reconcile=1` lists Stripe's application fees for the month and marks each store matches or
+    not, plus fees on accounts no store uses. CSV with formula-safe cells. Subscription revenue
+    isn't in it (that's Stripe Billing on the platform account)._
 
 ---
 
@@ -1435,6 +1459,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.8: real admin overview (stores, merchants, 30-day orders / sales / commission, chart, top stores, to-do counts); support tickets for users and admins with email notices (no message text in email); monthly commission report per store with a Stripe check and CSV. |
 | 2026-11-15 | L.7 / 7.2–7.4: rewards: emailed 6-digit code (hashed, 5 guesses, per-email limits in the table, per-IP limits), 30-day per-store sessions; earn once per paid order, refunds take back their share; one reward per order off the items before tax (commission on the price after it), spent in the order's own transaction, given back once if never paid or fully refunded; one spelling for the redemption method plus a migration script. |
 | 2026-11-15 | L.7 / 7.5: verified-buyer reviews (live at once), store replies and reports, admin keep/remove; public reviews + rating. |
 | 2026-11-15 | L.7 / 7.1: customer records from paid orders (exactly once, refunds both ways) + `GET /store/customers/list/:storeId`; backfill script. |

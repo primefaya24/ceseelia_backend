@@ -80,3 +80,34 @@ export function notifyReviewReported(storeId: string, storeName: string, rating:
     "Ceseelia reviews"
   );
 }
+
+const CATEGORY_TEXT: Record<string, string> = {
+  ORDERS_PAYMENTS: "Orders and payments",
+  BILLING: "Plan and billing",
+  STORE_SETUP: "Setting up the store",
+  ACCOUNT: "Account and sign-in",
+  OTHER: "Something else",
+};
+export const ticketCategoryText = (c: string) => CATEGORY_TEXT[c] ?? c;
+
+/*
+ * L.8 / 8.3: a new support ticket, or a reply from its user. The message itself isn't in the
+ * email (it may hold account details): it's in Admin › Tickets.
+ */
+export function notifyTicket(
+  t: { ticketId: string; subject: string; category: string; storeName: string | null },
+  kind: "NEW" | "REPLY"
+): Promise<void> {
+  const where = t.storeName ? ` (${t.storeName})` : "";
+  return send(
+    kind === "NEW" ? `New support ticket: ${t.subject}` : `Reply on ticket: ${t.subject}`,
+    page(
+      kind === "NEW" ? "A merchant opened a support ticket" : "A merchant replied to a ticket",
+      `"${e(t.subject)}"${e(where)}.`,
+      [`Topic: ${ticketCategoryText(t.category)}`],
+      `/admin/tickets?ticket=${encodeURIComponent(t.ticketId)}`,
+      "Open the ticket"
+    ),
+    "Ceseelia support"
+  );
+}

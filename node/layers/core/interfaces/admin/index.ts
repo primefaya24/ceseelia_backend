@@ -1,9 +1,8 @@
 import { StoreOverview } from "../store";
+import { AdminOverviewStats } from "../../admin-stats";
 
+/* GET /admin/get-overview-data (L.8 / 8.1). */
 export interface AdminOverviewData {
-  quickStats: any;
-  salesActivity: any;
-  joinRequests: any;
-  supportTickets: any;
+  stats: AdminOverviewStats;
   allStores: StoreOverview[];
 }

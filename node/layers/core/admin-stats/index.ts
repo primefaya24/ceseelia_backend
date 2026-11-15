@@ -1,0 +1,176 @@
+import moment from "moment-timezone";
+import { StoreOrder } from "../interfaces/store";
+import { STORE_PLANS } from "../plans";
+
+/*
+ * Admin › Overview numbers (progress.md L.8 / 8.1), for the whole platform. Same definitions as
+ * Store Overview (L.6, `store-stats`), so the two never disagree:
+ *   - an order counts once paid, on the day it was paid, in the admin's time zone; unpaid and
+ *     cancelled ones never count; a fully refunded one isn't an order and adds no sales;
+ *   - sales = what shoppers paid minus refunds, per currency (never added across currencies);
+ *   - commission = Ceseelia's application fee on those orders. It's kept on refunds
+ *     (`refund_application_fee: false`), so a refunded order's fee still counts.
+ * Periods: the last 30 days (today included) and the 30 before, for the change.
+ */
+export const ADMIN_STATS_DAYS = 30;
+export const TOP_STORES = 5;
+
+export type AdminStatsOrder = Pick<
+  StoreOrder,
+  "storeOrderStatus" | "storeOrderPaidAt" | "storeOrderTotalMinor" | "storeOrderRefundedMinor" | "storeOrderCurrency" | "storeOrderPlatformFeeMinor"
+>;
+
+export interface Money {
+  currency: string;
+  minor: number;
+}
+
+export interface AdminStoreInput {
+  storeId: string;
+  storeName: string;
+  status: string;
+  suspended: boolean;
+  plan: string;
+  subscriptionStatus: string | null;
+  orders: AdminStatsOrder[];
+}
+
+export interface AdminPeriod {
+  orders: number;
+  sales: Money[];
+  commission: Money[];
+}
+
+export interface AdminOverviewStats {
+  tz: string;
+  stores: { total: number; live: number; draft: number; inReview: number; suspended: number };
+  merchants: number;
+  /** Stores with a plan (a subscription, or one an admin gave), by plan. */
+  plans: Record<string, number>;
+  /** Subscriptions Stripe says are past due or unpaid. */
+  subscriptionsPastDue: number;
+  last30: AdminPeriod;
+  previous30: AdminPeriod;
+  /** The last 30 days, oldest first; today is last. */
+  days: { date: string; orders: number; sales: Money[] }[];
+  topStores: { storeId: string; storeName: string; orders: number; sales: Money[] }[];
+  queues: { storeReviews: number; itemReviews: number; reviewReports: number; openTickets: number };
+  /** Some store had more orders than were read: its numbers cover the newest ones. */
+  partial: boolean;
+  generatedAt: number;
+}
+
+class Bag {
+  private by = new Map<string, number>();
+  add(currency: string, minor: number): void {
+    if (minor) this.by.set(currency, (this.by.get(currency) ?? 0) + minor);
+  }
+  list(): Money[] {
+    return [...this.by.entries()].map(([currency, minor]) => ({ currency, minor })).sort((a, b) => b.minor - a.minor || a.currency.localeCompare(b.currency));
+  }
+  /** For ranking: the biggest amount in any one currency. */
+  top(): number {
+    return Math.max(0, ...this.by.values());
+  }
+}
+
+class Period {
+  orders = 0;
+  sales = new Bag();
+  commission = new Bag();
+  add(o: AdminStatsOrder): void {
+    this.commission.add(o.storeOrderCurrency, Math.max(0, o.storeOrderPlatformFeeMinor ?? 0));
+    if (fullyRefunded(o)) return;
+    this.orders++;
+    this.sales.add(o.storeOrderCurrency, netMinor(o));
+  }
+  stats(): AdminPeriod {
+    return { orders: this.orders, sales: this.sales.list(), commission: this.commission.list() };
+  }
+}
+
+const counts = (o: AdminStatsOrder) =>
+  typeof o.storeOrderPaidAt === "number" && o.storeOrderStatus !== "PENDING_PAYMENT" && o.storeOrderStatus !== "CANCELLED";
+const fullyRefunded = (o: AdminStatsOrder) =>
+  o.storeOrderStatus === "REFUNDED" || (o.storeOrderRefundedMinor ?? 0) >= o.storeOrderTotalMinor;
+const netMinor = (o: AdminStatsOrder) => Math.max(0, o.storeOrderTotalMinor - (o.storeOrderRefundedMinor ?? 0));
+
+/** Where the order reads begin: the first day of the previous 30. */
+export function adminStatsWindowStart(now: number, tz: string): number {
+  return moment.tz(now, tz).startOf("day").subtract(2 * ADMIN_STATS_DAYS - 1, "days").valueOf();
+}
+
+const PAST_DUE = new Set(["past_due", "unpaid"]);
+
+export function computeAdminOverview(
+  stores: AdminStoreInput[],
+  extra: { merchants: number; queues: AdminOverviewStats["queues"]; partial: boolean },
+  now: number,
+  tz: string
+): AdminOverviewStats {
+  const today = moment.tz(now, tz).startOf("day");
+  const dayKey = (ms: number) => moment.tz(ms, tz).format("YYYY-MM-DD");
+  const last30Start = today.clone().subtract(ADMIN_STATS_DAYS - 1, "days").valueOf();
+  const prev30Start = today.clone().subtract(2 * ADMIN_STATS_DAYS - 1, "days").valueOf();
+
+  const last30 = new Period();
+  const previous30 = new Period();
+  const days = new Map<string, Period>();
+  for (let i = ADMIN_STATS_DAYS - 1; i >= 0; i--) days.set(dayKey(today.clone().subtract(i, "days").valueOf()), new Period());
+  const perStore: { storeId: string; storeName: string; p: Period }[] = [];
+
+  const storeCounts = { total: stores.length, live: 0, draft: 0, inReview: 0, suspended: 0 };
+  const plans: Record<string, number> = Object.fromEntries(STORE_PLANS.map((p) => [p, 0]));
+  let pastDue = 0;
+
+  for (const s of stores) {
+    if (s.suspended) storeCounts.suspended++;
+    if (s.status === "LIVE") storeCounts.live++;
+    else if (s.status === "IN_REVIEW") storeCounts.inReview++;
+    else storeCounts.draft++;
+    if (s.plan in plans) plans[s.plan]++;
+    if (s.subscriptionStatus && PAST_DUE.has(s.subscriptionStatus)) pastDue++;
+
+    const mine = new Period();
+    for (const o of s.orders) {
+      if (!counts(o)) continue;
+      const paid = o.storeOrderPaidAt!;
+      if (paid > now) continue;
+      if (paid >= last30Start) {
+        last30.add(o);
+        mine.add(o);
+        days.get(dayKey(paid))?.add(o);
+      } else if (paid >= prev30Start) previous30.add(o);
+    }
+    if (mine.orders > 0) perStore.push({ storeId: s.storeId, storeName: s.storeName, p: mine });
+  }
+
+  return {
+    tz,
+    stores: storeCounts,
+    merchants: extra.merchants,
+    plans,
+    subscriptionsPastDue: pastDue,
+    last30: last30.stats(),
+    previous30: previous30.stats(),
+    days: [...days.entries()].map(([date, p]) => ({ date, orders: p.orders, sales: p.sales.list() })),
+    topStores: perStore
+      .sort((a, b) => b.p.orders - a.p.orders || b.p.sales.top() - a.p.sales.top() || a.storeName.localeCompare(b.storeName))
+      .slice(0, TOP_STORES)
+      .map(({ storeId, storeName, p }) => ({ storeId, storeName, orders: p.orders, sales: p.sales.list() })),
+    queues: extra.queues,
+    partial: extra.partial,
+    generatedAt: now,
+  };
+}
+
+/** Run `fn` over `items`, at most `limit` at a time, results in order. */
+export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    for (let i = next++; i < items.length; i = next++) out[i] = await fn(items[i]);
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return out;
+}

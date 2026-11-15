@@ -24,5 +24,7 @@ route_push_config(userRouter);
 route_push_subscribe(userRouter);
 route_push_unsubscribe(userRouter);
 route_push_test(userRouter);
+import route_support from './support/index';
+route_support(userRouter);
 // Export Router
 export default userRouter;
