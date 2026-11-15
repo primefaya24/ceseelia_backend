@@ -74,7 +74,9 @@ server refuses to start in prod if required vars are missing.
 
 Deploy: build locally, build the Docker image from `node/` (it copies the prebuilt `dist/`), ship
 with `scp-docker-image.sh`, then `docker compose up -d` on the server. Compose loads
-`node/.env` into the container (`STAGE=prod` there). No CI yet (Stage 9.4).
+`node/.env` into the container (`STAGE=prod` there); the API's logs go to CloudWatch
+`/ceseelia/prod/api` (awslogs driver). CI (`.github/workflows/ci.yml`, 9.4) runs lint, typecheck,
+tests, `npm audit` and the image build on every push and PR; it doesn't deploy.
 
 ## 3. Conventions (follow these when adding endpoints)
 
@@ -215,7 +217,7 @@ Open:
    `/bin/bash` in front (owner).
 6. `getClientIp` returns a hard-coded Australian IP in dev (intentional for testing currency), so
    in dev a Canada delivery's tax estimate always falls back to the store's province.
-7. No CI yet (logging, limits, helmet, `/healthz` and graceful shutdown are in). → Stage 9.4
+7. 109 → 78 legacy lint warnings; CI only fails on errors until 9.7 clears them.
 
 Fixed in Stage 0: hard-coded stage/config → env vars; domain mismatch (API host is
 `api.ceseelia.com`, path `/api/v1`, in middleware, nginx, cert script and webapp);

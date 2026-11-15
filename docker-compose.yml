@@ -10,6 +10,19 @@ services:
     restart: always
     networks:
       - internal
+    # 9.6: the API's JSON logs go to CloudWatch (log group made by ceseelia_cloudformation, 30 days;
+    # errors there drive the api-errors alarm). Non-blocking: a slow CloudWatch never stalls a
+    # request. `docker logs node` still works (Docker keeps a local copy). The server's role
+    # (CeseeliaServerRole) may write to this group only.
+    logging:
+      driver: awslogs
+      options:
+        awslogs-region: us-east-1
+        awslogs-group: /ceseelia/prod/api
+        awslogs-stream: node
+        awslogs-create-group: "false"
+        mode: non-blocking
+        max-buffer-size: 8m
 
   nginx:
     container_name: nginx
@@ -28,6 +41,12 @@ services:
     restart: always
     networks:
       - internal
+    # Docker's default json-file log has no size cap; a busy nginx log would fill the disk.
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
 
   certbot:
     image: certbot/certbot:v5.10.0

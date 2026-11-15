@@ -1,0 +1,77 @@
+# 9.4 CI: every push and pull request is linted, typechecked, tested, audited and built, and the
+# Docker image is built the same way the deploy builds it (nothing is pushed or deployed).
+# The tests mock AWS and Stripe, so CI needs no secrets and no AWS access.
+name: CI
+
+on:
+  push:
+    branches: [main, "dev_**", "prod_**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: node
+
+jobs:
+  check:
+    name: Lint, typecheck, test, audit, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24 # same as the Dockerfile's node:24-alpine
+          cache: npm
+          cache-dependency-path: node/package-lock.json
+
+      - run: npm ci
+
+      # 0 errors required; the legacy warnings are cleared in 9.7, then warnings fail CI too.
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      # Only what ships in the image; high and critical advisories fail the build.
+      - run: npm audit --omit=dev --audit-level=high
+      - run: npm run build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: node/dist
+          retention-days: 3
+
+  image:
+    name: Docker image
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      # The image copies a prebuilt dist/ (see node/Dockerfile): use the one the check job built.
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: node/dist
+
+      - name: Build the image
+        run: docker build -t ceseelia-api:ci .
+
+      - name: Start it and wait for /healthz
+        run: |
+          docker run -d --name api -p 3100:3100 -e STAGE=dev -e HOST=0.0.0.0 ceseelia-api:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3100/healthz; then echo; exit 0; fi
+            sleep 1
+          done
+          docker logs api
+          exit 1

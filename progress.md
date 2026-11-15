@@ -21,8 +21,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 > **🚀 Launch checklist (owner, 2026-11-14): EVERY item below must be done before launch.**
 > Nothing here is optional or "after launch". Work order agreed 2026-11-14: L.1 is the owner's
-> (2026-11-15); Claude works on L.2–L.9 in the order shown. **L.2 (code) and L.3 are done;
-> next is L.4.**
+> (2026-11-15); Claude works on L.2–L.9 in the order shown. **L.2 (code), L.3 and L.4 (code) are done;
+> next is L.5.**
 > - [ ] **L.0 Owner: the first real test order** in Stripe test mode (Connect webhook first,
 >       with the refund events, BE 5.5 "Setup"): checkout → paid (receipt + PDF, alerts) →
 >       Store › Orders → steps (ready / on its way emails) → refund part → refund the rest.
@@ -65,9 +65,19 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >       `server_tokens off`), a hardened Docker image (`npm ci --omit=dev`, non-root), legacy
 >       DinersXpress / PrimeFaya code removed, and **`certbot-renew.sh` fixed** (wrong
 >       `primedine` paths, not executable, renewed certs never loaded).
-> - [ ] **L.4 Production basics, Stage 9:** structured logs with no PII (9.1), rate limits and
+> - [x] **L.4 Production basics, Stage 9:** structured logs with no PII (9.1), rate limits and
 >       body limits (9.2), a health check and graceful shutdown (9.3), CI (9.4), infrastructure
->       as code (9.5), backups (DynamoDB PITR), lifecycle rules and alarms (9.6).
+>       as code (9.5), backups (DynamoDB PITR), lifecycle rules and alarms (9.6). **Code done
+>       2026-11-15.** Owner steps to make it live:
+>       1. Push the backend (CI runs on the push) and the webapp as usual.
+>       2. CloudFormation: set the repo variable `ALARM_EMAIL` (GitHub › Settings › Secrets and
+>          variables › Actions › Variables), merge `dev_v1.0.0_l4_backups_alarms` into
+>          `dev_v1.0.0` and push (deploys dev), check it, then the same into `prod_v1.0.0`
+>          (prod is also behind dev by the 2026-11-09 upload-expiry rule). Click the SNS
+>          confirmation email.
+>       3. After prod deploys: `aws iam put-role-policy --role-name CeseeliaServerRole
+>          --policy-name ceseelia-server-prod --policy-document file://iam/ceseelia-server-policy.json`
+>          (adds writing to `/ceseelia/prod/api`).
 > - [ ] **L.5 WA 6.4 new-order notifications** in the dashboard (a toast and a sound; web push,
 >       BE 6.7).
 > - [ ] **L.6 Store Overview:** WA 6.5 with BE 1.5 merchant stats (today's orders, revenue,
@@ -120,8 +130,8 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > 2. **Claude, once the key is in:** run `node scripts/store-check-eval/run.mjs` (after
 >    `npm run build`, ≈ $1), show the owner the false flags and misses, tune the prompt/effort;
 >    then the same key in `ceseelia/prod`.
-> 3. **Claude:** L.4 production basics (Stage 9), then L.5–L.9. Fix the `ssh`/`scp` deploy
->    scripts (they point at dinersxpress-0) when the prod server is set up.
+> 3. **Claude:** L.5–L.9 (L.4 code done 2026-11-15; its owner steps are under L.4). Fix the
+>    `ssh`/`scp` deploy scripts (they point at dinersxpress-0) when the prod server is set up.
 > Both repos are on `dev_v1.0.0_customer_store_front`. **Push from your own shell:** Claude's
 > shell has no GitHub credentials.
 
@@ -1258,10 +1268,33 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 - [x] 9.3 (2026-11-14) `GET /healthz` (before host routing; 503 while shutting down, `no-store`),
       graceful shutdown in `index.ts` (SIGTERM/SIGINT: stop the sweeps, stop taking
       connections, 10 s for in-flight requests), Docker `HEALTHCHECK`, nginx waits for healthy.
-- [ ] 9.4 CI (GitHub Actions): lint, typecheck, test, `npm audit --omit=dev`, build image.
-- [ ] 9.5 IaC (CDK/Terraform): table and GSIs, buckets (private, CloudFront OAC, CORS), Cognito
+- [x] 9.4 CI (GitHub Actions): lint, typecheck, test, `npm audit --omit=dev`, build image.
+  - _Done 2026-11-15. `.github/workflows/ci.yml` on every push to `main` / `dev_**` / `prod_**`
+    and every PR: Node 24, `npm ci`, lint (errors fail; warnings until 9.7), typecheck, test,
+    `npm audit --omit=dev --audit-level=high`, build; then the Docker image is built from that
+    `dist/` and started until `/healthz` answers. No secrets: the tests mock AWS and Stripe
+    (checked with no AWS credentials at all) and the image starts without them. Nothing is
+    pushed or deployed._
+- [x] 9.5 IaC (CDK/Terraform): table and GSIs, buckets (private, CloudFront OAC, CORS), Cognito
       plus triggers, IAM least-privilege instance role.
-- [ ] 9.6 DynamoDB PITR backups, S3 versioning/lifecycle, CloudWatch alarms.
+  - _Done 2026-11-15 in `../ceseelia_cloudformation` (AWS SAM, already there; not CDK/Terraform).
+    The table, GSIs, bucket, Cognito and the sign-up trigger were in it; added: the trigger's
+    `DynamoDBCrudPolicy` on its own table (was `AmazonDynamoDBFullAccess`), `nodejs22.x` (18.x is
+    past end of support; 24.x dropped callback handlers), a `cfn-lint` gate before every deploy.
+    **Still by hand, on purpose:** `CeseeliaServerRole` (policy in `iam/`), the `Admins` group,
+    the secrets, the SES identity and the zone (adding them fails on "already exists" unless
+    imported). CloudFront + OAC is L.9 (3.2b)._
+- [x] 9.6 DynamoDB PITR backups, S3 versioning/lifecycle, CloudWatch alarms.
+  - _Done 2026-11-15 (CloudFormation branch `dev_v1.0.0_l4_backups_alarms`; live once merged and
+    pushed). **PITR was off on both tables, prod included**, with no deletion protection: now
+    PITR + deletion protection + `Retain`. Buckets versioned (old versions gone after 30 days).
+    User pool deletion protection + `Retain`. Log group `/ceseelia/<stage>/api` (30 days) fed by
+    Docker's `awslogs` driver (`docker-compose.yml`; the default json-file log had no size cap,
+    nginx's is now 3 × 10 MB) and an error metric (`level >= 50`). Alarms to SNS
+    `ceseelia-alarms-<stage>`: API errors ≥ 5 / 5 min, DynamoDB throttles and system errors,
+    sign-up trigger errors, SES bounce > 3% / complaint > 0.05% (prod). `iam/` policy gains
+    `ApiLogsProd` (write to that log group only). Previewed as a change set on `ceseelia-dev`
+    (not executed): no replacements. **Owner:** see L.4._
 - [ ] 9.7 Bring lint warnings (109) down to zero, then make warnings fail CI.
 - [ ] 9.8 Optional: custom store domains via `layers/aws/route53`.
 
@@ -1304,6 +1337,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.4 9.4–9.6: backend CI (lint, typecheck, test, audit, build, image + /healthz); CloudFormation: PITR + deletion protection on the table (was off in prod), versioned buckets, pool deletion protection, `Retain`s, trigger on nodejs22.x with least privilege, API log group + error metric, SNS alarms (API errors, DynamoDB, sign-up trigger, SES reputation), cfn-lint before deploy; compose ships API logs to CloudWatch and caps nginx's. |
 | 2026-11-15 | L.4 9.1 + 9.2: pino logs (request ids, PII redacted, safe error serializer, route 500s logged in prod too), per-IP API limits (300/min, public reads 120/min), JSON body 100 KB (256 KB for item/settings saves), JSON 413/400; nginx passes `X-Request-Id`, 1 MB body cap, Go Live 120 s timeout (was cut off at 60 s). |
 | 2026-11-15 | L.2 AI store check (code): rule checks + Claude Opus 5.5 over all item text and ≤ 50 photos picked by risk; Go Live 90 s deadline, fails closed to review, 5/store/day, admin email; live stores' new or changed items checked in the background, flagged ones hidden and queued for admins (`get-item-review-queue`, `review-item`); eval set of 60 stores in `scripts/store-check-eval`. Needs `anthropicApiKey` and an eval run before launch. |
 | 2026-11-09 | QA Q.16 (WA): `storeInfo.showEmail` / `showPhone` (optional, missing = shown). When false, `toPublicSettings` blanks that detail in every public response (storefront and item link); `contactFormAvailable` (public only, worked out from the stored email, never saved) keeps Contact us offered; contact-store still emails the real address. |
