@@ -1162,3 +1162,37 @@ export async function getStoreRewardsSettings(storeId: string): Promise<Pick<Sto
   );
   return res.Item ? { purchaseRewards: res.Item.purchaseRewards } : null;
 }
+
+////////////////////////////////////////
+// Link previews (L.9 / WA 3.6)
+////////////////////////////////////////
+export interface StorePreview {
+  storeName: string;
+  slogan: string;
+  logoUri: string;
+  live: boolean;
+}
+
+/*
+ * What a link preview may show for a store: its name, slogan and logo (all three are on the
+ * "Coming soon" page too, so a draft's preview shows nothing more). Null for an unknown or
+ * suspended store. Only those fields are read.
+ */
+export async function getStorePreview(storeId: string): Promise<StorePreview | null> {
+  const res = await dynamoDbDocumentClient.send(
+    new GetCommand({
+      TableName: DEFAULT_TABLE_NAME,
+      Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS),
+      ProjectionExpression: "storeInfo.storeName, storeInfo.slogan, storeInfo.logoUri, lifecycle, #admin",
+      ExpressionAttributeNames: { "#admin": "admin" },
+    })
+  );
+  const row = res.Item;
+  if (!row || normalizeAdminSettings(row.admin).suspended) return null;
+  return {
+    storeName: String(row.storeInfo?.storeName ?? ""),
+    slogan: String(row.storeInfo?.slogan ?? ""),
+    logoUri: String(row.storeInfo?.logoUri ?? ""),
+    live: normalizeStoreLifecycle(row.lifecycle).status === "LIVE",
+  };
+}

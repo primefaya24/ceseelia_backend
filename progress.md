@@ -111,9 +111,10 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >       SEO / link previews, account delete (BE `delete-user`, WA 1.6d), custom domains
 >       (P.9 / 9.8), the admin menu's review-queue badge, paging Admin › Stores.
 >       **Done 2026-11-15:** menu badges (`GET /admin/queue-counts`), paging Admin › Stores
->       (`get-all-stores?q=&limit=&cursor=`), account delete (`delete-user`, WA 1.6d). **Open:**
->       3.2b CloudFront, WA 3.6 link previews and 9.8 custom domains all wait on where the
->       webapp is hosted (no DNS or hosting for `ceseelia.com` / `app.ceseelia.com` yet).
+>       (`get-all-stores?q=&limit=&cursor=`), account delete (`delete-user`, WA 1.6d), webapp
+>       hosting on S3 + CloudFront (3.2b, CloudFormation branch `dev_v1.0.0_l9_webapp_cloudfront`,
+>       not deployed) and link previews (WA 3.6, `/store/public/preview`). **Later:** 9.8 custom
+>       domains (after launch; listed as "coming soon").
 
 > **Secrets and the prod server (2026-11-14).** One Secrets Manager secret per stage,
 > `ceseelia/dev` and `ceseelia/prod` (`APP_SECRET_ID`), flat keys: `stripeSecretKey`,
@@ -657,8 +658,11 @@ match the backend and webapp._
         ETag + 304 already worked (now tested; checked live). Uploaded images get
         `public, max-age=31536000, immutable`, pinned in the presigned POST (keys are unique per
         upload; the webapp sends the slot's fields as is)._
-  - [ ] b. CloudFront (infra, `ceseelia_cloudformation`) for the storage bucket and the slug
-        lookup. The storefront and item responses can only be shared-cached once the shopper's
+  - [x] b. CloudFront (infra, `ceseelia_cloudformation`) for the storage bucket and the slug
+        lookup. _2026-11-15 (L.9): the storage bucket already had CloudFront (made by hand,
+        `<stage>.storage.ceseelia.com`); the webapp now gets its own (S3 + OAC, a CloudFront
+        function for app routes and link previews) in the template. The API stays behind nginx:
+        its storefront answers differ per shopper (geo currency), see below._ The storefront and item responses can only be shared-cached once the shopper's
         currency default is keyed (e.g. `CloudFront-Viewer-Country`) or moved to the client.
 - [x] 3.3 `GET /store/public/item/:storeId/:itemId` for deep links. (WA 3.5)
   - _Done 2026-11-09, tested by hand. `{ storeId, item, category, currencies }` via
@@ -1469,6 +1473,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | L.9: link previews (`GET /store/public/preview/:slug[/:itemId]`, Open Graph HTML for bots); webapp S3 + CloudFront in the CloudFormation template (branch `dev_v1.0.0_l9_webapp_cloudfront`, not deployed); `iam/` AdminDeleteUser. |
 | 2026-11-15 | L.9 (part): admin menu badges (`/admin/queue-counts`); `get-all-stores` pages, searches and reads only the page's SETTINGS fields; account delete (`delete-user`) with only-member and admin guards. |
 | 2026-11-15 | L.8: real admin overview (stores, merchants, 30-day orders / sales / commission, chart, top stores, to-do counts); support tickets for users and admins with email notices (no message text in email); monthly commission report per store with a Stripe check and CSV. |
 | 2026-11-15 | L.7 / 7.2–7.4: rewards: emailed 6-digit code (hashed, 5 guesses, per-email limits in the table, per-IP limits), 30-day per-store sessions; earn once per paid order, refunds take back their share; one reward per order off the items before tax (commission on the price after it), spent in the order's own transaction, given back once if never paid or fully refunded; one spelling for the redemption method plus a migration script. |
