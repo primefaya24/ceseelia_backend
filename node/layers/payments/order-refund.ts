@@ -1,4 +1,3 @@
-import Stripe from "stripe";
 import { getStripe } from "./stripe";
 
 /*
@@ -18,10 +17,6 @@ export interface OrderRefundResult {
   refundId: string;
   /** The refund's own status: `succeeded`, or `pending` for some payment methods. */
   status: string;
-  /** What Stripe says has been refunded on the charge so far, this refund included. */
-  chargeRefundedMinor: number;
-  /** True when the charge is now refunded in full. */
-  chargeFullyRefunded: boolean;
 }
 
 /* Why Stripe turned the refund down, for the route's 409s; null = an unexpected error. */
@@ -72,14 +67,5 @@ export async function createOrderRefund(opts: {
     },
     { stripeAccount: opts.stripeAccount, idempotencyKey: opts.idempotencyKey }
   );
-  // The charge's own total is what the order keeps (the dashboard can refund too).
-  const chargeId = typeof refund.charge === "string" ? refund.charge : (refund.charge as Stripe.Charge | null)?.id;
-  let chargeRefundedMinor = 0;
-  let chargeFullyRefunded = false;
-  if (chargeId) {
-    const charge = await stripe.charges.retrieve(chargeId, {}, { stripeAccount: opts.stripeAccount });
-    chargeRefundedMinor = charge.amount_refunded;
-    chargeFullyRefunded = charge.refunded === true;
-  }
-  return { refundId: refund.id, status: refund.status ?? "pending", chargeRefundedMinor, chargeFullyRefunded };
+  return { refundId: refund.id, status: refund.status ?? "pending" };
 }

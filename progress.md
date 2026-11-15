@@ -21,10 +21,11 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 > **▶ Start the next session here (2026-11-14).** Stages S, 0–4 and P are done, and so are
 > Stage 5 checkout (5.1–5.6) and Stage 6 order management (6.1–6.4, 6.6) in both repos. 6.4
-> (refunds, 2026-11-14) is `POST /store/orders/refund`, for store ADMINs only. **Next, in order:**
+> (refunds, 2026-11-14) is `POST /store/orders/refund`, for store ADMINs only. 6.4b syncs
+> refunds from Stripe, so failed refunds stop counting and are shown. **Next, in order:**
 > 1. **Owner: the first real test order** in Stripe test mode. Add the Connect webhook first (5.5
 >    "Setup"). Then storefront → checkout → paid → Store › Orders → move it on → refund part of
->    it → refund the rest. Also settle 6.4 c and d below.
+>    it → refund the rest. (Add the new refund events to the webhook, see 5.5 "Setup".)
 > 2. **5.7** sweeper for abandoned `PENDING_PAYMENT` orders, a fallback for missed `expired`
 >    events.
 > 3. **6.5 emails** (SES + PDF): the shopper's receipt, the merchant's new-order alert,
@@ -960,7 +961,8 @@ pickup or delivery, goes through Stripe Checkout (5.4).
     `https://api.ceseelia.com/api/v1/payments/stripe-connect-webhook`, **"Events on Connected
     accounts"**, events: `checkout.session.completed`, `checkout.session.expired`,
     `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`,
-    `charge.refunded`, `charge.dispute.created`, `charge.dispute.updated`,
+    `charge.refunded`, `charge.refund.updated`, `refund.created`, `refund.updated`,
+    `refund.failed` (6.4b), `charge.dispute.created`, `charge.dispute.updated`,
     `charge.dispute.closed`, `account.updated`. Put its signing secret in the Stripe secret as
     `webhookSecret`. Locally: `stripe listen --forward-connect-to
     localhost:3100/api/v1/payments/stripe-connect-webhook` and use the printed secret.
@@ -1012,9 +1014,22 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       - b. ✅ Stock is never put back automatically; the merchant adjusts it by hand in
            Inventory. WA reminds them in the refund form, the confirm dialog and the toast,
            and with a note linking to Inventory on any order with a refund.
-      - c. Still open: only store ADMINs can refund, not MERCHANT staff.
-      - d. Still open: a refund that's `pending` and later fails isn't handled
-           (`charge.refund.updated` isn't listened to yet). This is rare; for 6.5 / 9.x.
+      - c. ✅ Only store ADMINs (and platform admins) can refund; MERCHANT staff can't.
+- [x] 6.4b Refunds synced from Stripe (done 2026-11-14). Every refund event
+      (`charge.refunded`, `charge.refund.updated`, `refund.created`, `refund.updated`,
+      `refund.failed`), and our refund route afterwards, calls `syncOrderRefunds`
+      (`layers/payments/refund-sync.ts`). It lists the payment's refunds on the connected
+      account and writes what `orderRefundState` (`layers/core/refunds`) works out:
+      - The refunded total counts succeeded, pending and requires_action refunds, but not
+        failed or canceled ones.
+      - Refunding all of it → REFUNDED. If a refund then fails, the order goes back to the
+        merchant's last step (or PAID).
+      - Each `storeOrderRefunds` entry gets its current status, and failed or canceled refunds
+        go in `storeOrderFailedRefunds` `{refundId, amountMinor, status, reason, at}`, so WA
+        can warn the merchant.
+      The write is conditional on `storeOrderUpdatedAt` (it retries up to 3 times), and the
+      event's own snapshot is never trusted, so late or out-of-order events are harmless. This
+      replaced `recordOrderRefund` and its "only goes up" rule.
 - [ ] 6.5 Emails (SES + pdf invoice): customer confirmation/receipt, merchant new-order alert,
       status-change emails.
 - [x] 6.6 `GET /customer/order-status/:orderId` (done 2026-11-13, early, for WA 5.2's return
@@ -1073,6 +1088,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-14 | 6.4b done: refunds synced from Stripe's live list on every refund event and after our route (`syncOrderRefunds`, `orderRefundState`); failed / canceled refunds stop counting, REFUNDED goes back to the last step, `storeOrderFailedRefunds`. New Connect events: `charge.refund.updated`, `refund.created/updated/failed`. Owner: only store ADMINs refund. |
 | 2026-11-14 | 6.4 owner decisions: keep the platform fee on refunds; no automatic restock (WA reminds the merchant to adjust stock in Inventory). |
 | 2026-11-14 | 6.4 done: `POST /store/orders/refund` (store ADMINs; part or full refund on the connected account, conditional on the refunded total seen, idempotency key from it; `storeOrderRefunds`; 409 `NOT_REFUNDABLE` / `REFUND_CHANGED` / `AMOUNT_TOO_LARGE` / `ORDER_DISPUTED` / `INSUFFICIENT_BALANCE`). `recordOrderRefund` now only raises the total. Owner questions under 6.4. "Start here" refreshed. |
 | 2026-11-13 | 6.1–6.3 done: `/store/orders/list`, `/get`, `/update-status` (members; forward-only steps with history, conditional on the status seen); `MerchantOrderView` / `MerchantOrderSummary`, `nextOrderStatuses`. |

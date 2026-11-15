@@ -27,6 +27,7 @@ import {
   StoreOrderStatus,
 } from "../../../../core/interfaces/store";
 import { findVariant, hasVariants } from "../../../../core/variants";
+import { OrderRefundState } from "../../../../core/refunds";
 import { dynamGetManyItems } from "../../dynamo-batch-ops";
 
 const dynamoDbDocumentClient = DynamoDBDocumentClient.from(
@@ -309,34 +310,40 @@ export async function cancelPendingOrder(order: StoreOrder, reason: StoreOrderCa
   }
 }
 
-const PAID_STATUSES = ["PAID", "PREPARING", "READY", "SHIPPED", "COMPLETED", "REFUNDED"];
-
 /*
- * A refund made in the merchant's Stripe dashboard or by our refund route (6.4), 5.5d: the
- * amount Stripe says is refunded so far; a full refund makes a paid order REFUNDED. Never touches
- * an order that wasn't paid. The amount only goes up, so an older `charge.refunded` event that
- * arrives late can't lower it.
+ * Writes an order's refund state as Stripe has it now (6.4b, `orderRefundState`). Conditional on
+ * the order not having changed since it was read (`storeOrderUpdatedAt`), so a step or another
+ * sync in between isn't overwritten; false means read it again and retry.
  */
-export async function recordOrderRefund(order: StoreOrder, refundedMinor: number, full: boolean, now = Date.now()): Promise<void> {
-  const paidStatuses = PAID_STATUSES;
+export async function writeOrderRefundState(order: StoreOrder, state: OrderRefundState, now = Date.now()): Promise<boolean> {
   try {
     await dynamoDbDocumentClient.send(
       new UpdateCommand({
         TableName: TABLE,
         Key: keyOf(order),
-        UpdateExpression: `SET #ref = :ref, #upd = :now${full ? ", #st = :refunded" : ""}`,
-        ConditionExpression: `#st IN (${paidStatuses.map((_, i) => `:s${i}`).join(", ")}) AND (attribute_not_exists(#ref) OR #ref <= :ref)`,
-        ExpressionAttributeNames: { "#ref": "storeOrderRefundedMinor", "#upd": "storeOrderUpdatedAt", "#st": "storeOrderStatus" },
+        UpdateExpression: "SET #ref = :ref, #st = :st, #r = :r, #f = :f, #upd = :now",
+        ConditionExpression: "attribute_exists(pk) AND #upd = :seen",
+        ExpressionAttributeNames: {
+          "#ref": "storeOrderRefundedMinor",
+          "#st": "storeOrderStatus",
+          "#r": "storeOrderRefunds",
+          "#f": "storeOrderFailedRefunds",
+          "#upd": "storeOrderUpdatedAt",
+        },
         ExpressionAttributeValues: {
-          ":ref": refundedMinor,
-          ":now": now,
-          ...(full ? { ":refunded": "REFUNDED" } : {}),
-          ...Object.fromEntries(paidStatuses.map((s, i) => [`:s${i}`, s])),
+          ":ref": state.storeOrderRefundedMinor,
+          ":st": state.storeOrderStatus,
+          ":r": state.storeOrderRefunds,
+          ":f": state.storeOrderFailedRefunds,
+          ":now": Math.max(now, order.storeOrderUpdatedAt + 1),
+          ":seen": order.storeOrderUpdatedAt,
         },
       })
     );
+    return true;
   } catch (e) {
-    if ((e as { name?: string })?.name !== "ConditionalCheckFailedException") throw e;
+    if ((e as { name?: string })?.name === "ConditionalCheckFailedException") return false;
+    throw e;
   }
 }
 
@@ -352,7 +359,7 @@ export async function appendOrderRefund(order: StoreOrder, entry: StoreOrderRefu
       UpdateExpression: "SET #r = list_append(if_not_exists(#r, :empty), :entry), #upd = :now",
       ConditionExpression: "attribute_exists(pk)",
       ExpressionAttributeNames: { "#r": "storeOrderRefunds", "#upd": "storeOrderUpdatedAt" },
-      ExpressionAttributeValues: { ":empty": [], ":entry": [entry], ":now": entry.at },
+      ExpressionAttributeValues: { ":empty": [], ":entry": [entry], ":now": Math.max(entry.at, order.storeOrderUpdatedAt + 1) },
     })
   );
 }

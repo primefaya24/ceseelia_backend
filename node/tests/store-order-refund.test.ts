@@ -12,7 +12,13 @@ vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/membership")>()),
   getMembership: vi.fn(),
 }));
-const stripe = { refunds: { create: vi.fn() }, charges: { retrieve: vi.fn() } };
+const stripe = { refunds: { create: vi.fn(), list: vi.fn() } };
+/* What stripe.refunds.list auto-pages over. */
+const live = (...refunds: Array<{ id: string; amount: number; status?: string }>) => ({
+  async *[Symbol.asyncIterator]() {
+    for (const r of refunds) yield { status: "succeeded", created: 1_700_000_100, failure_reason: null, ...r };
+  },
+});
 vi.mock("../layers/payments/stripe", async (orig) => ({
   ...(await orig<typeof import("../layers/payments/stripe")>()),
   getStripe: vi.fn(async () => stripe),
@@ -78,13 +84,15 @@ beforeEach(() => {
   vi.mocked(findUserIdByCognitoId).mockReset().mockResolvedValue("U1");
   vi.mocked(getMembership).mockResolvedValue({ storeId: STORE, userId: "U1", role: "ADMIN", createdAt: 1 });
   stripe.refunds.create.mockReset().mockResolvedValue({ id: "re_1", status: "succeeded", charge: "ch_1" });
-  stripe.charges.retrieve.mockReset().mockResolvedValue({ id: "ch_1", amount_refunded: 1000, refunded: false });
+  stripe.refunds.list.mockReset().mockReturnValue(live({ id: "re_1", amount: 1000 }));
   vi.mocked(getStripe).mockClear();
 });
 
 describe("POST /store/orders/refund (6.4)", () => {
   it("a partial refund on the connected account, idempotent on what the merchant saw", async () => {
-    withOrders(order(), order({ storeOrderRefundedMinor: 1000 }));
+    const entry = { refundId: "re_1", amountMinor: 1000, status: "succeeded", reason: "requested_by_customer", at: 5, by: "U1" };
+    // Read before the refund, then (for the sync) after the entry was appended.
+    withOrders(order(), order({ storeOrderRefunds: [entry], storeOrderUpdatedAt: 1_700_000_000_001 }));
     ddb.on(UpdateCommand).resolves({});
     const res = await refund({ reason: "requested_by_customer" });
     expect(res.status).toBe(200);
@@ -96,27 +104,26 @@ describe("POST /store/orders/refund (6.4)", () => {
     expect(params).toMatchObject({ payment_intent: "pi_1", amount: 1000, refund_application_fee: false, reason: "requested_by_customer" });
     expect(params.metadata).toEqual({ orderId: ORDER_ID, storeId: STORE, by: "U1" });
     expect(opts).toEqual({ stripeAccount: "acct_store", idempotencyKey: `ceseelia-refund-${ORDER_ID}-0-1000` });
-    expect(stripe.charges.retrieve).toHaveBeenCalledWith("ch_1", {}, { stripeAccount: "acct_store" });
+    expect(stripe.refunds.list).toHaveBeenCalledWith({ payment_intent: "pi_1", limit: 100 }, { stripeAccount: "acct_store" });
 
     const updates = ddb.commandCalls(UpdateCommand).map((c) => c.args[0].input);
     expect(updates).toHaveLength(2);
-    // The total only goes up, and a partial refund leaves the status alone.
-    expect(updates[0].ConditionExpression).toContain("#ref <= :ref");
-    expect(updates[0].ExpressionAttributeValues![":ref"]).toBe(1000);
-    expect(updates[0].ExpressionAttributeValues![":refunded"]).toBeUndefined();
-    expect(updates[1].ExpressionAttributeNames!["#r"]).toBe("storeOrderRefunds");
+    // The entry first, then the state synced from Stripe, conditional on the order read.
+    expect(updates[0].ExpressionAttributeNames!["#r"]).toBe("storeOrderRefunds");
+    expect(updates[1].ConditionExpression).toContain("#upd = :seen");
+    expect(updates[1].ExpressionAttributeValues).toMatchObject({ ":ref": 1000, ":st": "PAID", ":seen": 1_700_000_000_001 });
   });
 
   it("refunding what's left makes the order REFUNDED", async () => {
-    stripe.charges.retrieve.mockResolvedValue({ id: "ch_1", amount_refunded: 2260, refunded: true });
-    withOrders(order({ storeOrderRefundedMinor: 1000 }), order({ storeOrderRefundedMinor: 2260, storeOrderStatus: "REFUNDED" }));
+    stripe.refunds.list.mockReturnValue(live({ id: "re_0", amount: 1000 }, { id: "re_1", amount: 1260 }));
+    withOrders(order({ storeOrderRefundedMinor: 1000 }));
     ddb.on(UpdateCommand).resolves({});
     const res = await refund({ amountMinor: 1260, refundedMinor: 1000 });
     expect(res.status).toBe(200);
     expect(res.body.order.storeOrderStatus).toBe("REFUNDED");
-    const first = ddb.commandCalls(UpdateCommand)[0].args[0].input;
-    expect(first.ExpressionAttributeValues![":refunded"]).toBe("REFUNDED");
-    expect(first.ExpressionAttributeValues![":ref"]).toBe(2260);
+    expect(res.body.order.storeOrderRefundedMinor).toBe(2260);
+    const sync = ddb.commandCalls(UpdateCommand)[1].args[0].input;
+    expect(sync.ExpressionAttributeValues).toMatchObject({ ":ref": 2260, ":st": "REFUNDED" });
   });
 
   it("409s before calling Stripe: unpaid / refunded, changed meanwhile, too much, disputed", async () => {
@@ -196,6 +203,7 @@ describe("POST /store/orders/refund (6.4)", () => {
     const res = await refund();
     expect(res.status).toBe(200);
     expect(res.body.refund.refundId).toBe("re_1");
+    expect(res.body.order.storeOrderRefundedMinor).toBe(1000);
   });
 });
 

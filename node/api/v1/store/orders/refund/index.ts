@@ -9,7 +9,8 @@ import {
   StoreOrder,
   StoreOrderRefund,
 } from "../../../../../layers/core/interfaces/store";
-import { appendOrderRefund, getOrderById, recordOrderRefund } from "../../../../../layers/aws/dynamodb/dynamo-entities/order";
+import { appendOrderRefund, getOrderById } from "../../../../../layers/aws/dynamodb/dynamo-entities/order";
+import { syncOrderRefunds } from "../../../../../layers/payments/refund-sync";
 import {
   createOrderRefund,
   refundRefusal,
@@ -25,7 +26,8 @@ import { PaymentsNotConfiguredError } from "../../../../../layers/payments/strip
  * Refunds part or all of a paid order on the store's connected account (direct charge, 5.1),
  * the same as a refund in the merchant's Stripe dashboard. `refundedMinor` is the refunded total
  * the merchant was looking at; the refund only happens from it, and it names the idempotency key,
- * so a double click makes one refund. A refund of the whole remainder makes the order REFUNDED.
+ * so a double click makes one refund. Afterwards the order's refunds are synced from Stripe
+ * (6.4b, `syncOrderRefunds`); a refund of the whole remainder makes the order REFUNDED.
  * The platform keeps its fee (`REFUND_APPLICATION_FEE`). Stock isn't put back.
  *
  *   - 409 NOT_REFUNDABLE { order }: unpaid, cancelled or already refunded in full.
@@ -156,21 +158,23 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     }
 
     // The money has moved; from here on, record it as best we can (the webhook syncs it too).
-    const now = Date.now();
-    const entry: StoreOrderRefund = { refundId: result.refundId, amountMinor, status: result.status, reason, at: now, by };
-    const refundedTotal = Math.max(result.chargeRefundedMinor, seenRefundedMinor + amountMinor);
-    const full = result.chargeFullyRefunded || refundedTotal >= order.storeOrderTotalMinor;
+    const entry: StoreOrderRefund = { refundId: result.refundId, amountMinor, status: result.status, reason, at: Date.now(), by };
+    let current: StoreOrder | null = null;
     try {
-      await recordOrderRefund(order, refundedTotal, full, now);
       await appendOrderRefund(order, entry);
+      current = await syncOrderRefunds(orderId);
     } catch (e) {
       console.error(`In store/orders/refund: refund ${result.refundId} made, but order ${orderId} not updated`, e);
     }
-    const current = (await getOrderById(orderId)) ?? {
-      ...order,
-      storeOrderRefundedMinor: refundedTotal,
-      ...(full ? { storeOrderStatus: "REFUNDED" as const } : {}),
-    };
+    if (!current) {
+      const refundedTotal = (order.storeOrderRefundedMinor ?? 0) + amountMinor;
+      current = {
+        ...order,
+        storeOrderRefundedMinor: refundedTotal,
+        storeOrderRefunds: [...(order.storeOrderRefunds ?? []), entry],
+        ...(refundedTotal >= order.storeOrderTotalMinor ? { storeOrderStatus: "REFUNDED" as const } : {}),
+      };
+    }
     res.send({ order: merchantOrderView(current), refund: entry });
   } catch (e) {
     console.error("In store/orders/refund", e);

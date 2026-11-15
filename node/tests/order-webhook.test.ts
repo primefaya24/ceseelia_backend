@@ -12,7 +12,12 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 
 const realStripe = new Stripe("sk_test_123");
-const stripe = { paymentIntents: { retrieve: vi.fn() }, webhooks: realStripe.webhooks };
+const stripe = { paymentIntents: { retrieve: vi.fn() }, refunds: { list: vi.fn() }, webhooks: realStripe.webhooks };
+const live = (...refunds: Array<{ id: string; amount: number; status?: string; failure_reason?: string }>) => ({
+  async *[Symbol.asyncIterator]() {
+    for (const r of refunds) yield { status: "succeeded", created: 1_700_000_100, failure_reason: null, ...r };
+  },
+});
 const secrets = { secretKey: "sk_test_123", webhookSecret: "whsec_connect", billingWebhookSecret: "whsec_billing" };
 vi.mock("../layers/payments/stripe", async (orig) => ({
   ...(await orig<typeof import("../layers/payments/stripe")>()),
@@ -110,6 +115,7 @@ const tx = (i = 0) => ddb.commandCalls(TransactWriteCommand)[i].args[0].input.Tr
 beforeEach(() => {
   ddb.reset();
   stripe.paymentIntents.retrieve.mockReset();
+  stripe.refunds.list.mockReset().mockReturnValue(live());
   vi.spyOn(console, "error").mockImplementation(() => {});
   vi.spyOn(console, "warn").mockImplementation(() => {});
 });
@@ -239,24 +245,57 @@ describe("expired, failed, refunds, disputes, account (5.5c/d)", () => {
     expect(ddb.commandCalls(UpdateCommand)).toHaveLength(0);
   });
 
-  it("charge.refunded: amount refunded, REFUNDED when full; only the order's own payment", async () => {
+  it("charge.refunded: re-reads the refunds from Stripe; REFUNDED when full; only the order's own payment", async () => {
     world({ o: order({ storeOrderStatus: "PAID", storeOrderStripe: { accountId: "acct_store", checkoutSessionId: "cs_1", paymentIntentId: "pi_1" } }) });
     stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_1", metadata: { orderId: ORDER_ID } });
-    await send("charge.refunded", { id: "ch_1", object: "charge", payment_intent: "pi_1", amount: 12000, amount_refunded: 12000, refunded: true });
+    stripe.refunds.list.mockReturnValue(live({ id: "re_1", amount: order().storeOrderTotalMinor }));
+    // The event's own snapshot is ignored; Stripe's live list counts.
+    await send("charge.refunded", { id: "ch_1", object: "charge", payment_intent: "pi_1", amount: 12000, amount_refunded: 1, refunded: false });
     expect(stripe.paymentIntents.retrieve).toHaveBeenCalledWith("pi_1", {}, { stripeAccount: "acct_store" });
-    expect(ddb.commandCalls(UpdateCommand)[0].args[0].input.ExpressionAttributeValues).toMatchObject({ ":ref": 12000, ":refunded": "REFUNDED" });
+    expect(stripe.refunds.list).toHaveBeenCalledWith({ payment_intent: "pi_1", limit: 100 }, { stripeAccount: "acct_store" });
+    expect(ddb.commandCalls(UpdateCommand)[0].args[0].input.ExpressionAttributeValues).toMatchObject({
+      ":ref": order().storeOrderTotalMinor,
+      ":st": "REFUNDED",
+    });
 
     ddb.resetHistory();
-    await send("charge.refunded", { id: "ch_1", object: "charge", payment_intent: "pi_1", amount: 12000, amount_refunded: 500, refunded: false });
-    const partial = ddb.commandCalls(UpdateCommand)[0].args[0].input;
-    expect(partial.ExpressionAttributeValues).toMatchObject({ ":ref": 500 });
-    expect(partial.UpdateExpression).not.toContain(":refunded");
+    stripe.refunds.list.mockReturnValue(live({ id: "re_1", amount: 500 }));
+    await send("charge.refunded", { id: "ch_1", object: "charge", payment_intent: "pi_1" });
+    expect(ddb.commandCalls(UpdateCommand)[0].args[0].input.ExpressionAttributeValues).toMatchObject({ ":ref": 500, ":st": "PAID" });
 
     ddb.resetHistory();
     stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_2", metadata: { orderId: ORDER_ID } });
-    await send("charge.refunded", { id: "ch_2", object: "charge", payment_intent: "pi_2", amount: 1, amount_refunded: 1, refunded: true });
+    await send("charge.refunded", { id: "ch_2", object: "charge", payment_intent: "pi_2" });
     expect(ddb.commandCalls(UpdateCommand)).toHaveLength(0);
   });
+
+  it.each(["charge.refund.updated", "refund.failed", "refund.updated"])(
+    "%s: a failed refund stops counting; a REFUNDED order goes back to its last step",
+    async (type) => {
+      const total = order().storeOrderTotalMinor;
+      world({
+        o: order({
+          storeOrderStatus: "REFUNDED",
+          storeOrderRefundedMinor: total,
+          storeOrderStripe: { accountId: "acct_store", checkoutSessionId: "cs_1", paymentIntentId: "pi_1" },
+          storeOrderStatusHistory: [{ status: "PREPARING", at: 1, by: "U1" }],
+          storeOrderRefunds: [{ refundId: "re_1", amountMinor: total, status: "pending", reason: null, at: 2, by: "U1" }],
+        }),
+      });
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      stripe.paymentIntents.retrieve.mockResolvedValue({ id: "pi_1", metadata: { orderId: ORDER_ID } });
+      stripe.refunds.list.mockReturnValue(live({ id: "re_1", amount: total, status: "failed", failure_reason: "expired_or_canceled_card" }));
+      const res = await send(type, { id: "re_1", object: "refund", payment_intent: "pi_1", status: "failed", failure_reason: "expired_or_canceled_card" });
+      expect(res.status).toBe(200);
+      const v = ddb.commandCalls(UpdateCommand)[0].args[0].input.ExpressionAttributeValues!;
+      expect(v[":ref"]).toBe(0);
+      expect(v[":st"]).toBe("PREPARING");
+      expect(v[":r"]).toEqual([expect.objectContaining({ refundId: "re_1", status: "failed" })]);
+      expect(v[":f"]).toEqual([
+        { refundId: "re_1", amountMinor: total, status: "failed", reason: "expired_or_canceled_card", at: 1_700_000_100_000 },
+      ]);
+    }
+  );
 
   it("charge.dispute.*: the dispute's status on the order", async () => {
     world({ o: order({ storeOrderStatus: "PAID", storeOrderStripe: { accountId: "acct_store", checkoutSessionId: "cs_1", paymentIntentId: "pi_1" } }) });

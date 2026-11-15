@@ -7,11 +7,11 @@ import {
   markEventProcessed,
   markOrderPaid,
   recordOrderDispute,
-  recordOrderRefund,
   wasEventProcessed,
 } from "../aws/dynamodb/dynamo-entities/order";
 import { updateStorePaymentsStatus } from "../aws/dynamodb/dynamo-entities/store";
 import { getStripe, getStripeSecrets, PaymentsNotConfiguredError } from "./stripe";
+import { syncOrderRefunds } from "./refund-sync";
 
 /*
  * POST /api/v1/payments/stripe-connect-webhook (progress.md 5.5): events from the stores'
@@ -32,7 +32,10 @@ import { getStripe, getStripeSecrets, PaymentsNotConfiguredError } from "./strip
  *   checkout.session.async_payment_failed → CANCELLED (PAYMENT_FAILED)
  *   payment_intent.payment_failed → nothing: Checkout lets the shopper try another card until
  *     the session expires, which then cancels the order
- *   charge.refunded → refunded amount; a full refund makes the order REFUNDED
+ *   charge.refunded / charge.refund.updated / refund.created / refund.updated / refund.failed →
+ *     the order's refunds re-read from Stripe (6.4b, `syncOrderRefunds`): the refunded total,
+ *     REFUNDED when it's all of it (and back to the last step when a refund fails), each
+ *     refund's status, and failed refunds in `storeOrderFailedRefunds`
  *   charge.dispute.* → the dispute's status on the order
  *   account.updated → the store's cached payments flags (5.2b)
  */
@@ -93,7 +96,22 @@ export async function handleConnectEvent(event: Stripe.Event): Promise<void> {
     case "charge.refunded": {
       const charge = event.data.object as Stripe.Charge;
       const order = await orderForPaymentIntent(event, idOf(charge.payment_intent));
-      if (order) await recordOrderRefund(order, charge.amount_refunded, charge.refunded === true);
+      if (order) await syncOrderRefunds(order.storeOrderId);
+      return;
+    }
+    case "charge.refund.updated":
+    case "refund.created":
+    case "refund.updated":
+    case "refund.failed": {
+      const refund = event.data.object as Stripe.Refund;
+      const order = await orderForPaymentIntent(event, idOf(refund.payment_intent));
+      if (!order) return;
+      const synced = await syncOrderRefunds(order.storeOrderId);
+      if (refund.status === "failed" || refund.status === "canceled") {
+        console.warn(
+          `[connect webhook] refund ${refund.id} on order ${order.storeOrderId} ${refund.status} (${refund.failure_reason ?? "no reason"}); refunded now ${synced?.storeOrderRefundedMinor ?? "?"}`
+        );
+      }
       return;
     }
     case "charge.dispute.created":

@@ -1228,6 +1228,19 @@ export interface StoreOrder {
   storeOrderStatusHistory?: StoreOrderStatusChange[];
   /** 6.4: refunds made through Ceseelia, oldest first (dashboard refunds only change the total). */
   storeOrderRefunds?: StoreOrderRefund[];
+  /** 6.4b: refunds Stripe couldn't make (failed or canceled), any origin; they don't count. */
+  storeOrderFailedRefunds?: StoreOrderFailedRefund[];
+}
+
+export interface StoreOrderFailedRefund {
+  refundId: string;
+  amountMinor: number;
+  /** `failed` or `canceled`. */
+  status: string;
+  /** Stripe's `failure_reason`, e.g. `expired_or_canceled_card`, `lost_or_stolen_card`. */
+  reason: string | null;
+  /** When the refund was made (ms). */
+  at: number;
 }
 
 export interface StoreOrderRefund {
