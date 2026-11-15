@@ -27,6 +27,7 @@ stage usually touches both repos.
 ceseelia_backend/
 ├── docker-compose.yml, nginx/nginx.conf      # prod runtime (node + nginx + certbot)
 ├── *.sh / *.ps1                              # EC2 ops scripts (certs, swap, scp image, reboot)
+├── iam/                                      # CeseeliaServerRole policy (prod server, least privilege)
 └── node/
     ├── index.ts           # starts the server, the sweeps and graceful shutdown
     ├── app.ts             # createApp(): helmet, /healthz, CORS, Stripe webhooks, JSON body, host routing
@@ -359,11 +360,11 @@ Full plan in `progress.md` §6a. Key rules:
 5.2 ✅ Merchant onboarding: `POST /store/payments/create-connect-account-link`,
     `GET /store/payments/status/:storeId`; `stripeAccountId` + cached flags in the SETTINGS
     row's own `payments` attribute (not the admin block, which the admin form replaces).
-    **Stripe keys** live in AWS Secrets Manager (`STRIPE_SECRET_ID`, default
-    `ceseelia/<STAGE>/stripe`, JSON `{secretKey, webhookSecret}`), read once by
-    `layers/payments/stripe.ts`; never in `.env` or git. Dev refuses a live key; prod refuses
-    to start without a usable key (`checkStripeConfig` in `index.ts`). The legacy `layers/stripe`
-    is unused.
+    **Secrets** live in ONE AWS Secrets Manager secret per stage (`APP_SECRET_ID`, default
+    `ceseelia/<STAGE>`, flat keys `stripeSecretKey`, `stripeWebhookSecret`,
+    `stripeBillingWebhookSecret`, `anthropicApiKey`; `layers/aws/secret-manager/app-secrets.ts`),
+    read once; never in `.env` or git. The prod server runs as `CeseeliaServerRole` (`iam/`). Dev refuses a live key; prod refuses
+    to start without a usable key (`checkStripeConfig` in `index.ts`).
 5.3 `POST /customer/create-order`: re-quote (4.2) with the delivery address's postal code
     (`priceLines(..., { postalCode })`; never the cart's geo-IP estimate, QA Q.23), write `ORDER#…` with status `PENDING_PAYMENT`,
     create a Stripe Checkout Session (connected account + application fee), return its URL.

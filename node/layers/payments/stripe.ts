@@ -1,11 +1,12 @@
 import Stripe from "stripe";
-import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
-import { IN_DEV, STRIPE_SECRET_ID } from "../../config";
+import { APP_SECRET_ID, IN_DEV } from "../../config";
+import { readAppSecretString } from "../aws/secret-manager/app-secrets";
 
 /*
- * The platform's Stripe client (5.2). The secret key is read once from AWS Secrets Manager
- * (`STRIPE_SECRET_ID`, JSON `{ secretKey, webhookSecret }`) and never logged. Dev refuses a
- * live-mode key, so local testing can't move real money.
+ * The platform's Stripe client (5.2). The keys come from the stage's app secret
+ * (`ceseelia/<stage>`: `stripeSecretKey`, `stripeWebhookSecret`, `stripeBillingWebhookSecret`;
+ * see app-secrets.ts) and are never logged. Dev refuses a live-mode key, so local testing can't
+ * move real money.
  */
 
 /* Payments can't be used: the secret is missing, unreadable or still a placeholder. */
@@ -35,11 +36,12 @@ export function parseStripeSecrets(raw: string | undefined, inDev: boolean): Str
     throw new PaymentsNotConfiguredError("the secret is not JSON");
   }
   const d = (typeof data === "object" && data !== null ? data : {}) as Record<string, unknown>;
-  const secretKey = typeof d.secretKey === "string" ? d.secretKey.trim() : "";
-  const webhookSecret = typeof d.webhookSecret === "string" ? d.webhookSecret.trim() : "";
-  const billingWebhookSecret = typeof d.billingWebhookSecret === "string" ? d.billingWebhookSecret.trim() : "";
+  const str = (k: string) => (typeof d[k] === "string" ? (d[k] as string).trim() : "");
+  const secretKey = str("stripeSecretKey");
+  const webhookSecret = str("stripeWebhookSecret");
+  const billingWebhookSecret = str("stripeBillingWebhookSecret");
   if (!KEY_PATTERN.test(secretKey))
-    throw new PaymentsNotConfiguredError("secretKey is missing or not a Stripe key");
+    throw new PaymentsNotConfiguredError("stripeSecretKey is missing or not a Stripe key");
   if (inDev && secretKey.includes("_live_")) {
     throw new PaymentsNotConfiguredError("dev must use a test-mode key, not a live one");
   }
@@ -50,13 +52,11 @@ let secretsPromise: Promise<StripeSecrets> | null = null;
 let clientPromise: Promise<Stripe> | null = null;
 
 async function loadSecrets(): Promise<StripeSecrets> {
-  const sm = new SecretsManagerClient({ region: process.env.AWS_REGION || "us-east-1" });
   let raw: string | undefined;
   try {
-    raw = (await sm.send(new GetSecretValueCommand({ SecretId: STRIPE_SECRET_ID }))).SecretString;
+    raw = await readAppSecretString();
   } catch (e) {
-    const name = (e as { name?: string })?.name ?? "Error";
-    throw new PaymentsNotConfiguredError(`can't read secret "${STRIPE_SECRET_ID}" (${name})`);
+    throw new PaymentsNotConfiguredError((e as Error).message);
   }
   return parseStripeSecrets(raw, IN_DEV);
 }
@@ -102,7 +102,7 @@ export async function checkStripeConfig(): Promise<void> {
     const { secretKey, webhookSecret } = await getStripeSecrets();
     const mode = secretKey.includes("_live_") ? "live" : "test";
     console.warn(
-      `[stripe] ${mode} key loaded from "${STRIPE_SECRET_ID}"${webhookSecret ? "" : " (no webhook secret yet)"}`
+      `[stripe] ${mode} key loaded from "${APP_SECRET_ID}"${webhookSecret ? "" : " (no webhook secret yet)"}`
     );
   } catch (e) {
     if (!IN_DEV) throw e;

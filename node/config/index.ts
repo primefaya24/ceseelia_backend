@@ -72,13 +72,11 @@ export const COGNITO_AUTH_DOMAIN: string = env("COGNITO_AUTH_DOMAIN");
 export const COGNITO_FEDERATION_REDIRECT_URL: string = env("COGNITO_FEDERATION_REDIRECT_URL");
 
 /*
-* Stripe (5.2). The keys live in AWS Secrets Manager, never in env files or git: a JSON secret
-* { "secretKey": "sk_…" | "rk_…", "webhookSecret": "whsec_…", "billingWebhookSecret": "whsec_…" }
-* read once at startup by layers/payments/stripe. Dev must use a test-mode key.
-* `billingWebhookSecret` signs the platform's subscription webhook (P.5); `webhookSecret` is
-* for the Connect (shopper orders) endpoint (5.4).
+* Secrets (Stripe keys and webhook secrets, the Anthropic key) live in ONE AWS Secrets Manager
+* secret per stage, never in env files or git: `ceseelia/dev` or `ceseelia/prod`, a flat JSON
+* object read once by layers/aws/secret-manager/app-secrets (key names listed there).
 */
-export const STRIPE_SECRET_ID: string = env("STRIPE_SECRET_ID", `ceseelia/${STAGE}/stripe`);
+export const APP_SECRET_ID: string = env("APP_SECRET_ID", `ceseelia/${STAGE}`);
 
 /*
 * Paid plans (P.5): SPARK / NOVA can be picked only when this is on, which needs the Billing

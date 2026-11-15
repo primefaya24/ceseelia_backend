@@ -394,21 +394,21 @@ describe("parseStripeSecrets", () => {
   const ok = "sk_test_" + "a".repeat(20);
   it("accepts secret and restricted keys", () => {
     expect(
-      parseStripeSecrets(JSON.stringify({ secretKey: ok, webhookSecret: "whsec_1" }), true)
+      parseStripeSecrets(JSON.stringify({ stripeSecretKey: ok, stripeWebhookSecret: "whsec_1" }), true)
     ).toEqual({
       secretKey: ok,
       webhookSecret: "whsec_1",
       billingWebhookSecret: "",
     });
     expect(
-      parseStripeSecrets(JSON.stringify({ secretKey: "rk_live_abc" }), false).webhookSecret
+      parseStripeSecrets(JSON.stringify({ stripeSecretKey: "rk_live_abc" }), false).webhookSecret
     ).toBe("");
   });
 
   it.each([
     ["not json", "{"],
-    ["the placeholder", JSON.stringify({ secretKey: "REPLACE_IN_CONSOLE" })],
-    ["a publishable key", JSON.stringify({ secretKey: "pk_test_abc" })],
+    ["the placeholder", JSON.stringify({ stripeSecretKey: "REPLACE_IN_CONSOLE" })],
+    ["a publishable key", JSON.stringify({ stripeSecretKey: "pk_test_abc" })],
     ["nothing", undefined],
   ])("rejects %s", (_label, raw) => {
     expect(() => parseStripeSecrets(raw, true)).toThrow(PaymentsNotConfiguredError);
@@ -416,11 +416,11 @@ describe("parseStripeSecrets", () => {
 
   it("refuses a live key in dev, and never puts the key in the message", () => {
     const live = "sk_live_" + "b".repeat(20);
-    expect(() => parseStripeSecrets(JSON.stringify({ secretKey: live }), true)).toThrow(
+    expect(() => parseStripeSecrets(JSON.stringify({ stripeSecretKey: live }), true)).toThrow(
       /test-mode key/
     );
     try {
-      parseStripeSecrets(JSON.stringify({ secretKey: live }), true);
+      parseStripeSecrets(JSON.stringify({ stripeSecretKey: live }), true);
     } catch (e) {
       expect((e as Error).message).not.toContain(live);
     }

@@ -27,14 +27,33 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 >       Store › Orders → steps (ready / on its way emails) → refund part → refund the rest.
 > - [ ] **L.1 Owner: Stripe and secrets.** Stripe Billing setup (P.5 "Setup") and a Spark
 >       checkout test; `PAID_PLANS_ENABLED=true` in prod; live Stripe keys and webhook secrets
->       in `ceseelia/prod/stripe`; S.2 password rotation.
+>       in `ceseelia/prod` (one secret per stage, see the note below); S.2 password rotation.
 > - [ ] **L.2 The AI store check** in `runSmartStoreValidation` (P.4c; today every store
->       passes). Needs the owner's rules for what to flag.
-> - [x] **L.3 Security hardening, S.14–S.17** (done 2026-11-14; owner: fix the cron line on
->       primehost-0, see S.17): helmet and nginx headers (HSTS,
+>       passes). Owner decisions 2026-11-14:
+>       - The AI **never rejects**: it passes a store or sends it to the admin review queue with
+>         evidence per item. Merchants never see the reasons. Go Live attempts are rate-limited.
+>       - Checks: Stripe's prohibited and restricted businesses (verify against Stripe's current
+>         list when building), scam signs (payment outside Stripe, too-good prices,
+>         impersonation, phantom products, resold digital goods), store/items mismatch.
+>       - **Restricted categories** (alcohol, vapes/tobacco, CBD/kratom, supplements with health
+>         claims, knives/hunting gear...) are **banned unless the owner approves** the store.
+>       - **Live stores:** item changes are re-checked in the background (a few minutes after
+>         the last edit, changed items only). A flagged item is **hidden until approved**, the
+>         rest keeps selling, and the owner gets an **email alert**.
+>       - **Go Live waits** up to 90 s ("Checking your store…"); slower → IN_REVIEW.
+>       - **Big stores:** every item's text is checked (text is cheap; chunked in parallel if
+>         very large). Images are capped at 50, chosen by risk first (rule-check hits, branded or
+>         high-priced items), then random. A pure random 50 of 500 would miss a few bad items
+>         most of the time.
+>       - Claude API (`@anthropic-ai/sdk`, Claude Opus 5.5, structured output, server-side
+>         refusal fallback). Key: `anthropicApiKey` in `ceseelia/<stage>` (see the secrets
+>         note below).
+>       - Before switching on: an eval set of ~60 made-up stores (half legitimate and tricky,
+>         half sketchy), results shown to the owner first.
+> - [x] **L.3 Security hardening, S.14–S.17** (done 2026-11-14): helmet and nginx headers (HSTS,
 >       `server_tokens off`), a hardened Docker image (`npm ci --omit=dev`, non-root), legacy
->       DinersXpress / PrimeFaya code removed, and **`certbot-renew.sh` fixed** (critical:
->       "Permission denied" on primehost-0, `~/tasks.md`; wrong `primedine` paths).
+>       DinersXpress / PrimeFaya code removed, and **`certbot-renew.sh` fixed** (wrong
+>       `primedine` paths, not executable, renewed certs never loaded).
 > - [ ] **L.4 Production basics, Stage 9:** structured logs with no PII (9.1), rate limits and
 >       body limits (9.2), a health check and graceful shutdown (9.3), CI (9.4), infrastructure
 >       as code (9.5), backups (DynamoDB PITR), lifecycle rules and alarms (9.6).
@@ -49,6 +68,20 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 > - [ ] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
 >       SEO / link previews, account delete (BE `delete-user`, WA 1.6d), custom domains
 >       (P.9 / 9.8), the admin menu's review-queue badge, paging Admin › Stores.
+
+> **Secrets and the prod server (2026-11-14).** One Secrets Manager secret per stage,
+> `ceseelia/dev` and `ceseelia/prod` (`APP_SECRET_ID`), flat keys: `stripeSecretKey`,
+> `stripeWebhookSecret`, `stripeBillingWebhookSecret`, `anthropicApiKey`
+> (`layers/aws/secret-manager/app-secrets.ts`). `ceseelia/dev` has the Stripe test key;
+> `ceseelia/prod` exists with empty values for the owner to fill. The old `ceseelia/dev/stripe`
+> is no longer read (owner: delete it). **The API isn't deployed anywhere yet:**
+> `api.ceseelia.com` has no DNS record, and the three EC2 servers are DinersXpress, Primehost
+> and Vaultomic. The prod server must be launched with the **`CeseeliaServerRole`** instance
+> profile (created 2026-11-14; least privilege, policy in `ceseelia_backend/iam/`: the prod
+> secret, `ceseelia_prod`, `ceseelia-storage-prod`, AdminGetUser on the prod pool, SES from
+> ceseelia.com; checked with the IAM policy simulator). The "certbot Permission denied" in
+> `~/tasks.md` is on primehost-0, a **different project**: Ceseelia's own scripts are fixed
+> (S.17) for when its server exists.
 
 > **▶ Start the next session here (2026-11-14).** Stages S, 0–4 and P are done, and so are
 > Stage 5 checkout (5.1–5.7) and Stage 6 order management and emails (6.1–6.6) in both repos. 6.4
@@ -118,7 +151,7 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 | Merchant / customer APIs | ❌ Missing | `/merchant/path` stub (1.5 deferred) |
 | Cart, checkout, orders, payments | ❌ Not started | Stripe webhook returns 501 |
 | Admin stats, join requests, tickets | ❌ Not started | |
-| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail` and `s3:DeleteObjectTagging`; SES is in production (checked 2026-11-14); contact-store's in-memory rate limits need a shared store with >1 instance |
+| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail`, `ses:SendRawEmail`, `s3:DeleteObjectTagging` and `secretsmanager:GetSecretValue` on `ceseelia/prod/*` (Stripe, Anthropic); SES is in production (checked 2026-11-14); contact-store's in-memory rate limits need a shared store with >1 instance |
 
 **Health check (2026-11-11):** `npm test` 622/622 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 79 warnings · `npm audit --omit=dev` 0 vulnerabilities.
@@ -285,14 +318,13 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
   - [x] d. Duplicate `intervalInMs` check in `registerTimer` removed.
 - [x] ⚪ **S.17 Ops scripts** (2026-11-14): `certbot-renew.sh` rewritten. It works from the
       folder it's in (no `primedine` paths), the cron line runs it with `/bin/bash` (the
-      "Permission denied" on primehost-0: the script wasn't executable), and nginx is reloaded
+      "Permission denied" seen on primehost-0 is the same bug in another project's copy), and nginx is reloaded
       from the host when a certificate renews (the old `--deploy-hook` ran `docker compose`
       inside the certbot container, so a renewed cert was never loaded). Every `*.sh` is
       executable in git. `generate-cert.sh`: runs from its own folder, `CERT_EMAIL` (default
       support@ceseelia.com), reloads nginx instead of restarting node. `system-init.sh` takes
       `PROJECT_DIR`.
-      **On the server (owner):** after copying the files, fix the existing cron line, which
-      still runs the script without bash. See 2026-11-14 in the changelog.
+      Ceseelia's server doesn't exist yet; `system-init.sh` installs the right cron line on it.
       Add a confirmation prompt to `docker-close-all.sh`, which removes every container and image
       on the host.
 
@@ -947,13 +979,13 @@ pickup or delivery, goes through Stripe Checkout (5.4).
   - [x] c. Saved in the SETTINGS row's own `payments` attribute (the admin form replaces the
         whole admin block, so not there). Members' get-data and public responses drop it; public
         settings get `paymentsEnabled` (= `chargesEnabled`). (WA 5.4)
-  - [x] d. Keys in AWS Secrets Manager (`ceseelia/dev/stripe`, sandbox "Ceseelia sandbox");
+  - [x] d. Keys in AWS Secrets Manager (now `ceseelia/dev`, key `stripeSecretKey`; sandbox "Ceseelia sandbox");
         `layers/payments/stripe.ts`. Smoke-tested against the sandbox (create, link, delete).
   - [ ] f. Local dev: set `WEBAPP_URL` in `node/.env` to the address the webapp is opened at
         (e.g. `http://192.168.1.107:4200`), or Stripe's return links go to `localhost:4200`.
-  - [ ] e. Prod: create `ceseelia/prod/stripe` with a **restricted** live key (`rk_live_…`,
-        IP-allowlisted) and give the EC2 instance role `secretsmanager:GetSecretValue` on that
-        secret only. Before launch (Stage 9).
+  - [ ] e. Prod: put a **restricted** live key (`rk_live_…`, IP-allowlisted) in
+        `ceseelia/prod` → `stripeSecretKey` (owner, L.1). The secret and the server role's read
+        access exist (2026-11-14, `CeseeliaServerRole`).
 - [x] 5.3 Order model (done 2026-11-13): `StoreOrderStatus` enum replaces the boolean
       (`PENDING_PAYMENT → PAID → PREPARING → READY/SHIPPED → COMPLETED`, `CANCELLED`, `REFUNDED`;
       `storeOrderCancelReason` PAYMENT_EXPIRED / PAYMENT_FAILED / OUT_OF_STOCK / MERCHANT).
@@ -1192,6 +1224,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-14 | Secrets: one per stage (`ceseelia/dev`, `ceseelia/prod`, `APP_SECRET_ID`, flat keys incl. `anthropicApiKey`); Stripe reads it (checked against the Stripe sandbox). `CeseeliaServerRole` + instance profile for the future prod server (`iam/`). The API isn't deployed yet; the certbot error in `~/tasks.md` is primehost-0's (another project). |
 | 2026-11-14 | L.3 done: S.14 helmet + nginx hardening + pinned images; S.15 non-root image with `npm ci --omit=dev` and HEALTHCHECK; S.16 legacy auth/PayPal/PrimeFaya/DinersXpress code deleted; S.17 certbot renewal fixed (paths, executable bit, nginx reload from the host). 9.3 `/healthz` + graceful shutdown. Server step: `crontab -e`, make the line `0 2,14 * * * /bin/bash <project>/certbot-renew.sh >> <project>/certbot-renew.log 2>&1`. |
 | 2026-11-14 | Launch checklist L.0–L.9 added at the top of §1 (owner: everything in it must be done before launch). |
 | 2026-11-14 | 6.5 owner decisions done: PDF receipt attached (pdfkit, raw MIME `sendEmailWithAttachments`), `storeInfo.taxNumber` on receipts, new-order alerts also to the store's contact email (`storeInfo.emailOrderAlerts`, default on, never public). SES checked: production access on. |

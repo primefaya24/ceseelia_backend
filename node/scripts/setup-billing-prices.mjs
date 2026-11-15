@@ -5,7 +5,7 @@
 //   npm run build                                  # PLANS is read from dist/
 //   node scripts/setup-billing-prices.mjs          # dry run: shows what it would do
 //   node scripts/setup-billing-prices.mjs --write  # create what's missing
-//   STRIPE_SECRET_ID=ceseelia/prod/stripe node scripts/setup-billing-prices.mjs --write
+//   APP_SECRET_ID=ceseelia/prod node scripts/setup-billing-prices.mjs --write
 //
 // The key is read from Secrets Manager (the same secret the API uses). A price whose amount
 // changed in PLANS gets a new price that takes over the lookup key (`transfer_lookup_key`):
@@ -19,9 +19,9 @@ const require = createRequire(import.meta.url);
 const { PLANS, STORE_PLANS, isPaidPlan, planPriceLookupKey } = require("../dist/layers/core/plans/index.js");
 
 const WRITE = process.argv.includes("--write");
-const SECRET_ID = process.env.STRIPE_SECRET_ID || "ceseelia/dev/stripe";
+const SECRET_ID = process.env.APP_SECRET_ID || "ceseelia/dev";
 const sm = new SecretsManagerClient({ region: process.env.AWS_REGION || "us-east-1" });
-const { secretKey } = JSON.parse((await sm.send(new GetSecretValueCommand({ SecretId: SECRET_ID }))).SecretString);
+const { stripeSecretKey: secretKey } = JSON.parse((await sm.send(new GetSecretValueCommand({ SecretId: SECRET_ID }))).SecretString);
 const stripe = new Stripe(secretKey);
 console.log(`${secretKey.includes("_live_") ? "LIVE" : "test"} mode · ${WRITE ? "writing" : "dry run"}`);
 
