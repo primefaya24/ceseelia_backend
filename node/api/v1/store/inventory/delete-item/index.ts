@@ -9,6 +9,7 @@ import {
   deleteStoreCategory,
   deleteStoreItem,
 } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { removeItemReviewRow } from "../../../../../layers/aws/dynamodb/dynamo-entities/item-review";
 import { isUlid } from "../../../../../layers/core/utils";
 dotenv.config();
 
@@ -61,6 +62,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
 
     // The item (and its category count, 2.1) first: if that fails, its images are still there.
     await deleteStoreItem(storeId, storeItemId);
+    // L.2: off the admin queue of hidden items, if it was there (its pending check just lapses).
+    await removeItemReviewRow(storeId, storeItemId).catch((e) =>
+      console.error(`[item check] couldn't clear review row of ${storeItemId}`, (e as Error)?.message ?? e)
+    );
 
     // Then its images. If this fails the item is already gone; the files are only orphans.
     const currentS3Uris: string[] = (

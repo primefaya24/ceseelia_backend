@@ -6,6 +6,7 @@ import { IN_DEV } from "../../../../../config";
 import { appConstants } from "../../../../../constants";
 import { getStoreInventoryData, withoutAdminSettings } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { isUlid } from "../../../../../layers/core/utils";
+import { StoreInventoryData } from "../../../../../layers/core/interfaces/store";
 dotenv.config();
 
 /*
@@ -49,7 +50,8 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeInventoryData = await getStoreInventoryData(storeId);
 
     // Respond to user
-    res.send(getAuth(res).isAdmin ? storeInventoryData : withoutAdminSettings(storeInventoryData));
+    // L.2: merchants see that an item is hidden and why in general terms, never the reasons.
+    res.send(getAuth(res).isAdmin ? storeInventoryData : forMerchant(withoutAdminSettings(storeInventoryData)));
   } catch (e) {
     if (IN_DEV) {
       console.error(e);
@@ -58,4 +60,14 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       .status(appConstants.HTTP_STATUS_CODE_INTERNAL_SERVER_ERROR)
       .send({ message: appConstants.HTTP_ERROR_MSG_INTERNAL_SERVER_ERROR });
   }
+}
+
+/* An item's review status without the check's reasons or fingerprint (L.2). */
+export function forMerchant(data: StoreInventoryData): StoreInventoryData {
+  return {
+    ...data,
+    items: data.items.map(({ storeItemCheckedHash: _h, storeItemReview, ...item }) =>
+      storeItemReview ? { ...item, storeItemReview: { ...storeItemReview, reasons: [] } } : item
+    ),
+  };
 }

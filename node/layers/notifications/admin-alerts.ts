@@ -1,0 +1,59 @@
+import { ADMIN_ALERT_EMAIL, WEBAPP_URL } from "../../config";
+import { sendEmail } from "../aws/ses";
+import { escapeHtml as e } from "../core/utils/validation";
+
+/*
+ * Emails to the Ceseelia team (L.2, owner 2026-11-14): when the AI store check sends a store to
+ * review at Go Live, and when it hides items of a live store. To ADMIN_ALERT_EMAIL. Best effort:
+ * never throws (an alert must never fail Go Live or the item check).
+ */
+const reviewUrl = () => `${WEBAPP_URL.replace(/\/$/, "")}/admin/stores`;
+
+function page(title: string, intro: string, lines: string[]): string {
+  const list = lines.map((l) => `<li style="margin:0 0 8px">${e(l)}</li>`).join("");
+  return `<!doctype html><html><body style="margin:0;padding:24px;background:#f3f4f6;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#111827">
+<div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:12px;padding:24px">
+<h1 style="margin:0 0 16px;font-size:20px">${e(title)}</h1>
+<p style="margin:0 0 12px">${intro}</p>
+<ul style="margin:0 0 16px;padding-left:20px;font-size:14px">${list}</ul>
+<p style="margin:20px 0"><a href="${e(reviewUrl())}" style="display:inline-block;padding:10px 18px;border-radius:999px;background:#111827;color:#ffffff;text-decoration:none;font-weight:600">Open the review queue</a></p>
+</div></body></html>`;
+}
+
+async function send(subject: string, html: string): Promise<void> {
+  try {
+    if (!ADMIN_ALERT_EMAIL) return;
+    await sendEmail(subject, "Ceseelia store check", ADMIN_ALERT_EMAIL, html);
+  } catch (err) {
+    console.error("[admin alerts] couldn't send", (err as Error)?.message ?? err);
+  }
+}
+
+/* Go Live sent a store to review (flagged, or the check couldn't run). */
+export function notifyStoreFlagged(storeId: string, storeName: string, reasons: string[]): Promise<void> {
+  return send(
+    `Store to review: ${storeName || storeId}`,
+    page(
+      `"${storeName || storeId}" is waiting for review`,
+      `It asked to go live and the store check sent it to review. It stays a draft, with no charge, until you approve it.`,
+      reasons
+    )
+  );
+}
+
+/* The background item check hid items of a live store. */
+export function notifyItemsFlagged(
+  storeId: string,
+  storeName: string,
+  items: { name: string; reasons: string[] }[]
+): Promise<void> {
+  const lines = items.flatMap((i) => i.reasons.map((r) => (r.includes(i.name) ? r : `${i.name}: ${r}`)));
+  return send(
+    `${items.length} item(s) hidden at ${storeName || storeId}`,
+    page(
+      `Items hidden at "${storeName || storeId}"`,
+      `The store is live. These items were added or changed and the store check hid them from shoppers until you approve or reject them. The rest of the store keeps selling.`,
+      lines
+    )
+  );
+}

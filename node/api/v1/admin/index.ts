@@ -13,6 +13,8 @@ import route_update_store_admin_settings from './update-store-admin-settings/ind
 import route_get_review_queue from './get-review-queue/index';
 import route_review_store from './review-store/index';
 import route_set_store_plan from './set-store-plan/index';
+import route_get_item_review_queue from './get-item-review-queue/index';
+import route_review_item from './review-item/index';
 dotenv.config();
 
 // User Router
@@ -31,5 +33,7 @@ route_update_store_admin_settings(adminRouter);
 route_get_review_queue(adminRouter);
 route_review_store(adminRouter);
 route_set_store_plan(adminRouter);
+route_get_item_review_queue(adminRouter);
+route_review_item(adminRouter);
 // Export Router
 export default adminRouter;

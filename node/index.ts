@@ -3,6 +3,7 @@ import { createApp, markShuttingDown } from './app';
 import { checkStripeConfig } from './layers/payments/stripe';
 import { sweepExpiredGrace } from './layers/payments/subscription-sync';
 import { sweepLostOrders } from './layers/payments/order-sweep';
+import { sweepItemChecks } from './layers/core/store-validation/item-check';
 import { registerTimer } from './layers/core/utils';
 
 const app = createApp();
@@ -26,6 +27,13 @@ checkStripeConfig()
                 const r = await sweepLostOrders();
                 if (r.paid + r.cancelled + r.failed > 0) {
                     console.warn(`[order sweep] checked ${r.checked}: ${r.paid} paid, ${r.cancelled} cancelled, ${r.cleared} cleared, ${r.kept} kept, ${r.failed} failed`);
+                }
+            }));
+            // L.2: the AI check of live stores' new and changed items.
+            timers.push(registerTimer(appConfig.ITEM_CHECK_SWEEP_INTERVAL, async () => {
+                const r = await sweepItemChecks();
+                if (r.checked + r.failed > 0) {
+                    console.warn(`[item check] ${r.checked} checked: ${r.flagged} hidden, ${r.cleared} shown again, ${r.skipped} skipped, ${r.failed} failed`);
                 }
             }));
         });

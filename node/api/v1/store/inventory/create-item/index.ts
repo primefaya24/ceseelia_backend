@@ -13,6 +13,8 @@ import { StoreRecordNotFoundError, updateStoreItem } from "../../../../../layers
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import { cleanUpS3Folder, isUlid, isUlidOrEmpty } from "../../../../../layers/core/utils";
 import { markImagesKept } from "../../../../../layers/aws/s3/image-upload";
+import { queueItemCheck } from "../../../../../layers/aws/dynamodb/dynamo-entities/item-review";
+import { ITEM_CHECK_DELAY_MS } from "../../../../../layers/core/store-validation/item-check";
 dotenv.config();
 
 /*
@@ -86,6 +88,12 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
         storeItem?.storeItemImageUris
       );
     }
+
+    // L.2: the AI check looks at it a few minutes after the last save (only on a live store;
+    // the sweep skips drafts, and saves that change nothing it reads). Never fails the save.
+    await queueItemCheck(storeId, itemId, ITEM_CHECK_DELAY_MS).catch((e) =>
+      console.error(`[item check] couldn't queue item ${itemId}`, (e as Error)?.message ?? e)
+    );
 
     // Respond to user
     res.send(itemId);

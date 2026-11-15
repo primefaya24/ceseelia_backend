@@ -1,6 +1,7 @@
 import { MAX_QUANTITY_PER_LINE } from "../../../constants/input-limits";
 import {
   fulfilmentSettings,
+  isItemHiddenByReview,
   isUnlimitedStock,
   StoreCategory,
   StoreItem,
@@ -299,7 +300,14 @@ export function priceLines(
     };
     const fail = (error: LineError): PricedLine => ({ ...base, error });
 
-    if (!item || !item.storeItemIsActive || !category || !category.storeCategoryIsActive || !variantsReady(item)) {
+    if (
+      !item ||
+      !item.storeItemIsActive ||
+      isItemHiddenByReview(item) ||
+      !category ||
+      !category.storeCategoryIsActive ||
+      !variantsReady(item)
+    ) {
       return fail({ code: "ITEM_NOT_FOUND", message: "This item is no longer available." });
     }
     const unit = item.storeItemPrices?.[currency as keyof typeof item.storeItemPrices];

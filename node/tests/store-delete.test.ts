@@ -63,6 +63,8 @@ describe("deleteStore (1.7)", () => {
       { pk: "APP_BILLING_GRACE", sk: `STORE#${STORE}` },
       { pk: PK, sk: "CATEGORY#C1" },
       { pk: PK, sk: "ITEM#I1" },
+      { pk: "APP_ITEM_CHECK", sk: `STORE#${STORE}#ITEM#I1` }, // L.2: its AI check and admin queue row
+      { pk: "APP_ITEM_REVIEW", sk: `STORE#${STORE}#ITEM#I1` },
       { pk: PK, sk: "MEMBER#U1" },
       { pk: "USER#U1", sk: `STORE#${STORE}` },
       { pk: PK, sk: "INVITE#new@x.co" },

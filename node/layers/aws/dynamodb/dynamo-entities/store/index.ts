@@ -21,6 +21,7 @@ import {
   normalizeAdminSettings,
   normalizeStoreLifecycle,
   initStoreLifecycle,
+  isItemHiddenByReview,
   StoreLifecycle,
   StoreCategory,
   StoreInventoryData,
@@ -32,6 +33,7 @@ import {
   StoreSubscription,
 } from "../../../../core/interfaces/store";
 import { getStorageImageUrl } from "../../../../core/utils";
+import { itemCheckKey, itemReviewKey } from "../item-review";
 import { publicVariants, variantsReady } from "../../../../core/variants";
 import { reserveSlugPut, SlugTakenError, slugKey, transactionFailedAt } from "../slug";
 import { newStoreMembershipItems } from "../membership";
@@ -871,6 +873,8 @@ export function toPublicInventory(data: StoreInventoryData): StoreInventoryData 
   const offered = new Set(data.settings.currencies.map((c) => c.currencyCode));
   const items = data.items
     .filter((i) => i.storeItemIsActive === true && activeCategoryIds.has(i.storeItemCategoryId))
+    // L.2: flagged by the AI check or turned down by an admin.
+    .filter((i) => !isItemHiddenByReview(i))
     // A variant item whose table isn't filled in (saved before 2.7) can't be bought yet.
     .filter((i) => variantsReady(i))
     .map((i) => ({
@@ -996,6 +1000,10 @@ export async function deleteStore(storeId: string): Promise<boolean> {
       keys.push({ pk: appConstants.DYNAMO_ENTITY_USER + "#" + r.sk.slice(appConstants.DYNAMO_ENTITY_MEMBER.length + 1), sk: userStoreSk });
     } else if (r.sk.startsWith(appConstants.DYNAMO_ENTITY_INVITE + "#")) {
       keys.push({ pk: r.sk, sk: userStoreSk }); // INVITE#<email> / STORE#<id>
+    } else if (r.sk.startsWith(appConstants.DYNAMO_ENTITY_ITEM + "#")) {
+      // L.2: its pending AI check and its place in the admin queue of hidden items
+      const itemId = r.sk.slice(appConstants.DYNAMO_ENTITY_ITEM.length + 1);
+      keys.push(itemCheckKey(storeId, itemId), itemReviewKey(storeId, itemId));
     }
   }
   {

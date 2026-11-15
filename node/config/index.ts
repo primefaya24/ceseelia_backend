@@ -76,6 +76,11 @@ export const COGNITO_FEDERATION_REDIRECT_URL: string = env("COGNITO_FEDERATION_R
 * secret per stage, never in env files or git: `ceseelia/dev` or `ceseelia/prod`, a flat JSON
 * object read once by layers/aws/secret-manager/app-secrets (key names listed there).
 */
+/*
+* L.2: where store-check alerts go (a store sent to review, items hidden on a live store).
+*/
+export const ADMIN_ALERT_EMAIL: string = env("ADMIN_ALERT_EMAIL", appConstants.ADMIN_CONTACT_EMAIL_ADDRESS);
+
 export const APP_SECRET_ID: string = env("APP_SECRET_ID", `ceseelia/${STAGE}`);
 
 /*
@@ -101,6 +106,8 @@ export const S3_STORAGE_BUCKET_ORIGIN: string = withTrailingSlash(
 * ServerWatch
 */
 export const SERVER_WATCH_CHECK_FOR_LOST_ORDERS_INTERVAL: number = 10 * 60 * 1000;
+/* L.2: how often the AI check looks for live stores' saved items that are due. */
+export const ITEM_CHECK_SWEEP_INTERVAL: number = 60 * 1000;
 
 /*
 * Fail fast on missing production configuration

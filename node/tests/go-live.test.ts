@@ -31,6 +31,10 @@ vi.mock("../layers/core/store-validation", async (orig) => ({
   ...(await orig<typeof import("../layers/core/store-validation")>()),
   runSmartStoreValidation: vi.fn(async () => ({ ok: true })),
 }));
+vi.mock("../layers/notifications/admin-alerts", () => ({
+  notifyStoreFlagged: vi.fn(async () => {}),
+  notifyItemsFlagged: vi.fn(async () => {}),
+}));
 
 import { verifyCognitoAccessToken } from "../layers/aws/cognito";
 import { getMembership } from "../layers/aws/dynamodb/dynamo-entities/membership";
@@ -40,7 +44,10 @@ import {
   withoutAdminSettings,
 } from "../layers/aws/dynamodb/dynamo-entities/store";
 import { readStoreStripeAccount } from "../layers/payments/account-status";
-import { runSmartStoreValidation } from "../layers/core/store-validation";
+import { runSmartStoreValidation, StoreCheckTimeoutError } from "../layers/core/store-validation";
+import { AiCheckNotConfiguredError } from "../layers/core/store-validation/ai";
+import { goLiveCheckLimiter } from "../api/v1/store/go-live/go-live";
+import { notifyStoreFlagged } from "../layers/notifications/admin-alerts";
 import { billingCurrencyFor, goLiveChecklist } from "../layers/core/go-live";
 import { initStoreCategory, initStoreSettings, StoreInventoryData, StoreItem } from "../layers/core/interfaces/store";
 import { planOptions } from "../api/v1/store/go-live/shared";
@@ -112,6 +119,8 @@ beforeEach(() => {
       Item: { pk: `STORE#${STORE}`, sk: "SETTINGS", lifecycle: { status: "DRAFT", plan: "NONE" } },
     });
   vi.mocked(runSmartStoreValidation).mockReset().mockResolvedValue({ ok: true });
+  vi.mocked(notifyStoreFlagged).mockClear();
+  goLiveCheckLimiter.reset();
   stripeOk();
   asRole("ADMIN");
   ddb.on(UpdateCommand).resolves({});
@@ -166,13 +175,6 @@ describe("goLiveChecklist (P.4a)", () => {
     expect(planOptions("CAD", "NOVA").map((o) => o.available)).toEqual([false, true]);
     setPaidPlansEnabledForTests(true);
     expect(planOptions("CAD").map((o) => o.available)).toEqual([true, true]);
-  });
-});
-
-describe("runSmartStoreValidation (P.4c)", () => {
-  it("is a TODO stub that passes every store for now", async () => {
-    const real = await vi.importActual<typeof import("../layers/core/store-validation")>("../layers/core/store-validation");
-    expect(await real.runSmartStoreValidation({ storeId: STORE, data: readyStore() })).toEqual({ ok: true });
   });
 });
 
@@ -289,7 +291,30 @@ describe("POST /store/go-live (P.4b)", () => {
     vi.mocked(runSmartStoreValidation).mockRejectedValue(new Error("AI down"));
     const res = await goLive({ storeId: STORE, plan: "SPARK" });
     expect(res.body.status).toBe("IN_REVIEW");
-    expect(reviewTx()[0].Update!.ExpressionAttributeValues![":review"].reasons).toEqual(["VALIDATION_UNAVAILABLE"]);
+    expect(reviewTx()[0].Update!.ExpressionAttributeValues![":review"].reasons).toEqual([
+      "VALIDATION_UNAVAILABLE: the store check couldn't run",
+    ]);
+  });
+
+  it("L.2: a timeout or a missing key also goes to review, named for the admin; the team is emailed", async () => {
+    vi.mocked(runSmartStoreValidation).mockRejectedValue(new StoreCheckTimeoutError());
+    expect((await goLive({ storeId: STORE, plan: "SPARK" })).body.status).toBe("IN_REVIEW");
+    expect(reviewTx()[0].Update!.ExpressionAttributeValues![":review"].reasons[0]).toMatch(/^VALIDATION_TIMEOUT/);
+    expect(notifyStoreFlagged).toHaveBeenCalledWith(STORE, expect.any(String), [expect.stringMatching(/^VALIDATION_TIMEOUT/)]);
+
+    ddb.resetHistory();
+    vi.mocked(runSmartStoreValidation).mockRejectedValue(new AiCheckNotConfiguredError());
+    await goLive({ storeId: STORE, plan: "SPARK" });
+    expect(reviewTx()[0].Update!.ExpressionAttributeValues![":review"].reasons[0]).toMatch(/^VALIDATION_NOT_CONFIGURED/);
+  });
+
+  it("L.2: at most 5 AI checks per store a day, then 429 RATE_LIMITED", async () => {
+    for (let k = 0; k < 5; k++) await goLive({ storeId: STORE, plan: "SPARK" });
+    const res = await goLive({ storeId: STORE, plan: "SPARK" });
+    expect(res.status).toBe(429);
+    expect(res.body.code).toBe("RATE_LIMITED");
+    expect(Number(res.headers["retry-after"])).toBeGreaterThan(0);
+    expect(runSmartStoreValidation).toHaveBeenCalledTimes(5);
   });
 
   it("409 STATUS_CHANGED when the store left DRAFT meanwhile", async () => {

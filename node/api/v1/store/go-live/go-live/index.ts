@@ -13,7 +13,11 @@ import { isPlanAvailable, isStorePlan, StorePlan } from "../../../../../layers/c
 import {
   runSmartStoreValidation,
   SmartStoreValidationResult,
+  StoreCheckTimeoutError,
 } from "../../../../../layers/core/store-validation";
+import { AiCheckNotConfiguredError } from "../../../../../layers/core/store-validation/ai";
+import { createRateLimiter } from "../../../../../layers/core/http/rate-limit";
+import { notifyStoreFlagged } from "../../../../../layers/notifications/admin-alerts";
 import { getStoreBillingState } from "../../../../../layers/aws/dynamodb/dynamo-entities/billing";
 import { blocksNewSubscription } from "../../../../../layers/core/billing";
 import { billingCurrencyFor } from "../../../../../layers/core/go-live";
@@ -32,9 +36,11 @@ import { callerUserId, sendBillingError, startPlanCheckout } from "../../billing
  *   409 PLAN_NOT_AVAILABLE (while PAID_PLANS_ENABLED is off, unless an admin gave the plan)
  *   409 ALREADY_SUBSCRIBED (the store already has a subscription)
  *   409 CHECKLIST_INCOMPLETE { steps } (P.4a's checklist, with Stripe read live)
- * Then runSmartStoreValidation (P.4c, a TODO stub that passes every store for now): passed →
- * checkout (or LIVE when gifted); flagged, or the check failed → IN_REVIEW with the reasons kept
- * for admins. The write is conditional on the store still being a DRAFT: 409 STATUS_CHANGED.
+ * Then runSmartStoreValidation (the AI store check, L.2; up to 90 s, the webapp shows "Checking
+ * your store…"): passed → checkout (or LIVE when gifted); flagged, or the check failed or took
+ * too long → IN_REVIEW with the reasons kept for admins, who get an email. At most
+ * 5 checks per store a day (429 RATE_LIMITED + Retry-After), so the check can't be probed.
+ * The write is conditional on the store still being a DRAFT: 409 STATUS_CHANGED.
  * 404 STORE_NOT_FOUND · 503 PAYMENTS_NOT_CONFIGURED / BILLING_NOT_CONFIGURED · 502 STRIPE_ERROR
  */
 export default function registerRoute(router: Router): void {
@@ -49,6 +55,16 @@ export default function registerRoute(router: Router): void {
       storeMember((req) => req.body.storeId, "ADMIN")
     );
   });
+}
+
+/* L.2: AI checks per store per day (each Go Live that reaches the check). */
+export const goLiveCheckLimiter = createRateLimiter({ windowMs: 24 * 60 * 60_000, max: 5 });
+
+/* Why the check couldn't give an answer, for the admin queue. */
+function failedCheckReason(e: unknown): string {
+  if (e instanceof StoreCheckTimeoutError) return "VALIDATION_TIMEOUT: the store check took longer than 90 seconds";
+  if (e instanceof AiCheckNotConfiguredError) return "VALIDATION_NOT_CONFIGURED: the AI store check has no API key";
+  return "VALIDATION_UNAVAILABLE: the store check couldn't run";
 }
 
 const conflict = (res: Response, code: string, message: string, extra: object = {}) =>
@@ -91,13 +107,25 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     }
 
     let result: SmartStoreValidationResult;
-    try {
-      // P.8: an admin already approved this store after review; don't send it back.
-      result = lifecycle.reviewApprovedAt ? { ok: true } : await runSmartStoreValidation({ storeId, data });
-    } catch (e) {
-      // Fail closed: a check that couldn't run sends the store to a human, never straight live.
-      console.error("In go-live: runSmartStoreValidation", e);
-      result = { ok: false, reasons: ["VALIDATION_UNAVAILABLE"] };
+    // P.8: an admin already approved this store after review; don't send it back.
+    if (lifecycle.reviewApprovedAt) {
+      result = { ok: true };
+    } else {
+      const allowed = goLiveCheckLimiter.take(`store:${storeId}`);
+      if (!allowed.ok) {
+        res.set("Retry-After", String(allowed.retryAfterSeconds));
+        return void res.status(429).send({
+          code: "RATE_LIMITED",
+          message: "This store has tried to go live several times today. Try again tomorrow.",
+        });
+      }
+      try {
+        result = await runSmartStoreValidation({ storeId, data });
+      } catch (e) {
+        // Fail closed: a check that couldn't run sends the store to a human, never straight live.
+        console.error("In go-live: runSmartStoreValidation", (e as Error)?.message ?? e);
+        result = { ok: false, reasons: [failedCheckReason(e)] };
+      }
     }
 
     if (result.ok && !gifted) {
@@ -123,6 +151,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     });
     // IN_REVIEW: `plan` is the one asked for; the store has no plan until it pays.
     res.send({ status: saved.status, plan });
+    if (!result.ok) void notifyStoreFlagged(storeId, data.settings.storeInfo?.storeName ?? "", result.reasons);
   } catch (e) {
     if (e instanceof StoreStatusChangedError) {
       return void conflict(res, "STATUS_CHANGED", "This store's status just changed. Reload and try again.");

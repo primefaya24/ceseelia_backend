@@ -992,6 +992,30 @@ export interface StoreItem {
    * `storeItemPrices` are worked out from them on save (sum / lowest price).
    */
   storeItemVariants?: StoreItemVariant[];
+  /*
+   * L.2: the AI store check's verdict on this item once its store is live. Written only by the
+   * server (the background item check and the admin decision), never by create-item. FLAGGED or
+   * REJECTED = hidden from shoppers (`isItemHiddenByReview`); APPROVED = an admin cleared it.
+   * `reasons` are for platform admins only (get-data strips them for merchants).
+   */
+  storeItemReview?: StoreItemReview;
+  /* L.2: fingerprint of what the item check last looked at (`itemCheckFingerprint`). Server only. */
+  storeItemCheckedHash?: string;
+}
+
+export type StoreItemReviewStatus = "FLAGGED" | "APPROVED" | "REJECTED";
+
+export interface StoreItemReview {
+  status: StoreItemReviewStatus;
+  reasons: string[];
+  flaggedAt: number;
+  decidedAt?: number;
+}
+
+/* Hidden from shoppers while flagged by the AI check or turned down by an admin (L.2). */
+export function isItemHiddenByReview(item: Pick<StoreItem, "storeItemReview">): boolean {
+  const s = item.storeItemReview?.status;
+  return s === "FLAGGED" || s === "REJECTED";
 }
 
 /* One option combination of an item (2.7), e.g. { Size: "M", Color: "White" }. */
