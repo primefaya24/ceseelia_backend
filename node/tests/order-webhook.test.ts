@@ -177,7 +177,7 @@ describe("paid (5.5c / 5.6)", () => {
     expect(items[0].Update!.UpdateExpression).not.toContain("#short");
     expect(items[1].Update).toMatchObject({ Key: { sk: `ITEM#${TEA}` }, ExpressionAttributeValues: { ":q": 2 } });
     expect(items[2].Update!.ExpressionAttributeValues).toMatchObject({ ":q0": 1, ":q1": 3, ":q": 4 });
-    expect(items[3].Update).toMatchObject({ Key: { pk: "APP_STORE", sk: `STORE#${STORE}#OVERVIEW` }, UpdateExpression: "ADD #count :one" });
+    expect(items[3].Update).toMatchObject({ Key: { pk: "APP_STORE", sk: `STORE#${STORE}#OVERVIEW` }, UpdateExpression: "ADD #count :one SET #last = :now" });
     expect(items[4].Put!.Item).toMatchObject({ pk: "APP", storeId: STORE, orderId: ORDER_ID, totalMinor: 12000, platformFeeMinor: 145 });
     expect(items[4].Put!.Item!.sk).toMatch(new RegExp(`^ORDER#\\d+#STORE#${STORE}#${ORDER_ID}$`));
     // 6.5: the receipt and the store's alert, once.

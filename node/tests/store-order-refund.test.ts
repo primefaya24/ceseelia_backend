@@ -137,6 +137,13 @@ describe("POST /store/orders/refund (6.4)", () => {
     expect(res.body.order.storeOrderRefundedMinor).toBe(2260);
     const sync = ddb.commandCalls(UpdateCommand)[1].args[0].input;
     expect(sync.ExpressionAttributeValues).toMatchObject({ ":ref": 2260, ":st": "REFUNDED" });
+    // The admin list's Cancelled count: one more fully refunded order.
+    const counter = ddb.commandCalls(UpdateCommand)[2].args[0].input;
+    expect(counter).toMatchObject({
+      Key: { pk: "APP_STORE", sk: `STORE#${STORE}#OVERVIEW` },
+      ExpressionAttributeNames: { "#c": "storeCancelledOrdersCount" },
+      ExpressionAttributeValues: { ":d": 1 },
+    });
   });
 
   it("409s before calling Stripe: unpaid / refunded, changed meanwhile, too much, disputed", async () => {

@@ -176,6 +176,23 @@ describe("PUT /store/orders/update-status (6.3)", () => {
     expect(u.ExpressionAttributeValues).toMatchObject({ ":from": "PAID", ":to": "READY", ":entry": [{ status: "READY", by: "U1" }] });
     // 6.5: the email module decides whether the shopper hears about it.
     expect(notifyOrderStatus).toHaveBeenCalledWith(expect.objectContaining({ storeOrderId: ORDER_ID, storeOrderStatus: "READY" }), "READY");
+    // Only Completed moves the admin's Completions count.
+    expect(ddb.commandCalls(UpdateCommand)).toHaveLength(1);
+  });
+
+  it("Completed adds one to the store's Completions in the admin list", async () => {
+    withOrder(order({ storeOrderStatus: "READY" }));
+    ddb.on(UpdateCommand).resolves({});
+    const res = await move({ fromStatus: "READY", status: "COMPLETED" });
+    expect(res.status).toBe(200);
+    const updates = ddb.commandCalls(UpdateCommand).map((c) => c.args[0].input);
+    expect(updates).toHaveLength(2);
+    expect(updates[1]).toMatchObject({
+      Key: { pk: "APP_STORE", sk: `STORE#${STORE}#OVERVIEW` },
+      UpdateExpression: "ADD #c :d",
+      ExpressionAttributeNames: { "#c": "storeCompletedOrdersCount" },
+      ExpressionAttributeValues: { ":d": 1 },
+    });
   });
 
   it("409 INVALID_TRANSITION: backwards, Shipped for a pickup, or an unpaid / cancelled order", async () => {

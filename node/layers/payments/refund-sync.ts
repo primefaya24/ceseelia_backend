@@ -1,6 +1,6 @@
 import { StoreOrder } from "../core/interfaces/store";
 import { LiveRefund, orderRefundState, sameRefundState } from "../core/refunds";
-import { getOrderById, writeOrderRefundState } from "../aws/dynamodb/dynamo-entities/order";
+import { bumpStoreOrderCounter, getOrderById, writeOrderRefundState } from "../aws/dynamodb/dynamo-entities/order";
 import { getStripe } from "./stripe";
 import { notifyOrderRefunded } from "../notifications/order-emails";
 import { recordCustomerOrder } from "../aws/dynamodb/dynamo-entities/customer";
@@ -47,6 +47,15 @@ export async function syncOrderRefunds(orderId: string): Promise<StoreOrder | nu
       // L.7: the customer's total spent follows the refunds (both ways; idempotent).
       await recordCustomerOrder(synced).catch((e) => log.error({ err: e, orderId }, "In refund-sync: customer record"));
       await rewardsAfterRefund(synced);
+      // The admin store list's "Cancelled" count: paid orders refunded in full (and back out
+      // if a failed refund undoes it).
+      const was = order.storeOrderStatus === "REFUNDED";
+      const isNow = synced.storeOrderStatus === "REFUNDED";
+      if (was !== isNow) {
+        await bumpStoreOrderCounter(order.storeId, "storeCancelledOrdersCount", isNow ? 1 : -1).catch((e) =>
+          log.error({ err: e, orderId }, "In refund-sync: cancelled counter")
+        );
+      }
       return synced;
     }
   }

@@ -33,6 +33,7 @@ import {
 import { findVariant, hasVariants } from "../../../../core/variants";
 import { OrderRefundState } from "../../../../core/refunds";
 import { dynamGetManyItems } from "../../dynamo-batch-ops";
+import { log } from "../../../../core/logger";
 
 const dynamoDbDocumentClient = DynamoDBDocumentClient.from(
   new DynamoDBClient({ region: appConstants.DEFAULT_REGION })
@@ -297,10 +298,11 @@ export async function markOrderPaid(order: StoreOrder, paymentIntentId: string, 
       Update: {
         TableName: TABLE,
         Key: overviewKey(order.storeId),
-        UpdateExpression: "ADD #count :one",
+        // The admin's "Last order" (and the store list's order) is the newest paid order.
+        UpdateExpression: "ADD #count :one SET #last = :now",
         ConditionExpression: "attribute_exists(pk)",
-        ExpressionAttributeNames: { "#count": "storeOrderCount" },
-        ExpressionAttributeValues: { ":one": 1 },
+        ExpressionAttributeNames: { "#count": "storeOrderCount", "#last": "storeOrderLastCompletedTimestamp" },
+        ExpressionAttributeValues: { ":one": 1, ":now": now },
       },
     },
     {
@@ -565,6 +567,31 @@ const lastSk = (orders: StoreOrder[]) => {
  * clicking at once can't skip each other's change. Appends to `storeOrderStatusHistory`.
  * Returns false when the order was no longer in `from`.
  */
+/*
+ * The admin store list's counters (APP_STORE overview row): Completions and Cancelled (paid
+ * orders refunded in full). Best effort: a missing overview row (store deleted) is fine.
+ */
+export async function bumpStoreOrderCounter(
+  storeId: string,
+  counter: "storeCompletedOrdersCount" | "storeCancelledOrdersCount",
+  delta: 1 | -1
+): Promise<void> {
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: TABLE,
+        Key: overviewKey(storeId),
+        UpdateExpression: "ADD #c :d",
+        ConditionExpression: "attribute_exists(pk)",
+        ExpressionAttributeNames: { "#c": counter },
+        ExpressionAttributeValues: { ":d": delta },
+      })
+    );
+  } catch (e) {
+    if ((e as { name?: string })?.name !== "ConditionalCheckFailedException") throw e;
+  }
+}
+
 export async function updateOrderStatus(
   order: StoreOrder,
   from: StoreOrderStatus,
@@ -589,6 +616,11 @@ export async function updateOrderStatus(
         },
       })
     );
+    if (to === "COMPLETED") {
+      await bumpStoreOrderCounter(order.storeId, "storeCompletedOrdersCount", 1).catch((e) =>
+        log.error({ err: e, orderId: order.storeOrderId }, "In updateOrderStatus: completed counter")
+      );
+    }
     return true;
   } catch (e) {
     if ((e as { name?: string })?.name === "ConditionalCheckFailedException") return false;
