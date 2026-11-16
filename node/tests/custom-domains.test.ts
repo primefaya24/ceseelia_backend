@@ -40,6 +40,7 @@ vi.mock("../layers/aws/cloudfront/tenants", async (orig) => ({
   getTenant: vi.fn(),
   getTenantCertificate: vi.fn(),
   setTenantEnabled: vi.fn(async () => {}),
+  useTenantCertificate: vi.fn(async () => {}),
   deleteTenant: vi.fn(async () => {}),
   deleteCertificate: vi.fn(async () => true),
 }));
@@ -66,6 +67,7 @@ import {
   getTenant,
   getTenantCertificate,
   setTenantEnabled,
+  useTenantCertificate,
 } from "../layers/aws/cloudfront/tenants";
 import { certificateState, hostError, normalizeHost, pointsAtUs, tenantName } from "../layers/core/custom-domain";
 import { setLiveCustomDomains, slugFromCustomOrigin, storeUrl } from "../layers/core/store-url";
@@ -97,7 +99,7 @@ const domain = (over: Partial<StoreDomain> = {}): StoreDomain => ({
 const plan = (p: "SPARK" | "NONE") =>
   vi.mocked(getStoreAdminSettings).mockResolvedValue({ admin: {} as never, lifecycle: { status: p === "NONE" ? "DRAFT" : "LIVE", plan: p } as never });
 const deps = (cnames: string[], hasPlan = true) => ({ lookupCname: vi.fn(async () => cnames), storeHasPlan: vi.fn(async () => hasPlan) });
-const tenant = (over = {}) => ({ exists: true, enabled: true, deployed: true, domainActive: false, etag: "E1", ...over });
+const tenant = (over = {}) => ({ exists: true, enabled: true, deployed: true, domainActive: false, certificateArn: null as string | null, etag: "E1", ...over });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -192,10 +194,31 @@ describe("custom domains: one step at a time", () => {
   });
 
   it("certificate issued and domain active → ACTIVE", async () => {
-    vi.mocked(getTenant).mockResolvedValue(tenant({ domainActive: true }));
+    vi.mocked(getTenant).mockResolvedValue(tenant({ domainActive: true, certificateArn: "arn:cert" }));
     vi.mocked(getTenantCertificate).mockResolvedValue({ status: "issued", arn: "arn:cert" });
     const r = await advanceDomain(domain({ status: "PENDING_CERT", tenantId: "TEN1", reason: null }), NOW, deps([]));
     expect(r.domain).toMatchObject({ status: "ACTIVE", certificateArn: "arn:cert", activeAt: NOW });
+  });
+
+  it("certificate issued but the tenant still on the shared one: switch it, stay PENDING_CERT", async () => {
+    vi.mocked(getTenant).mockResolvedValue(tenant());
+    vi.mocked(getTenantCertificate).mockResolvedValue({ status: "issued", arn: "arn:cert" });
+    const pending = domain({ status: "PENDING_CERT", tenantId: "TEN1", reason: null });
+    let r = await advanceDomain(pending, NOW, deps([]));
+    expect(useTenantCertificate).toHaveBeenCalledWith("TEN1", "arn:cert");
+    expect(r.domain).toMatchObject({ status: "PENDING_CERT", certificateArn: "arn:cert" });
+
+    // Switched, CloudFront still activating: nothing more to do.
+    vi.mocked(useTenantCertificate).mockClear();
+    vi.mocked(getTenant).mockResolvedValue(tenant({ certificateArn: "arn:cert" }));
+    r = await advanceDomain(r.domain!, NOW + 60_000, deps([]));
+    expect(useTenantCertificate).not.toHaveBeenCalled();
+    expect(r.changed).toBe(false);
+
+    // A change still deploying: wait for it before switching.
+    vi.mocked(getTenant).mockResolvedValue(tenant({ deployed: false }));
+    await advanceDomain(pending, NOW, deps([]));
+    expect(useTenantCertificate).not.toHaveBeenCalled();
   });
 
   it("certificate failed or 72 hours → FAILED, the tenant queued for clean-up", async () => {

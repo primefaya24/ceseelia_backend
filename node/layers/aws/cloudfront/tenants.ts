@@ -59,6 +59,8 @@ export interface TenantState {
   /** "Deployed" once CloudFront has applied the last change. */
   deployed: boolean;
   domainActive: boolean;
+  /** The certificate the tenant uses itself (null: it still uses the distribution's shared one). */
+  certificateArn: string | null;
   etag: string;
 }
 
@@ -71,14 +73,52 @@ export async function getTenant(tenantId: string): Promise<TenantState> {
       enabled: t?.Enabled === true,
       deployed: t?.Status === "Deployed",
       domainActive: (t?.Domains ?? []).some((d) => d.Status === "active"),
+      certificateArn: t?.Customizations?.Certificate?.Arn ?? null,
       etag: r.ETag ?? "",
     };
   } catch (e) {
     if ((e as { name?: string })?.name === "EntityNotFound") {
-      return { exists: false, enabled: false, deployed: true, domainActive: false, etag: "" };
+      return { exists: false, enabled: false, deployed: true, domainActive: false, certificateArn: null, etag: "" };
     }
     throw e;
   }
+}
+
+/**
+ * Change a tenant, sending its whole current configuration with the change: an update replaces
+ * the tenant's settings, so anything left out (domains, certificate) would be dropped.
+ */
+async function updateTenant(
+  tenantId: string,
+  change: { enabled?: boolean; certificateArn?: string }
+): Promise<void> {
+  const r = await cloudfront.send(new GetDistributionTenantCommand({ Identifier: tenantId }));
+  const t = r.DistributionTenant;
+  if (!t) throw new Error(`Tenant ${tenantId} not found`);
+  const customizations = change.certificateArn
+    ? { ...(t.Customizations ?? {}), Certificate: { Arn: change.certificateArn } }
+    : t.Customizations;
+  await cloudfront.send(
+    new UpdateDistributionTenantCommand({
+      Id: tenantId,
+      IfMatch: r.ETag,
+      DistributionId: t.DistributionId,
+      Domains: (t.Domains ?? []).map((d) => ({ Domain: d.Domain })),
+      ...(t.ConnectionGroupId ? { ConnectionGroupId: t.ConnectionGroupId } : {}),
+      ...(customizations ? { Customizations: customizations } : {}),
+      ...(t.Parameters?.length ? { Parameters: t.Parameters } : {}),
+      Enabled: change.enabled ?? t.Enabled,
+    })
+  );
+}
+
+/**
+ * A new tenant serves with the distribution's shared certificate (`*.ceseelia.com`), which can't
+ * cover the store's domain; once its managed certificate is issued, the tenant must be switched to
+ * it (the console's "Submit" step) before CloudFront makes the domain active.
+ */
+export async function useTenantCertificate(tenantId: string, certificateArn: string): Promise<void> {
+  await updateTenant(tenantId, { certificateArn });
 }
 
 /** The tenant's managed certificate: CloudFront's status and its ARN once requested. */
@@ -93,8 +133,9 @@ export async function getTenantCertificate(tenantId: string): Promise<{ status: 
   }
 }
 
-export async function setTenantEnabled(tenantId: string, etag: string, enabled: boolean): Promise<void> {
-  await cloudfront.send(new UpdateDistributionTenantCommand({ Id: tenantId, IfMatch: etag, Enabled: enabled }));
+/** Turn a tenant on or off, keeping its domains and certificate (`_etag` kept for callers). */
+export async function setTenantEnabled(tenantId: string, _etag: string, enabled: boolean): Promise<void> {
+  await updateTenant(tenantId, { enabled });
 }
 
 export async function deleteTenant(tenantId: string, etag: string): Promise<void> {

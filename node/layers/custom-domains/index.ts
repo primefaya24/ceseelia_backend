@@ -33,6 +33,7 @@ import {
   getTenant,
   getTenantCertificate,
   setTenantEnabled,
+  useTenantCertificate,
 } from "../aws/cloudfront/tenants";
 import { log } from "../core/logger";
 
@@ -123,6 +124,11 @@ export async function advanceDomain(d: StoreDomain, now: number, deps = { lookup
       });
     } else if (state === "ISSUED" && tenant.domainActive) {
       next = withState(d, now, { status: "ACTIVE", reason: null, certificateArn: arn, activeAt: now, checkedAt: now });
+    } else if (state === "ISSUED" && arn && tenant.certificateArn !== arn) {
+      // Issued, but the tenant still uses the shared certificate: switch it (CloudFront then
+      // activates the domain within a few minutes; the next sweeps see it).
+      if (tenant.deployed) await useTenantCertificate(d.tenantId, arn);
+      next = withState(d, now, { certificateArn: arn, checkedAt: now });
     } else if (arn !== d.certificateArn) {
       next = withState(d, now, { certificateArn: arn, checkedAt: now });
     }
