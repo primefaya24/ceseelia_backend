@@ -131,7 +131,8 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       sign-up. Claude drafts; **the owner reviews the text** (and ideally a lawyer).
 - [ ] F3. Owner: an accountant to confirm the delivery-tax simplification (backend 4.2
       follow-up: delivery taxed like the goods).
-- [ ] F4. Owner: push every commit Claude made (both repos are ahead of GitHub).
+- [x] F4. Owner: push every commit Claude made (both repos are ahead of GitHub). _Done 2026-11-16;
+      Claude now pushes dev itself and asks before every prod push._
 
 **G. Store subdomains (9.8 phase 1, code done 2026-11-15; deploy in this order)**
 - [x] G1. Owner: merge CloudFormation `dev_v1.0.0_store_subdomains` into `dev_v1.0.0` and push
@@ -163,11 +164,12 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       `deploy-image.sh`: pull, start, wait for /healthz, **automatic rollback** if unhealthy, the
       job then fails); webapp `deploy-prod.yml` (lint, tests, `tools/deploy-s3.sh prod`).
       Tested on prod by hand: a deploy (≈ 40 s) and a crashing image (rolled back in ≈ 40 s).
-- [ ] H2. Owner: push `dev_v1.0.0` in both repos, then create and push `prod_v1.0.0` in each
+- [x] H2. Owner: push `dev_v1.0.0` in both repos, then create and push `prod_v1.0.0` in each
       (`git switch -c prod_v1.0.0 && git push -u origin prod_v1.0.0`; neither repo has it yet).
       That push is the first automatic deploy: watch it in the repo's Actions tab. From then on,
       merging into `prod_v1.0.0` and pushing deploys. A change that needs both repos (an API
-      change the webapp uses): merge and push the backend first.
+      change the webapp uses): merge and push the backend first. _Done 2026-11-16: first
+      automatic deploys succeeded (backend `5a3a5d6`, webapp `d5d659a`)._
 
 **E. Optional, any time**
 - [x] E1. The two storage distributions (`dev.storage` / `prod.storage`, made by hand) use
