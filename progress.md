@@ -17,11 +17,13 @@ webapp has a matching file at `../ceseelia_webapp/progress.md`.
 
 ---
 
-## 0. Owner to-do: manual steps only (2026-11-15)
+## 0. Launch to-do: owner steps and Claude's (updated 2026-11-15)
 
-Everything here is for the owner to do by hand; Claude can't (no GitHub, console or Stripe
-access, and secrets never go through chat). The same list is in both repos' `progress.md`; tick
-it in both. In order: each phase needs the one before it. Details stay where they're linked.
+The steps left before launch. Each says who does it: the owner (dashboards, pasting secrets,
+real purchases, pushing to GitHub, decisions) or Claude (anything its shell can reach: AWS CLI,
+the prod server over SSH, the Stripe API with the stored key). Secrets never go through chat.
+The same list is in both repos' `progress.md`; tick it in both. In order: each phase needs the
+one before it. Details stay where they're linked.
 
 _A1–B3, B5–B9, C1, D2, D4 and E1 done 2026-11-15 (C2 mostly); `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
 serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **Next: the rest of C2 (Stripe Tax, Smart Retries), then C3.**_
@@ -104,6 +106,8 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 - [ ] C3. **L.0 first real test order:** checkout → paid (receipt, PDF, alerts) → Store › Orders →
       ready / on its way emails → refund part → refund the rest.
 - [ ] C4. **A Spark checkout** (Go Live → Stripe Checkout → live) and a plan switch in the portal.
+      Needs paid plans on: **Claude** sets `PAID_PLANS_ENABLED=true` on the server first (test
+      mode, safe), then the owner runs the checkout.
 
 **D. Going live**
 - [ ] D1. Repeat C1 and C2 in **live mode**; live keys and both webhook secrets into
@@ -111,12 +115,23 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 - [x] D2. `anthropicApiKey` in `ceseelia/prod`, once you've reviewed the eval (A4). _Done
       2026-11-15 (Claude checked: present, a valid key format; value never read out). Eval on
       dev: 60 of 60 right, no legitimate store flagged, no sketchy store missed, ≈ $0.34._
-- [ ] D3. `PAID_PLANS_ENABLED=true` on the prod server; restart.
+- [ ] D3. `PAID_PLANS_ENABLED=true` on the prod server; restart. **Claude** (server access),
+      if C4 hasn't already turned it on.
 - [x] D4. Deploy the webapp: `tools/deploy-s3.sh prod` (from `ceseelia_webapp/`). _Done by Claude
       2026-11-15 (early, so C3 can run on prod in test mode; run it again after any webapp change).
       `app.ceseelia.com` serves the app with the prod config; link previews reach the API._
 - [ ] D5. Smoke test on prod: sign up, create a store, Go Live, a real order; paste a store link
       in WhatsApp or Slack and check the preview (name, slogan, logo).
+
+**F. Claude, before launch (code)**
+- [ ] F1. Webapp Content-Security-Policy on CloudFront (WA S.14: Amplify keeps tokens in
+      `localStorage`, so XSS matters). Claude writes and tests it; the owner merges the
+      CloudFormation branch (dev, then prod).
+- [ ] F2. Legal pages: privacy policy and terms (WA 9.1), linked from the storefront footer and
+      sign-up. Claude drafts; **the owner reviews the text** (and ideally a lawyer).
+- [ ] F3. Owner: an accountant to confirm the delivery-tax simplification (backend 4.2
+      follow-up: delivery taxed like the goods).
+- [ ] F4. Owner: push every commit Claude made (both repos are ahead of GitHub).
 
 **E. Optional, any time**
 - [x] E1. The two storage distributions (`dev.storage` / `prod.storage`, made by hand) use
@@ -130,12 +145,13 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 
 > **🚀 Launch checklist (owner, 2026-11-14): EVERY item below must be done before launch.**
 > Nothing here is optional or "after launch". Work order agreed 2026-11-14: L.1 is the owner's
-> (2026-11-15); Claude works on L.2–L.9 in the order shown. **L.2 (code), L.3, L.4 (code), L.5 (code) and L.6
-> are done; next is L.7.**
-> - [ ] **L.0 Owner: the first real test order** in Stripe test mode (Connect webhook first,
+> (2026-11-15); Claude works on L.2–L.9 in the order shown. **L.2–L.8 are done, L.9 is done
+> except custom domains (after launch). What's left is the owner's §0 list (C2–D5) and the
+> "Still open" list at the end of this section.** (2026-11-15)
+> - [ ] **L.0 Owner: the first real test order** (= §0 C3) in Stripe test mode (Connect webhook first,
 >       with the refund events, BE 5.5 "Setup"): checkout → paid (receipt + PDF, alerts) →
 >       Store › Orders → steps (ready / on its way emails) → refund part → refund the rest.
-> - [ ] **L.1 Owner: Stripe and secrets.** Stripe Billing setup (P.5 "Setup") and a Spark
+> - [ ] **L.1 Owner: Stripe and secrets** (= §0 C2, C4, D1, D3; S.2 done). Stripe Billing setup (P.5 "Setup") and a Spark
 >       checkout test; `PAID_PLANS_ENABLED=true` in prod; live Stripe keys and webhook secrets
 >       in `ceseelia/prod` (one secret per stage, see the note below); S.2 password rotation.
 > - [x] **L.2 The AI store check** in `runSmartStoreValidation` (P.4c). Code done 2026-11-15;
@@ -204,7 +220,7 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 >       browser's time zone; refunds come off sales; currencies never added together. Checked
 >       read-only on Northern Hoop (no paid orders yet, so zeros). One-store merchants still
 >       land on Orders; say if Overview should be the home page instead.
-> - [ ] **L.7 Stage 7:** Store › Customers (7.1), unified rewards and earn/redeem (7.3, 7.4),
+> - [x] **L.7 Stage 7:** Store › Customers (7.1), unified rewards and earn/redeem (7.3, 7.4),
 >       reviews (7.5). 7.2 (optional customer accounts) included. **7.1 Customers and 7.5 reviews done
 >       2026-11-15.** Owner's decisions (2026-11-15): reviews only from verified buyers, live at
 >       once, merchants reply and report but never edit or remove, the platform admin keeps or
@@ -221,54 +237,33 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 >       (P.9 / 9.8), the admin menu's review-queue badge, paging Admin › Stores.
 >       **Done 2026-11-15:** menu badges (`GET /admin/queue-counts`), paging Admin › Stores
 >       (`get-all-stores?q=&limit=&cursor=`), account delete (`delete-user`, WA 1.6d), webapp
->       hosting on S3 + CloudFront (3.2b, CloudFormation branch `dev_v1.0.0_l9_webapp_cloudfront`,
->       not deployed) and link previews (WA 3.6, `/store/public/preview`). **Later:** 9.8 custom
+>       hosting on S3 + CloudFront (3.2b, deployed to dev and prod 2026-11-15; prod app uploaded)
+>       and link previews (WA 3.6, `/store/public/preview`). **Later:** 9.8 custom
 >       domains (after launch; listed as "coming soon").
 
-> **Secrets and the prod server (2026-11-14).** One Secrets Manager secret per stage,
-> `ceseelia/dev` and `ceseelia/prod` (`APP_SECRET_ID`), flat keys: `stripeSecretKey`,
-> `stripeWebhookSecret`, `stripeBillingWebhookSecret`, `anthropicApiKey`
-> (`layers/aws/secret-manager/app-secrets.ts`). `ceseelia/dev` has the Stripe test key;
-> `ceseelia/prod` exists with empty values for the owner to fill. The old `ceseelia/dev/stripe`
-> is no longer read (owner: delete it). **The API isn't deployed anywhere yet:**
-> `api.ceseelia.com` has no DNS record, and the three EC2 servers are DinersXpress, Primehost
-> and Vaultomic. The prod server must be launched with the **`CeseeliaServerRole`** instance
-> profile (created 2026-11-14; least privilege, policy in `ceseelia_backend/iam/`: the prod
-> secret, `ceseelia_prod`, `ceseelia-storage-prod`, AdminGetUser on the prod pool, SES from
-> ceseelia.com; checked with the IAM policy simulator). The "certbot Permission denied" in
-> `~/tasks.md` is on primehost-0, a **different project**: Ceseelia's own scripts are fixed
-> (S.17) for when its server exists.
+> **Prod as of 2026-11-15 (replaces the 2026-11-14 notes on secrets, the server and the AI key).**
+> - **API:** `https://api.ceseelia.com` on `ceseelia-0` (i-0533c778bf9ef2411, t3.micro, Amazon
+>   Linux 2023, Elastic IP 184.192.215.17, instance profile `CeseeliaServerRole`, security group
+>   `ceseelia-api`: 80/443 public, SSH only from the owner's IP). Key
+>   `~/Documents/pem/ceseelia-0.pem`. `server.conf` holds host/key/folder for the deploy scripts;
+>   deploy = `./scp-fs.sh build`, then `./ssh-server.sh 'cd ~/ceseelia && ./node-update.sh'`.
+>   First boot: `ec2-user-data.sh`; app setup: `system-init.sh` (certificate, containers, cron).
+> - **Webapp:** `https://app.ceseelia.com` (S3 + CloudFront), `tools/deploy-s3.sh prod` in the webapp.
+> - **Secrets (`ceseelia/prod`):** Stripe **test** key and both test webhook secrets,
+>   `anthropicApiKey`, VAPID keys. Live Stripe values come in D1.
+> - **Stripe test mode (platform account):** Connect webhook `we_1UcEEvGS7poxugeoEGr30Pl1`,
+>   Billing webhook `we_1UcEEvGS7poxugeojsIaBa0a` (API version `2025-08-27.basil`), Spark/Nova
+>   prices, SaaS tax code, default customer portal. `PAID_PLANS_ENABLED` is off on prod.
+> - **AI store check:** on in dev and prod (eval 60/60).
+> - **When D1 comes:** a restricted live key (`rk_live_…`) can be IP-allowlisted to
+>   184.192.215.17 (5.2e).
 
-> **The AI check's key (2026-11-15).** `anthropicApiKey` is still empty in `ceseelia/dev` and
-> `ceseelia/prod`: the owner's platform.claude.com card was declined, and they'll set up its
-> billing on 2026-11-16 (the key is created at platform.claude.com, not in claude.ai settings;
-> the owner pastes it in the AWS console, never in chat). **Until then every Go Live goes to
-> review** (`VALIDATION_NOT_CONFIGURED`, fails closed). Fallback if billing can't be fixed:
-> **Claude Platform on AWS** (Anthropic-run, AWS Marketplace billing, same API and model ids;
-> client `@anthropic-ai/aws-sdk`, a workspace id instead of a key, the server role needs
-> `aws-external-anthropic:CreateInference` + `sts:GetWebIdentityToken` /
-> `sts:TagGetWebIdentityToken`, and `aws iam enable-outbound-web-identity-federation` once).
-> Second choice **Amazon Bedrock** (`anthropic.claude-opus-5-5`, `@anthropic-ai/bedrock-sdk`
-> `AnthropicBedrockMantle`): it has no image URLs (send S3 bytes as base64) and no server-side
-> `fallbacks` (drop it; a refusal already goes to review). Not decided yet.
-
-> **▶ Start the next session here (2026-11-15).** Stages S, 0–4, P, 5 and 6 are done in both
-> repos. **The launch checklist above is the work list;** the notes below are what was decided
-> along the way. Done this session (2026-11-14/15): 5.7 lost-order sweeper, 6.5 emails (PDF
-> receipt, tax number, contact-email alerts), the one-secret-per-stage setup and
-> `CeseeliaServerRole`, L.3 security hardening, and the L.2 AI store check (code, tests, the
-> 60-store eval set; WA: "Checking your store…", hidden-item chips, admin "Hidden items" queue).
-> Next:
-> 1. **Owner:** push both repos; L.0 test order; L.1 Stripe and secrets; platform.claude.com
->    billing, then `anthropicApiKey` in `ceseelia/dev`; delete the old `ceseelia/dev/stripe`
->    (`aws secretsmanager delete-secret --secret-id ceseelia/dev/stripe --recovery-window-in-days 30`).
-> 2. **Claude, once the key is in:** run `node scripts/store-check-eval/run.mjs` (after
->    `npm run build`, ≈ $1), show the owner the false flags and misses, tune the prompt/effort;
->    then the same key in `ceseelia/prod`.
-> 3. **Claude:** L.7–L.9 (L.4–L.6 code done 2026-11-15; owner steps under each). Fix the
->    `ssh`/`scp` deploy scripts (they point at dinersxpress-0) when the prod server is set up.
-> Both repos are on `dev_v1.0.0_customer_store_front`. **Push from your own shell:** Claude's
-> shell has no GitHub credentials.
+> **Still open after launch prep (2026-11-15).** Owner: §0 C2 (Stripe Tax, Smart Retries),
+> C3, C4, D1, D3, D5; an accountant to confirm the delivery-tax simplification (4.2 follow-up).
+> Claude, before launch: the webapp's Content-Security-Policy (WA S.14, CloudFront) and legal
+> pages (WA 9.1; owner reviews the text). After launch or optional: lint warnings (9.7),
+> custom domains (9.8), the link-before-verify fix before any social sign-in (1.1c), and the
+> webapp's Stage 9 list. 8.2 join requests stay superseded by P.3.
 
 > **2026-11-13: no Free plan any more (P.10).** Only Spark and Nova. A new store is a draft with
 > no plan (`plan: "NONE"`), visible to its members only; going live and subscribing are one step
@@ -309,7 +304,7 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 | Area | Status | Notes |
 |---|---|---|
 | Foundations (config, token verification, CORS, tests, lint) | ✅ Done | Stage 0, 2026-11-02 |
-| Security & bug fixes (Stage S) | ✅ Mostly | S.0–S.13 done; S.2 manual; S.14–S.17 deferred to before launch |
+| Security & bug fixes (Stage S) | ✅ Done | S.0–S.17 done (S.2 by the owner, 2026-11-15) |
 | Users / registration | ✅ Works | CloudFormation `OnUserRegister` Lambda creates users; `get-my-profile` fills in missing rows (1.1) |
 | Store membership + access | ✅ Works | Members/invites (1.2, 1.4); every `/store/**` route checks membership, admins bypass (1.3) |
 | Store create / settings / images | ✅ Works | Admin-only settings via `/admin/*-store-admin-settings` (1.6) |
@@ -317,13 +312,13 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 | Slugs | ✅ Works | Format rule, unique via `SLUG#<slug>` reservations (409 on clash), public `resolve-slug` (1.8) |
 | Categories & items CRUD | ✅ Works | Item counts kept by item writes (2.1); a category with items can't be deleted (409, 2.2) |
 | Public storefront data | ✅ Works | Only active items in active categories; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (2.4); no admin block (1.6) |
-| Merchant / customer APIs | ❌ Missing | `/merchant/path` stub (1.5 deferred) |
-| Cart, checkout, orders, payments | ❌ Not started | Stripe webhook returns 501 |
-| Admin stats, join requests, tickets | ❌ Not started | |
-| Production readiness (logging, rate limits, CI, IaC) | ❌ Not started | Prod EC2 role will need `cognito-idp:AdminGetUser`, `ses:SendEmail`, `ses:SendRawEmail`, `s3:DeleteObjectTagging` and `secretsmanager:GetSecretValue` on `ceseelia/prod/*` (Stripe, Anthropic); SES is in production (checked 2026-11-14); contact-store's in-memory rate limits need a shared store with >1 instance |
+| Merchant / customer APIs | ✅ Works | Store overview stats (1.5), customers, rewards, reviews (Stage 7) |
+| Cart, checkout, orders, payments | ✅ Works | Stages 4–6; first real test order is §0 C3 |
+| Admin stats, join requests, tickets | ✅ Works | Stage 8 (join requests superseded by P.3) |
+| Production readiness (logging, rate limits, CI, IaC) | ✅ Done | Stage 9 except 9.7 (lint warnings) and 9.8 (custom domains); prod live 2026-11-15 |
 
-**Health check (2026-11-11):** `npm test` 622/622 passing · `npm run typecheck` clean ·
-`npm run lint` 0 errors, 79 warnings · `npm audit --omit=dev` 0 vulnerabilities.
+**Health check (2026-11-15):** `npm test` 1167/1167 passing · `npm run typecheck` clean ·
+`npm run lint` 0 errors, 68 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
 
@@ -349,8 +344,8 @@ S.0 is a temporary lockdown that closes the worst hole until Stage 1.3 replaces 
   - [x] b. **Manual:** revoke (or restrict) the key in Google Cloud Console → APIs & Services →
         Credentials. It stays readable in git history, so it must be revoked, not just deleted.
         _Done by the owner (confirmed 2026-11-08)._
-- [ ] 🔴 **S.2 Rotate the old password** that used to be in `node/README.md`. It's still in git
-      history (manual step, carried over from Stage 0).
+- [x] 🔴 **S.2 Rotate the old password** that used to be in `node/README.md`. It's still in git
+      history (manual step, carried over from Stage 0). _Done by the owner 2026-11-15._
 - [x] 🟠 **S.3 Patch dependencies:** `npm audit fix`, re-run tests. Remove unused deps
       (`axios`, `jwt-decode`, `mustache-express`, `nodemailer`, `https`, `cookie-parser` if
       unused). Fewer deps means less attack surface.
@@ -758,7 +753,7 @@ match the backend and webapp._
     no default (no prices shown); `withShopperCurrency` now keeps the store's default then.
     Tests in `tests/public-storefront-slug.test.ts`; checked live on dev (`northern-hoop` and
     `Northern-Hoop` 200, unknown 404, `a` 400)._
-- [ ] 3.2 Cache headers (`Cache-Control`, `ETag`) on public endpoints, and CloudFront in front of
+- [x] 3.2 Cache headers (`Cache-Control`, `ETag`) on public endpoints, and CloudFront in front of
       the API's public paths and the storage bucket.
   - [x] a. Headers. _Done 2026-11-09, tested by hand. `layers/core/http/cache.ts`:
         storefront (both routes) and item → `private, no-cache` (was `max-age=30` until QA Q.21, 2026-11-11; the body varies by shopper:
@@ -858,7 +853,7 @@ match the backend and webapp._
     no tax at all. `percentOf` now works in thousandths of a percent with BigInt (QST, big carts).
     The quote route takes `postalCode` (string ≤ 10, else 400); it's never stored or logged (the
     request log has only IP/host/path). Rates come only from the server._
-  - [ ] **Follow-ups:** order creation (5.4) must re-quote with the **delivery address's** postal
+  - [ ] **Follow-ups:** (re-quote done in 5.4a; the accountant check is the owner's) order creation (5.4) must re-quote with the **delivery address's** postal
     code, not one typed in the cart; have an accountant confirm the rules (delivery charges are
     taxed like the goods here, which is a simplification for some provinces); update
     `CA_TAX_RATES` + `CA_TAX_RATES_AS_OF` when a rate changes; non-Canadian delivery in Canada mode
@@ -931,7 +926,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       `DRAFT_LIMIT_REACHED` (a read, not atomic; the 5-per-account-per-hour rate limit, 429
       `RATE_LIMITED`, bounds the race). 409 `SLUG_TAKEN`. Body fields beyond name and slug are
       ignored (no picking status, plan or owner). Tests: `tests/merchant-create-store.test.ts`.
-- [ ] P.4 Go Live (a and b done 2026-11-12; c's AI check is still the owner's TODO):
+- [x] P.4 Go Live (a and b done 2026-11-12; c, the AI check, done 2026-11-15 as L.2):
   - [x] a. `GET /store/go-live/checklist/:storeId` (members): name set, ≥ 1 active item with a
         price, pickup or delivery on, Stripe `chargesEnabled` (5.2), plan chosen, and for FREE
         no other live FREE store owned by the same account. Each with ok / what's missing.
@@ -955,7 +950,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         the SETTINGS row's own `review` attribute (admins only; members' and public data drop
         it). A validation that throws fails closed (IN_REVIEW, `VALIDATION_UNAVAILABLE`).
         **P.5 still to do here:** the SPARK / NOVA branch (Billing Checkout URL).
-  - [ ] c. **`runSmartStoreValidation({storeId, data})`** in `layers/core/store-validation`
+  - [x] c. **`runSmartStoreValidation({storeId, data})`** in `layers/core/store-validation`
         (stub in place and called by Go Live, 2026-11-12; result `{ok: true} | {ok: false, reasons}`): called on
         every Go Live (and plan re-activation) before the store becomes LIVE. Purpose: use AI
         to go through the store's items, names, descriptions and images and make sure nothing
@@ -1167,8 +1162,9 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         `layers/payments/stripe.ts`. Smoke-tested against the sandbox (create, link, delete).
   - [ ] f. Local dev: set `WEBAPP_URL` in `node/.env` to the address the webapp is opened at
         (e.g. `http://192.168.1.107:4200`), or Stripe's return links go to `localhost:4200`.
-  - [ ] e. Prod: put a **restricted** live key (`rk_live_…`, IP-allowlisted) in
-        `ceseelia/prod` → `stripeSecretKey` (owner, L.1). The secret and the server role's read
+  - [ ] e. Prod: put a **restricted** live key (`rk_live_…`, IP-allowlisted to the server's
+        Elastic IP 184.192.215.17) in `ceseelia/prod` → `stripeSecretKey` (owner, §0 D1; the
+        test key is there until then). The secret and the server role's read
         access exist (2026-11-14, `CeseeliaServerRole`).
 - [x] 5.3 Order model (done 2026-11-13): `StoreOrderStatus` enum replaces the boolean
       (`PENDING_PAYMENT → PAID → PREPARING → READY/SHIPPED → COMPLETED`, `CANCELLED`, `REFUNDED`;
@@ -1540,7 +1536,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
     sign-up trigger errors, SES bounce > 3% / complaint > 0.05% (prod). `iam/` policy gains
     `ApiLogsProd` (write to that log group only). Previewed as a change set on `ceseelia-dev`
     (not executed): no replacements. **Owner:** see L.4._
-- [ ] 9.7 Bring lint warnings (109) down to zero, then make warnings fail CI.
+- [ ] 9.7 Bring lint warnings (68 on 2026-11-15) down to zero, then make warnings fail CI.
 - [ ] 9.8 Optional: custom store domains via `layers/aws/route53`.
 
 ---
