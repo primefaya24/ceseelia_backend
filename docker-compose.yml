@@ -1,6 +1,9 @@
 services:
   node:
     container_name: node
+    # The GitHub deploy runs an ECR image (deploy-image.sh writes NODE_IMAGE to ./.env, which
+    # compose reads); without it, the image built here by node-update.sh.
+    image: ${NODE_IMAGE:-ceseelia-node}
     build:
       context: ./node
     env_file:

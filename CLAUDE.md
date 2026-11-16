@@ -73,8 +73,13 @@ addresses, 9.8), plus optional overrides for
 table/bucket/Cognito ids. The
 server refuses to start in prod if required vars are missing.
 
-Deploy: build locally, build the Docker image from `node/` (it copies the prebuilt `dist/`), ship
-with `scp-docker-image.sh`, then `docker compose up -d` on the server. Compose loads
+Deploy (since 2026-11-16): **pushing `prod_v1.0.0` deploys prod** (`.github/workflows/deploy-prod.yml`:
+the CI checks, then the image goes to ECR `ceseelia-node` tagged with the commit, and SSM Run
+Command runs `deploy-image.sh` on the server: pull, start, wait for `/healthz`, roll back to the
+previous image if unhealthy). AWS access is GitHub OIDC → `CeseeliaGithubDeployBackendProd`
+(`iam/github-deploy-backend-*.json`); no secrets in GitHub. Compose runs `${NODE_IMAGE}` from
+the project's `./.env` (written by the deploy). By hand: `./scp-fs.sh build` then
+`./node-update.sh` on the server (builds locally, sets `NODE_IMAGE=ceseelia-node`). Compose loads
 `node/.env` into the container (`STAGE=prod` there); the API's logs go to CloudWatch
 `/ceseelia/prod/api` (awslogs driver). CI (`.github/workflows/ci.yml`, 9.4) runs lint, typecheck,
 tests, `npm audit` and the image build on every push and PR; it doesn't deploy.

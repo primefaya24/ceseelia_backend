@@ -134,19 +134,40 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 - [ ] F4. Owner: push every commit Claude made (both repos are ahead of GitHub).
 
 **G. Store subdomains (9.8 phase 1, code done 2026-11-15; deploy in this order)**
-- [ ] G1. Owner: merge CloudFormation `dev_v1.0.0_store_subdomains` into `dev_v1.0.0` and push
+- [x] G1. Owner: merge CloudFormation `dev_v1.0.0_store_subdomains` into `dev_v1.0.0` and push
       (dev: no change but the router function's code), then into `prod_v1.0.0` and push (prod:
       `*.ceseelia.com` alias on the webapp distribution + wildcard A/AAAA records). Check the
       stack reaches UPDATE_COMPLETE. Explicit records (api, app, dev, *.storage, mail) keep
       working: DNS and CloudFront prefer the exact name.
-- [ ] G2. Claude, right after G1: deploy the backend (`scp-fs.sh build` + restart; the prod default
+- [x] G2. Claude, right after G1: deploy the backend (`scp-fs.sh build` + restart; the prod default
       `STORE_URL_TEMPLATE=https://{slug}.ceseelia.com` needs no `.env` change) and the webapp
       (`tools/deploy-s3.sh prod`), then check `https://<slug>.ceseelia.com` opens the store,
       `app.ceseelia.com/s/<slug>` still works, an app page on a store address goes to the app,
       CORS answers a store origin, and a bot on `/` gets the preview. Not before G1: the new
       Stripe return URLs and email links point at store subdomains.
+      _Done 2026-11-16: backend and webapp deployed; a store address serves the store ("Store
+      not found" for an unknown slug, canonical set), app pages there and `admin.ceseelia.com`
+      open sign-in on the app, CORS 204 for a store origin and none for `admin.` or other
+      domains, bots get the preview, api / app / dev / storage unchanged._
 - [ ] G3. Owner: decide when phase 2 (custom domains, `shop.<their domain>`) starts; plan in
       backend progress 9.8.
+
+**H. Automatic prod deploys (done by Claude 2026-11-16; owner decisions: on every push, prod only)**
+- [x] H1. Claude: GitHub OIDC login in AWS (no secrets in GitHub), roles
+      `CeseeliaGithubDeployBackendProd` (push to ECR `ceseelia-node`, run commands on the API
+      instance) and `CeseeliaGithubDeployWebappProd` (the prod webapp bucket, its invalidations,
+      the stack's outputs), each usable only from its repo's `prod_v1.0.0`. ECR `ceseelia-node`
+      (scan on push, tags immutable, last 10 images kept, untagged leftovers gone after a day).
+      SSM Run Command on the API server (`CeseeliaServerRole`: ECR pull, SSM agent).
+      Workflows: backend `deploy-prod.yml` (the CI checks, image → ECR, SSM →
+      `deploy-image.sh`: pull, start, wait for /healthz, **automatic rollback** if unhealthy, the
+      job then fails); webapp `deploy-prod.yml` (lint, tests, `tools/deploy-s3.sh prod`).
+      Tested on prod by hand: a deploy (≈ 40 s) and a crashing image (rolled back in ≈ 40 s).
+- [ ] H2. Owner: push `dev_v1.0.0` in both repos, then create and push `prod_v1.0.0` in each
+      (`git switch -c prod_v1.0.0 && git push -u origin prod_v1.0.0`; neither repo has it yet).
+      That push is the first automatic deploy: watch it in the repo's Actions tab. From then on,
+      merging into `prod_v1.0.0` and pushing deploys. A change that needs both repos (an API
+      change the webapp uses): merge and push the backend first.
 
 **E. Optional, any time**
 - [x] E1. The two storage distributions (`dev.storage` / `prod.storage`, made by hand) use
@@ -1619,6 +1640,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-16 | §0 G1–G2 done (store subdomains live on prod). §0 H: automatic prod deploys: `.github/workflows/deploy-prod.yml` (CI checks via `workflow_call`, image → ECR `ceseelia-node`, SSM → `deploy-image.sh` with health check and rollback), GitHub OIDC role `CeseeliaGithubDeployBackendProd` (`iam/github-deploy-backend-*.json`), server role gains ECR pull + SSM agent; compose's node image is `${NODE_IMAGE}` from `./.env`. Tested on prod (deploy and rollback). |
 | 2026-11-15 | 9.8 phase 1: store subdomains `https://<slug>.ceseelia.com` (`STORE_URL_TEMPLATE`, `layers/core/store-url`): Stripe return URLs, order email links and link previews use them; CORS allows them; 20 more reserved slugs. Phase 2 (custom domains) planned under 9.8. §0 G added (deploy order). Tests 1176. |
 | 2026-11-14 | Secrets: one per stage (`ceseelia/dev`, `ceseelia/prod`, `APP_SECRET_ID`, flat keys incl. `anthropicApiKey`); Stripe reads it (checked against the Stripe sandbox). `CeseeliaServerRole` + instance profile for the future prod server (`iam/`). The API isn't deployed yet; the certbot error in `~/tasks.md` is primehost-0's (another project). |
 | 2026-11-14 | L.3 done: S.14 helmet + nginx hardening + pinned images; S.15 non-root image with `npm ci --omit=dev` and HEALTHCHECK; S.16 legacy auth/PayPal/PrimeFaya/DinersXpress code deleted; S.17 certbot renewal fixed (paths, executable bit, nginx reload from the host). 9.3 `/healthz` + graceful shutdown. Server step: `crontab -e`, make the line `0 2,14 * * * /bin/bash <project>/certbot-renew.sh >> <project>/certbot-renew.log 2>&1`. |

@@ -5,8 +5,10 @@ name: CI
 
 on:
   push:
-    branches: [main, "dev_**", "prod_**"]
+    # prod_v1.0.0 runs these checks inside deploy-prod.yml (before deploying), not twice.
+    branches: [main, "dev_**", "prod_**", "!prod_v1.0.0"]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read

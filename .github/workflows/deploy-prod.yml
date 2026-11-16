@@ -1,0 +1,105 @@
+# Deploy the API to prod on every push to prod_v1.0.0 (owner, 2026-11-16: automatic, prod only).
+#
+#   1. the CI checks (ci.yml: lint, typecheck, tests, audit, build, image smoke test);
+#   2. build the image from the checked dist/ and push it to ECR, tagged with the commit;
+#   3. SSM Run Command on the server: stage docker-compose.yml, nginx.conf and deploy-image.sh,
+#      then deploy-image.sh pulls the image, starts it, waits for /healthz, and rolls back to
+#      the previous image if it isn't healthy (the job then fails, and GitHub emails you).
+#
+# AWS access: GitHub's OIDC token for this repo's prod_v1.0.0 only, exchanged for the role
+# CeseeliaGithubDeployBackendProd (iam/github-deploy-backend-*.json): push to the ceseelia-node
+# repository and run commands on the API instance, nothing else. No secrets in GitHub.
+name: Deploy prod
+
+on:
+  push:
+    branches: [prod_v1.0.0]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+# One deploy at a time; a newer push waits for the running one instead of cancelling it.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  ROLE_ARN: arn:aws:iam::258084617016:role/CeseeliaGithubDeployBackendProd
+  ECR_REPOSITORY: 258084617016.dkr.ecr.us-east-1.amazonaws.com/ceseelia-node
+  INSTANCE_ID: i-0533c778bf9ef2411
+  SERVER_DIR: /home/ec2-user/ceseelia
+
+jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
+  deploy:
+    name: Build, push and deploy
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      # The dist/ the checks built and tested.
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: node/dist
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: deploy-backend-${{ github.run_id }}
+
+      - uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push the image
+        working-directory: node
+        run: |
+          IMAGE="$ECR_REPOSITORY:${GITHUB_SHA::12}"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+          if aws ecr describe-images --repository-name ceseelia-node --image-ids imageTag="${GITHUB_SHA::12}" >/dev/null 2>&1; then
+            echo "$IMAGE already in ECR (re-run): deploying it as is"
+          else
+            # One plain image manifest (no attestations), so ECR keeps one entry per deploy.
+            docker build --provenance=false --sbom=false -t "$IMAGE" .
+            docker push "$IMAGE"
+          fi
+
+      - name: Deploy on the server (SSM)
+        run: |
+          b64() { base64 -w0 "$1"; }
+          SCRIPT=$(cat <<SH
+          set -euo pipefail
+          cd "$SERVER_DIR"
+          mkdir -p deploy/next
+          echo '$(b64 docker-compose.yml)' | base64 -d > deploy/next/docker-compose.yml
+          echo '$(b64 nginx/nginx.conf)' | base64 -d > deploy/next/nginx.conf
+          echo '$(b64 deploy-image.sh)' | base64 -d > deploy/next/deploy-image.sh
+          bash deploy/next/deploy-image.sh '$IMAGE'
+          SH
+          )
+          jq -n --arg s "$SCRIPT" '{commands: [$s], executionTimeout: ["900"]}' > params.json
+          CMD_ID=$(aws ssm send-command --instance-ids "$INSTANCE_ID" --document-name AWS-RunShellScript \
+            --comment "deploy ${GITHUB_SHA::12}" --parameters file://params.json --timeout-seconds 120 \
+            --query Command.CommandId --output text)
+          echo "SSM command $CMD_ID"
+          STATUS=Pending
+          for _ in $(seq 1 120); do
+            sleep 5
+            STATUS=$(aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+              --query Status --output text 2>/dev/null || echo Pending)
+            case "$STATUS" in Pending|InProgress|Delayed) continue ;; *) break ;; esac
+          done
+          aws ssm get-command-invocation --command-id "$CMD_ID" --instance-id "$INSTANCE_ID" \
+            --query '[StandardOutputContent, StandardErrorContent]' --output text
+          echo "Result: $STATUS"
+          test "$STATUS" = Success
+
+      - name: Check the API from outside
+        run: curl -fsS --retry 5 --retry-delay 3 https://api.ceseelia.com/healthz

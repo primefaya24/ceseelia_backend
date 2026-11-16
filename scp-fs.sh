@@ -17,6 +17,6 @@ fi
 # Never copied: dependencies, git, local env files, and the server's own certificates and logs.
 rsync -avz \
   --exclude 'node_modules' --exclude '.git' --exclude '.idea' \
-  --exclude 'node/.env' --exclude 'certbot/' --exclude '*.log' --exclude 'node-image.tar' \
+  --exclude 'node/.env' --exclude '/.env' --exclude 'deploy/' --exclude 'certbot/' --exclude '*.log' --exclude 'node-image.tar' \
   -e "ssh -i $SERVER_KEY" \
   . "$SERVER_USER@$SERVER_HOST:$SERVER_DIR/"
