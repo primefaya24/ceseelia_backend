@@ -11,6 +11,10 @@ vi.mock("../layers/payments/order-checkout", async (orig) => ({
   createOrderCheckout: vi.fn(),
   expireOrderCheckout: vi.fn(),
 }));
+vi.mock("../layers/aws/dynamodb/dynamo-entities/order-code", async (orig) => ({
+  ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/order-code")>()),
+  nextOrderCode: vi.fn(async () => "TS-1001"),
+}));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/membership")>()),
   getStoreOverviewRow: vi.fn(),
@@ -116,7 +120,7 @@ describe("POST /customer/create-order (5.4)", () => {
     expect(res.status).toBe(200);
     expect(res.headers["cache-control"]).toBe("no-store");
     expect(res.body).toMatchObject({ checkoutUrl: "https://checkout.stripe/cs_1", totalMinor: PICKUP_TOTAL, currency: "USD" });
-    expect(res.body.orderCode).toMatch(/^[2-9A-HJKMNP-TV-Z]{6}$/);
+    expect(res.body.orderCode).toBe("TS-1001");
 
     const [params, account, orderId] = vi.mocked(createOrderCheckout).mock.calls[0];
     expect(account).toBe("acct_store");

@@ -24,7 +24,8 @@ import {
   toPublicInventory,
 } from "../../../../layers/aws/dynamodb/dynamo-entities/store";
 import { getStoreOverviewRow } from "../../../../layers/aws/dynamodb/dynamo-entities/membership";
-import { createOrderRecords, newOrderCode, newStatusToken, RewardsBalanceError } from "../../../../layers/aws/dynamodb/dynamo-entities/order";
+import { createOrderRecords, newStatusToken, RewardsBalanceError } from "../../../../layers/aws/dynamodb/dynamo-entities/order";
+import { nextOrderCode } from "../../../../layers/aws/dynamodb/dynamo-entities/order-code";
 import { getRewardsAccount, getSession, normEmail, spendInTransaction } from "../../../../layers/aws/dynamodb/dynamo-entities/rewards";
 import { discountOf, RewardsProgram, rewardsProgram } from "../../../../layers/core/rewards";
 import {
@@ -236,6 +237,9 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const overview = await getStoreOverviewRow(storeId);
     const storeSlug = String(overview?.storeSlug ?? "");
 
+    // UX-B: "PB-1001", unique on the platform. Taken before the checkout so a failure here leaves no session.
+    const orderCode = await nextOrderCode(storeId, String(overview?.storeName || raw.settings.storeInfo?.storeName || storeSlug));
+
     const orderId = ULID.ulid();
     const now = Date.now();
     const email = req.body.customer.email.trim();
@@ -250,7 +254,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const order: StoreOrder = {
       storeOrderId: orderId,
       storeId,
-      storeOrderCode: newOrderCode(),
+      storeOrderCode: orderCode,
       storeOrderStatus: "PENDING_PAYMENT",
       storeOrderType: fulfilment,
       storeOrderCurrency: quote.currency,

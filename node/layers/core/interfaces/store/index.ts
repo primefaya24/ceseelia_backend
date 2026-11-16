@@ -1247,7 +1247,7 @@ export interface StoreOrderRewards {
 export interface StoreOrder {
   storeOrderId: string;
   storeId: string;
-  /** Short code for people (receipts, the merchant's list), e.g. "K7Q2XM". Not unique-checked. */
+  /** Short code for people (receipts, the merchant's list), e.g. "PB-1001": the store's unique prefix and its own counter (UX-B, `dynamo-entities/order-code`). Orders before UX-B have 6 random characters ("K7Q2XM"). */
   storeOrderCode: string;
   storeOrderStatus: StoreOrderStatus;
   storeOrderCancelReason?: StoreOrderCancelReason;

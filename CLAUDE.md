@@ -141,6 +141,8 @@ export default function registerRoute(router: Router): void {
   | Invite by email (reverse) | `INVITE#<email>` | `STORE#<storeId>` (found and claimed on that user's first `get-my-profile`) |
   | Order (5.3) | `STORE#<storeId>` | `ORDER#<createdAt>#<orderId>` (`StoreOrder`; written with its pointer by create-order) |
   | Order pointer | `ORDER#<orderId>` | `ORDER` (`storeId`, `orderSk`: find an order by id; never changes) |
+  | Order code counter (UX-B) | `STORE#<storeId>` | `ORDER_CODE` (`prefix`, `n`: the store's last order number; first order 1001; `dynamo-entities/order-code`) |
+  | Order code prefix (UX-B) | `ORDER_CODE_PREFIX#<prefix>` | `STORE` (`storeId`; one store per prefix, reserved at the store's first order, never freed, so `PB-1001` is unique on the platform) |
   | Sale (admin graphs) | `APP` | `ORDER#<paidAt>#STORE#<storeId>#<orderId>` (`currency`, `totalMinor`, `platformFeeMinor`; written when paid, 5.6d) |
   | Processed Stripe event | `STRIPE_EVENT#<eventId>` | `EVENT` (`type`, `processedAt`, `expiresAt`; Connect webhook, 5.5b) |
   | Item check due (L.2) | `APP_ITEM_CHECK` | `STORE#<storeId>#ITEM#<itemId>` (`dueAt`; written by create-item, removed by the item sweep) |

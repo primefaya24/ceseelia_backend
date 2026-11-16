@@ -5,7 +5,7 @@
 //   APP_PENDING_ORDER / ORDER#<createdAt>#<orderId> the 5.7 sweeper's list { storeId, orderId, orderSk }
 // Both are written in one transaction when checkout creates the order (5.4); the pointer never
 // changes. The ORDER#<createdAt> sort key lets the merchant's list (6.1) page by date.
-import { createHash, timingSafeEqual, randomBytes, randomInt } from "crypto";
+import { createHash, timingSafeEqual, randomBytes } from "crypto";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DeleteCommand,
@@ -53,13 +53,7 @@ export const pendingOrderKey = (createdAt: number, orderId: string) => ({
   sk: `${ORDER}#${createdAt}#${orderId}`,
 });
 
-/* Crockford base32 without look-alikes: what a shopper reads out to the merchant. */
-const CODE_ALPHABET = "23456789ABCDEFGHJKMNPQRSTVWXYZ";
-export function newOrderCode(length = 6): string {
-  let code = "";
-  for (let i = 0; i < length; i++) code += CODE_ALPHABET[randomInt(CODE_ALPHABET.length)];
-  return code;
-}
+/* Order codes ("PB-1001") are made by `nextOrderCode` in `../order-code` (UX-B). */
 
 /* The shopper's status token (returned once) and the hash the order keeps. */
 export function newStatusToken(): { token: string; hash: string } {
