@@ -292,7 +292,7 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 >       and link previews (WA 3.6, `/store/public/preview`). **Later:** 9.8 custom
 >       domains (after launch; listed as "coming soon").
 >
-> - [~] **L.10 Messages (owner, 2026-11-16: before launch):** an async chat between a store and
+> - [x] **L.10 Messages (owner, 2026-11-16: before launch):** an async chat between a store and
 >       its shoppers on Ceseelia, not email. One conversation per order (the shopper opens it from
 >       the order page with the order's token; either side can write first) and inquiries from the
 >       storefront's Contact us (the shopper gets a private link by email). Text and up to 4
@@ -303,7 +303,8 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 >       deleted. Stores report a conversation; admins dismiss or block it.
 >       **Backend done 2026-11-16** (routes, 57 tests). **Webapp:** Store › Messages, the order
 >       page's Messages, Contact us as a conversation, the shopper's `/messages/:id` page, the
->       order drawer's "Message customer", the Settings switch, Admin reported conversations.
+>       order drawer's "Message customer", the Settings switch, Admin reported conversations
+>       (**done 2026-11-16**; on dev, not yet on prod).
 
 > **Prod as of 2026-11-15 (replaces the 2026-11-14 notes on secrets, the server and the AI key).**
 > - **API:** `https://api.ceseelia.com` on `ceseelia-0` (i-0533c778bf9ef2411, t3.micro, Amazon
