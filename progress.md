@@ -23,24 +23,26 @@ Everything here is for the owner to do by hand; Claude can't (no GitHub, console
 access, and secrets never go through chat). The same list is in both repos' `progress.md`; tick
 it in both. In order: each phase needs the one before it. Details stay where they're linked.
 
+_A1–B2 done by the owner 2026-11-15; next is B3._
+
 **A. Now (nothing blocks these)**
-- [ ] A1. **Push** every repo from your own shell: backend and webapp
+- [x] A1. **Push** every repo from your own shell: backend and webapp
       `dev_v1.0.0_customer_store_front`; CloudFormation `dev_v1.0.0_l4_backups_alarms` and
       `dev_v1.0.0_l9_webapp_cloudfront`.
-- [ ] A2. **S.2 Rotate the old password** that was in the backend's `node/README.md` (still in git
+- [x] A2. **S.2 Rotate the old password** that was in the backend's `node/README.md` (still in git
       history).
-- [ ] A3. **Delete the old secret** `ceseelia/dev/stripe` (no longer read):
+- [x] A3. **Delete the old secret** `ceseelia/dev/stripe` (no longer read):
       `aws secretsmanager delete-secret --secret-id ceseelia/dev/stripe --recovery-window-in-days 30`.
-- [ ] A4. **platform.claude.com billing**, then create an API key there and paste it in the AWS
+- [x] A4. **platform.claude.com billing**, then create an API key there and paste it in the AWS
       console as `anthropicApiKey` in `ceseelia/dev`. Then tell Claude: it runs the 60-store eval
       (≈ $1) and shows you the results. Until the key is in, every Go Live goes to review.
       (If billing can't be fixed: pick Claude Platform on AWS or Bedrock, backend §1 "The AI
       check's key".)
 
 **B. AWS infrastructure (dev first, then prod)**
-- [ ] B1. GitHub › CloudFormation repo › Settings › Secrets and variables › Actions › Variables:
+- [x] B1. GitHub › CloudFormation repo › Settings › Secrets and variables › Actions › Variables:
       add `ALARM_EMAIL`.
-- [ ] B2. Merge `dev_v1.0.0_l4_backups_alarms` into `dev_v1.0.0` and push (CI deploys dev:
+- [x] B2. Merge `dev_v1.0.0_l4_backups_alarms` into `dev_v1.0.0` and push (CI deploys dev:
       backups, alarms, logs). Click the SNS confirmation email.
 - [ ] B3. Webapp hosting (L.9): run `sam validate --lint` (cfn-lint couldn't run in Claude's
       shell), preview a change set on `ceseelia-dev`, then merge
@@ -1548,6 +1550,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | §0: owner finished A1–A4, B1, B2 (push, password, old secret, Claude API key in `ceseelia/dev`, ALARM_EMAIL, L.4 merged to dev). |
 | 2026-11-15 | §0 Owner to-do added: every manual step in one ordered list (same in both repos). |
 | 2026-11-15 | L.9: link previews (`GET /store/public/preview/:slug[/:itemId]`, Open Graph HTML for bots); webapp S3 + CloudFront in the CloudFormation template (branch `dev_v1.0.0_l9_webapp_cloudfront`, not deployed); `iam/` AdminDeleteUser. |
 | 2026-11-15 | L.9 (part): admin menu badges (`/admin/queue-counts`); `get-all-stores` pages, searches and reads only the page's SETTINGS fields; account delete (`delete-user`) with only-member and admin guards. |
