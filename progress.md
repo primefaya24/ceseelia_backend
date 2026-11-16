@@ -143,8 +143,21 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 - [ ] F1. Webapp Content-Security-Policy on CloudFront (WA S.14: Amplify keeps tokens in
       `localStorage`, so XSS matters). Claude writes and tests it; the owner merges the
       CloudFormation branch (dev, then prod).
+      _Claude part done 2026-11-16: CloudFormation branch `dev_v1.0.0_csp`
+      (`WebappSecurityHeadersPolicy`: the managed security headers plus the CSP, on the webapp
+      and custom-domain distributions). Tested in headless Chrome against the prod build: no
+      violations on sign-in, a real storefront with images, checkout; a broken policy is caught.
+      The webapp build no longer inlines critical CSS (its `onload` handler would be blocked);
+      that build is on prod, so the CSP can go live. **Owner:** merge `dev_v1.0.0_csp` into
+      `dev_v1.0.0`, push, then into `prod_v1.0.0`, push; then Claude rechecks prod._
 - [ ] F2. Legal pages: privacy policy and terms (WA 9.1), linked from the storefront footer and
       sign-up. Claude drafts; **the owner reviews the text** (and ideally a lawyer).
+      _Claude part done 2026-11-16 (webapp dev, not on prod): Terms of Service, Privacy Policy
+      and End User Agreement at `/legal/…` (Primefaya Computer Services, Alberta law,
+      support@ceseelia.com; processors AWS, Stripe, Anthropic, Google Fonts, push services);
+      a legal header linking the three; sign-up needs a consent checkbox; the storefront footer
+      links Terms and Privacy. **Owner:** review the text (business name, contact email, the
+      7-year order retention, the CAD 100 liability floor), then Claude pushes it to prod._
 - [x] F3. Owner: an accountant to confirm the delivery-tax simplification (backend 4.2
       follow-up: delivery taxed like the goods), and which provinces' PST/QST Ceseelia must
       collect on its subscriptions, from what sales level (BC, SK, MB, QC).
@@ -172,12 +185,18 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       2026-11-16: now, before launch; Spark and Nova; subdomains only; merchants CNAME to one
       fixed name, `domains.ceseelia.com`; the address bar stays on their domain. Code done the
       same day (9.8 phase 2)._
-- [ ] G4. Owner: merge CloudFormation `dev_v1.0.0_custom_domains` into `dev_v1.0.0` and push
+- [x] G4. Owner: merge CloudFormation `dev_v1.0.0_custom_domains` into `dev_v1.0.0` and push
       (dev: no change but the bucket policy's condition), then into `prod_v1.0.0` and push
       (prod: the multi-tenant `CustomDomainDistribution`, its connection group, router
       function, `domains.ceseelia.com` CNAME + `_cf-challenge` TXT, and the server's
-      `CustomDomainServerPolicy`). Check the stack reaches UPDATE_COMPLETE.
-- [ ] G5. Claude, right after G4: put the stack outputs `CustomDomainDistributionId` and
+      `CustomDomainServerPolicy`). Check the stack reaches UPDATE_COMPLETE. _Done 2026-11-16
+      (first prod attempt failed on CAPABILITY_NAMED_IAM; the policy's fixed name was dropped)._
+- [ ] G5. Claude, right after G4. _Mostly done 2026-11-16: env set on the server (backup
+      `node/.env.bak-customdomains`), backend and webapp on prod, `domains.ceseelia.com` →
+      `dytlp5vmoldm8.cloudfront.net` plus the TXT, the sweep running ("live list loaded"), the
+      server role may call the tenant API, public lookup 404s an unknown host, `/store/domain`
+      needs sign-in. **Left:** a real domain end to end (needs a subdomain the owner controls)._
+      The steps: put the stack outputs `CustomDomainDistributionId` and
       `CustomDomainConnectionGroupId` into the prod server's `node/.env` as
       `CUSTOM_DOMAIN_DISTRIBUTION_ID` / `CUSTOM_DOMAIN_CONNECTION_GROUP_ID` (the feature is off
       without them: the card says "coming soon"), push backend and webapp to prod, check
