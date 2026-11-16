@@ -16,7 +16,7 @@ import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-sec
 import Stripe from "stripe";
 
 const require = createRequire(import.meta.url);
-const { PLANS, STORE_PLANS, isPaidPlan, planPriceLookupKey } = require("../dist/layers/core/plans/index.js");
+const { PLANS, STORE_PLANS, planPriceLookupKey } = require("../dist/layers/core/plans/index.js");
 
 const WRITE = process.argv.includes("--write");
 const SECRET_ID = process.env.APP_SECRET_ID || "ceseelia/dev";
@@ -28,7 +28,7 @@ console.log(`${secretKey.includes("_live_") ? "LIVE" : "test"} mode · ${WRITE ?
 const products = [];
 for await (const p of stripe.products.list({ active: true, limit: 100 })) products.push(p);
 
-for (const plan of STORE_PLANS.filter(isPaidPlan)) {
+for (const plan of STORE_PLANS) { // every plan is paid (P.10)
   const def = PLANS[plan];
   let product = products.find((p) => p.metadata?.ceseelia_plan === plan);
   if (!product) {

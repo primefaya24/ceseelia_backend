@@ -23,8 +23,8 @@ Everything here is for the owner to do by hand; Claude can't (no GitHub, console
 access, and secrets never go through chat). The same list is in both repos' `progress.md`; tick
 it in both. In order: each phase needs the one before it. Details stay where they're linked.
 
-_A1–B3, B5–B8, D2 and E1 done 2026-11-15; `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
-serves the app; API calls fail until a dev API exists). **Next: put the Stripe test secret key in `ceseelia/prod` (B9)**, then C1._
+_A1–B3, B5–B9, C1, D2 and E1 done 2026-11-15 (C2 mostly); `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
+serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **Next: the rest of C2 (Stripe Tax, Smart Retries), then C3.**_
 
 **A. Now (nothing blocks these)**
 - [x] A1. **Push** every repo from your own shell: backend and webapp
@@ -73,23 +73,34 @@ serves the app; API calls fail until a dev API exists). **Next: put the Stripe t
       `ADMIN_ALERT_EMAIL` (where review, ticket and hidden-item alerts go). Leave
       `PAID_PLANS_ENABLED` off until D3. _Done by Claude 2026-11-15 (`node/.env` on the server;
       `ADMIN_ALERT_EMAIL` left at its default, the admin contact address)._
-- [ ] B9. **Stripe secret key into `ceseelia/prod`** (AWS console › Secrets Manager ›
+- [x] B9. **Stripe secret key into `ceseelia/prod`** (AWS console › Secrets Manager ›
       `ceseelia/prod` › `stripeSecretKey`): the **test** key (`sk_test_…`) for phase C, swapped
       for the live one in D1. The API won't start without it (it's built and stopped on the
-      server now). Then tell Claude: it starts the API and checks `https://api.ceseelia.com`.
+      server now). Then tell Claude: it starts the API and checks `https://api.ceseelia.com`. _Done 2026-11-15: test key in;
+      API started by Claude, healthy (HTTPS valid, HTTP → HTTPS, CORS from the app, bare-IP
+      HTTPS refused)._
 - [x] B8. **Web push keys:** `node scripts/setup-vapid.mjs --write` (dev), then
       `APP_SECRET_ID=ceseelia/prod node scripts/setup-vapid.mjs --write`; restart the API.
       _Checked by Claude 2026-11-15: both secrets already have their keys. The prod API reads
       them when it first starts (B5)._
 
 **C. Stripe in test mode**
-- [ ] C1. **Connect webhook** (backend 5.5 "Setup"): endpoint
+- [x] C1. **Connect webhook** (backend 5.5 "Setup"): endpoint
       `https://api.ceseelia.com/api/v1/payments/stripe-connect-webhook`, "Events on Connected
       accounts", the events listed there; its signing secret into the stage's secret as
-      `stripeWebhookSecret`.
+      `stripeWebhookSecret`. _Done by Claude 2026-11-15 through the Stripe API (test mode):
+      `we_1UcEEvGS7poxugeoEGr30Pl1`, Connect, the 13 events, API version `2025-08-27.basil`
+      (the SDK's); secret stored without being shown. Unsigned calls get 400._
 - [ ] C2. **Billing setup** (backend P.5 "Setup" 1–5): prices script, Stripe Tax (origin address,
       GST/HST, SaaS tax code), billing webhook (`stripeBillingWebhookSecret`), Smart Retries →
       mark unpaid, customer portal.
+      _Done by Claude 2026-11-15 (test mode): prices (Spark and Nova × CAD/AUD/USD; the script
+      was broken since P.10 and is fixed), SaaS tax code `txcd_10103001` on both products,
+      billing webhook `we_1UcEEvGS7poxugeojsIaBa0a` (9 events, secret stored), default customer
+      portal (cards, invoices, cancel at period end, switch Spark ↔ Nova). **Left for you, in the
+      Stripe dashboard (test mode):** Stripe Tax on + origin address + GST/HST registration
+      (Settings › Tax); Billing › Revenue recovery › Smart Retries on, "if all retries fail" →
+      mark the subscription unpaid._
 - [ ] C3. **L.0 first real test order:** checkout → paid (receipt, PDF, alerts) → Store › Orders →
       ready / on its way emails → refund part → refund the rest.
 - [ ] C4. **A Spark checkout** (Go Live → Stripe Checkout → live) and a plan switch in the portal.
@@ -1004,7 +1015,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
        not Connect) with `checkout.session.completed`, `checkout.session.expired`,
        `customer.subscription.created|updated|deleted|paused|resumed`, `invoice.paid`,
        `invoice.payment_failed`; put its signing secret in the Stripe secret as
-       `billingWebhookSecret`.
+       `stripeBillingWebhookSecret`.
     4. Billing › Revenue recovery: Smart Retries on; "if all retries fail" → **mark the
        subscription unpaid** (or cancel: both start the grace).
     5. Customer portal: allow card updates, invoice history, cancelling (at period end), and
