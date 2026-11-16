@@ -140,7 +140,7 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       in WhatsApp or Slack and check the preview (name, slogan, logo).
 
 **F. Claude, before launch (code)**
-- [ ] F1. Webapp Content-Security-Policy on CloudFront (WA S.14: Amplify keeps tokens in
+- [x] F1. Webapp Content-Security-Policy on CloudFront (WA S.14: Amplify keeps tokens in
       `localStorage`, so XSS matters). Claude writes and tests it; the owner merges the
       CloudFormation branch (dev, then prod).
       _Claude part done 2026-11-16: CloudFormation branch `dev_v1.0.0_csp`
@@ -150,6 +150,7 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       The webapp build no longer inlines critical CSS (its `onload` handler would be blocked);
       that build is on prod, so the CSP can go live. **Owner:** merge `dev_v1.0.0_csp` into
       `dev_v1.0.0`, push, then into `prod_v1.0.0`, push; then Claude rechecks prod._
+      _Live on prod 2026-11-16 (owner pushed; stack UPDATE_COMPLETE 07:42 UTC). Claude checked in headless Chrome against prod: no violations on sign-in, sign-up, a storefront on its subdomain and on `/s/`, checkout, legal; images load; the custom-domain distribution has the same policy; bot previews still work; dev has it too._
 - [ ] F2. Legal pages: privacy policy and terms (WA 9.1), linked from the storefront footer and
       sign-up. Claude drafts; **the owner reviews the text** (and ideally a lawyer).
       _Claude part done 2026-11-16 (webapp dev, not on prod): Terms of Service, Privacy Policy
