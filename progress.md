@@ -23,8 +23,8 @@ Everything here is for the owner to do by hand; Claude can't (no GitHub, console
 access, and secrets never go through chat). The same list is in both repos' `progress.md`; tick
 it in both. In order: each phase needs the one before it. Details stay where they're linked.
 
-_A1–B3, B6, B8, D2 and E1 done 2026-11-15; `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
-serves the app; API calls fail until a dev API exists). Next is B5._
+_A1–B3, B5–B8, D2 and E1 done 2026-11-15; `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
+serves the app; API calls fail until a dev API exists). **Next: put the Stripe test secret key in `ceseelia/prod` (B9)**, then C1._
 
 **A. Now (nothing blocks these)**
 - [x] A1. **Push** every repo from your own shell: backend and webapp
@@ -55,18 +55,28 @@ serves the app; API calls fail until a dev API exists). Next is B5._
 - [x] B4. When dev looks right, merge `dev_v1.0.0` into `prod_v1.0.0` and push (prod is also
       behind on the 2026-11-09 upload-expiry rule). _Done 2026-11-15: `ceseelia-prod`
       UPDATE_COMPLETE, `app.ceseelia.com` answers (empty bucket until D4)._
-- [ ] B5. **Launch the prod API server** (EC2) with the **`CeseeliaServerRole`** instance
+- [x] B5. **Launch the prod API server** (EC2) with the **`CeseeliaServerRole`** instance
       profile, point `api.ceseelia.com` at it (Route53 A record), run `generate-cert.sh`. Tell
       Claude the host so it can fix the `ssh`/`scp` deploy scripts (they still point at
-      dinersxpress-0).
+      dinersxpress-0). _Done by Claude 2026-11-15: `ceseelia-0` (i-0533c778bf9ef2411, t3.micro,
+      Amazon Linux 2023), Elastic IP 184.192.215.17, `api.ceseelia.com` A record, security group
+      `ceseelia-api` (80/443 public, SSH only from the owner's IP 75.159.129.50: update it if
+      that changes). Key: `~/Documents/pem/ceseelia-0.pem`. First boot (`ec2-user-data.sh`):
+      Docker + Compose v2.40.3 + Buildx, 1 GB swap, cron, daily security updates. Certificate
+      issued (renews by cron). Deploy scripts read `server.conf`._
 - [x] B6. After prod's stack is deployed, update the server role from the file (adds the prod log
       group and `cognito-idp:AdminDeleteUser` for account delete):
       `aws iam put-role-policy --role-name CeseeliaServerRole --policy-name ceseelia-server-prod --policy-document file://iam/ceseelia-server-policy.json`
       (from `ceseelia_backend/`). _Done by Claude 2026-11-15._
-- [ ] B7. Prod server environment: `APP_SECRET_ID=ceseelia/prod`,
+- [x] B7. Prod server environment: `APP_SECRET_ID=ceseelia/prod`,
       `CORS_ORIGINS=https://app.ceseelia.com` (required; the API won't start without it),
       `ADMIN_ALERT_EMAIL` (where review, ticket and hidden-item alerts go). Leave
-      `PAID_PLANS_ENABLED` off until D3.
+      `PAID_PLANS_ENABLED` off until D3. _Done by Claude 2026-11-15 (`node/.env` on the server;
+      `ADMIN_ALERT_EMAIL` left at its default, the admin contact address)._
+- [ ] B9. **Stripe secret key into `ceseelia/prod`** (AWS console › Secrets Manager ›
+      `ceseelia/prod` › `stripeSecretKey`): the **test** key (`sk_test_…`) for phase C, swapped
+      for the live one in D1. The API won't start without it (it's built and stopped on the
+      server now). Then tell Claude: it starts the API and checks `https://api.ceseelia.com`.
 - [x] B8. **Web push keys:** `node scripts/setup-vapid.mjs --write` (dev), then
       `APP_SECRET_ID=ceseelia/prod node scripts/setup-vapid.mjs --write`; restart the API.
       _Checked by Claude 2026-11-15: both secrets already have their keys. The prod API reads

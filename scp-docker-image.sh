@@ -1,5 +1,8 @@
 #!/bin/bash
-
-docker build -t primedine-node:latest ./node
-docker save primedine-node:latest -o node-image.tar
-scp -i /home/vboxuser/Documents/pem/primehost-0.pem node-image.tar ec2-user@3.215.232.243:/home/ec2-user/
+# Build the API image here and copy it to the prod server (when the server is too small to build).
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+source ./server.conf
+docker build -t ceseelia-node:latest ./node
+docker save ceseelia-node:latest -o node-image.tar
+scp -i "$SERVER_KEY" node-image.tar "$SERVER_USER@$SERVER_HOST:/home/ec2-user/"

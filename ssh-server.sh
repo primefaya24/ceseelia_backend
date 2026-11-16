@@ -1,4 +1,5 @@
-# When duplicating, change pem file name and ec2-user@IP_ADDRESS
-
-chmod 400 /home/vboxuser/Documents/pem/primehost-0.pem
-ssh -i /home/vboxuser/Documents/pem/primehost-0.pem ec2-user@3.215.232.243
+#!/bin/bash
+# Open a shell on the prod API server (settings in server.conf).
+source "$(dirname "${BASH_SOURCE[0]}")/server.conf"
+chmod 400 "$SERVER_KEY"
+exec ssh -i "$SERVER_KEY" "$SERVER_USER@$SERVER_HOST" "$@"

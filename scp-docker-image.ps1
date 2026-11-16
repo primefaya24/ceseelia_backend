@@ -3,11 +3,11 @@
 # ===========================
 
 # --- CONFIGURATION ---
-$PemPath    = "C:\aws\pem\primehost-0.pem"             # Path to your .pem key
-$EC2Host    = "ec2-user@3.215.232.243"                 # Your EC2 username and host
+$PemPath    = "C:\aws\pem\ceseelia-0.pem"             # Path to your .pem key
+$EC2Host    = "ec2-user@184.192.215.17"                 # Your EC2 username and host
 $RemotePath = "/home/ec2-user"                         # Where to upload image on EC2
 $ProjectDir = "C:\GitHub\dinersxpress"                 # Path to project root
-$ImageName  = "primedine-node"
+$ImageName  = "ceseelia-node"
 $Tag        = "latest"
 $ImageFile  = "node-image.tar"
 
@@ -53,7 +53,7 @@ if ($LASTEXITCODE -ne 0) {
 # --- STEP 4: Load image and restart container on EC2 ---
 Write-Host "[DEPLOY] Updating Node.js container on EC2..." -ForegroundColor Cyan
 
-$RemoteCmd = "cd $RemotePath/primedine; docker load -i $RemotePath/$ImageFile; sudo docker compose up -d --force-recreate node; rm $RemotePath/$ImageFile"
+$RemoteCmd = "cd $RemotePath/ceseelia; docker load -i $RemotePath/$ImageFile; sudo docker compose up -d --force-recreate node; rm $RemotePath/$ImageFile"
 
 cmd /c "ssh -i `"$PemPath`" $EC2Host `"$RemoteCmd`""
 
