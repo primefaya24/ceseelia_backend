@@ -23,7 +23,7 @@ Everything here is for the owner to do by hand; Claude can't (no GitHub, console
 access, and secrets never go through chat). The same list is in both repos' `progress.md`; tick
 it in both. In order: each phase needs the one before it. Details stay where they're linked.
 
-_A1–B2 done by the owner 2026-11-15; next is B3._
+_A1–B3 done by the owner 2026-11-15; next is B4._
 
 **A. Now (nothing blocks these)**
 - [x] A1. **Push** every repo from your own shell: backend and webapp
@@ -44,10 +44,13 @@ _A1–B2 done by the owner 2026-11-15; next is B3._
       add `ALARM_EMAIL`.
 - [x] B2. Merge `dev_v1.0.0_l4_backups_alarms` into `dev_v1.0.0` and push (CI deploys dev:
       backups, alarms, logs). Click the SNS confirmation email.
-- [ ] B3. Webapp hosting (L.9): run `sam validate --lint` (cfn-lint couldn't run in Claude's
+- [x] B3. Webapp hosting (L.9): run `sam validate --lint` (cfn-lint couldn't run in Claude's
       shell), preview a change set on `ceseelia-dev`, then merge
-      `dev_v1.0.0_l9_webapp_cloudfront` into `dev_v1.0.0` and push. Check
-      `https://dev.ceseelia.com` resolves.
+      `dev_v1.0.0_l9_webapp_cloudfront` into `dev_v1.0.0` and push. _Done 2026-11-15:
+      `https://dev.ceseelia.com` answers through CloudFront (S3 "Access Denied" while the bucket
+      is empty, as expected). To check the whole chain, upload the app with
+      `tools/deploy-s3.sh dev`: pages load, but anything needing the API fails until a dev API
+      exists (`dev.api.ceseelia.com`; the dev config points at a LAN address)._
 - [ ] B4. When dev looks right, merge `dev_v1.0.0` into `prod_v1.0.0` and push (prod is also
       behind on the 2026-11-09 upload-expiry rule).
 - [ ] B5. **Launch the prod API server** (EC2) with the **`CeseeliaServerRole`** instance
