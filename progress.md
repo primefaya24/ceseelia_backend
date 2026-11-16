@@ -23,7 +23,7 @@ Everything here is for the owner to do by hand; Claude can't (no GitHub, console
 access, and secrets never go through chat). The same list is in both repos' `progress.md`; tick
 it in both. In order: each phase needs the one before it. Details stay where they're linked.
 
-_A1–B3, B5–B9, C1, D2 and E1 done 2026-11-15 (C2 mostly); `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
+_A1–B3, B5–B9, C1, D2, D4 and E1 done 2026-11-15 (C2 mostly); `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
 serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **Next: the rest of C2 (Stripe Tax, Smart Retries), then C3.**_
 
 **A. Now (nothing blocks these)**
@@ -112,7 +112,9 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       2026-11-15 (Claude checked: present, a valid key format; value never read out). Eval on
       dev: 60 of 60 right, no legitimate store flagged, no sketchy store missed, ≈ $0.34._
 - [ ] D3. `PAID_PLANS_ENABLED=true` on the prod server; restart.
-- [ ] D4. Deploy the webapp: `tools/deploy-s3.sh prod` (from `ceseelia_webapp/`).
+- [x] D4. Deploy the webapp: `tools/deploy-s3.sh prod` (from `ceseelia_webapp/`). _Done by Claude
+      2026-11-15 (early, so C3 can run on prod in test mode; run it again after any webapp change).
+      `app.ceseelia.com` serves the app with the prod config; link previews reach the API._
 - [ ] D5. Smoke test on prod: sign up, create a store, Go Live, a real order; paste a store link
       in WhatsApp or Slack and check the preview (name, slogan, logo).
 
