@@ -122,6 +122,8 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 **D. Going live**
 - [ ] D1. Repeat C1 and C2 in **live mode**; live keys and both webhook secrets into
       `ceseelia/prod` (AWS console).
+      Then run `node/scripts/setup-billing-portal.mjs --write` against live mode (plan switches:
+      upgrades charged at once, downgrades at the period's end).
 - [x] D2. `anthropicApiKey` in `ceseelia/prod`, once you've reviewed the eval (A4). _Done
       2026-11-15 (Claude checked: present, a valid key format; value never read out). Eval on
       dev: 60 of 60 right, no legitimate store flagged, no sketchy store missed, ≈ $0.34._
@@ -1672,6 +1674,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-16 | §0 G1–G2 done (store subdomains live on prod). §0 H: automatic prod deploys: `.github/workflows/deploy-prod.yml` (CI checks via `workflow_call`, image → ECR `ceseelia-node`, SSM → `deploy-image.sh` with health check and rollback), GitHub OIDC role `CeseeliaGithubDeployBackendProd` (`iam/github-deploy-backend-*.json`), server role gains ECR pull + SSM agent; compose's node image is `${NODE_IMAGE}` from `./.env`. Tested on prod (deploy and rollback). |
 | 2026-11-16 | QA (C3): the admin store list's Completions, Cancelled and Last order were never updated (always 0 / NA). Now `markOrderPaid` sets the last-order time, Completed adds to Completions (`bumpStoreOrderCounter`), and a full refund adds to Cancelled (back off if a failed refund undoes it). Existing prod store backfilled by hand. |
 | 2026-11-16 | §0 C3 done (first test order on prod, all emails received); D3 done: `PAID_PLANS_ENABLED=true` on the prod server (test mode). Next: C4. |
+| 2026-11-16 | Stripe portal (test mode) set by Claude with `scripts/setup-billing-portal.mjs`: upgrades invoice the difference at once (`always_invoice`), downgrades wait for the period's end. Was `create_prorations` (difference on the next invoice). |
 | 2026-11-16 | L.10 on prod (backend and webapp); owner tested it end to end. Webapp: the empty Admin › Merchants page removed. |
 | 2026-11-16 | L.10 messages (backend): store ↔ shopper async chat per order and from Contact us (inquiries with an emailed private link); text + up to 4 photos; paginated inbox and messages; unread both ways; push on shopper messages, store email after 30 min unread (setting, default on), shopper email per unread reply; reports → admin dismiss/block. 57 new tests. |
 | 2026-11-15 | 9.8 phase 1: store subdomains `https://<slug>.ceseelia.com` (`STORE_URL_TEMPLATE`, `layers/core/store-url`): Stripe return URLs, order email links and link previews use them; CORS allows them; 20 more reserved slugs. Phase 2 (custom domains) planned under 9.8. §0 G added (deploy order). Tests 1176. |
