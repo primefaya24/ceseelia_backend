@@ -23,7 +23,8 @@ Everything here is for the owner to do by hand; Claude can't (no GitHub, console
 access, and secrets never go through chat). The same list is in both repos' `progress.md`; tick
 it in both. In order: each phase needs the one before it. Details stay where they're linked.
 
-_A1–B3 done by the owner 2026-11-15; next is B4._
+_A1–B3, B8 and D2 done 2026-11-15; `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
+serves the app; API calls fail until a dev API exists). Next is B4._
 
 **A. Now (nothing blocks these)**
 - [x] A1. **Push** every repo from your own shell: backend and webapp
@@ -65,8 +66,10 @@ _A1–B3 done by the owner 2026-11-15; next is B4._
       `CORS_ORIGINS=https://app.ceseelia.com` (required; the API won't start without it),
       `ADMIN_ALERT_EMAIL` (where review, ticket and hidden-item alerts go). Leave
       `PAID_PLANS_ENABLED` off until D3.
-- [ ] B8. **Web push keys:** `node scripts/setup-vapid.mjs --write` (dev), then
+- [x] B8. **Web push keys:** `node scripts/setup-vapid.mjs --write` (dev), then
       `APP_SECRET_ID=ceseelia/prod node scripts/setup-vapid.mjs --write`; restart the API.
+      _Checked by Claude 2026-11-15: both secrets already have their keys. The prod API reads
+      them when it first starts (B5)._
 
 **C. Stripe in test mode**
 - [ ] C1. **Connect webhook** (backend 5.5 "Setup"): endpoint
@@ -83,7 +86,9 @@ _A1–B3 done by the owner 2026-11-15; next is B4._
 **D. Going live**
 - [ ] D1. Repeat C1 and C2 in **live mode**; live keys and both webhook secrets into
       `ceseelia/prod` (AWS console).
-- [ ] D2. `anthropicApiKey` in `ceseelia/prod`, once you've reviewed the eval (A4).
+- [x] D2. `anthropicApiKey` in `ceseelia/prod`, once you've reviewed the eval (A4). _Done
+      2026-11-15 (Claude checked: present, a valid key format; value never read out). Eval on
+      dev: 60 of 60 right, no legitimate store flagged, no sketchy store missed, ≈ $0.34._
 - [ ] D3. `PAID_PLANS_ENABLED=true` on the prod server; restart.
 - [ ] D4. Deploy the webapp: `tools/deploy-s3.sh prod` (from `ceseelia_webapp/`).
 - [ ] D5. Smoke test on prod: sign up, create a store, Go Live, a real order; paste a store link
@@ -92,7 +97,9 @@ _A1–B3 done by the owner 2026-11-15; next is B4._
 **E. Optional, any time**
 - [ ] E1. The two storage distributions (`dev.storage` / `prod.storage`, made by hand) use
       `PriceClass_All`; `PriceClass_200` costs less and still covers North America, Europe and
-      Asia.
+      Asia. _Claude's attempt was blocked by its permission settings (it changes live prod
+      CloudFront), so this one is yours: CloudFront console › each distribution › Edit › Price
+      class._
 
 _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-08), rewards
 `normalize-rewards-method.mjs --write` on dev and prod (2026-11-15), Stage P QA (2026-11-13)._
@@ -138,9 +145,9 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 >         (`APP_ITEM_CHECK`, 3 min), swept every minute, flagged → hidden (storefront and
 >         checkout) + `APP_ITEM_REVIEW` queue + email; admin "Hidden items" on /admin/stores
 >         (show again / keep hidden); merchants see "Hidden: under review" / "Hidden by
->         Ceseelia". **Still to do (owner):** add `anthropicApiKey` to `ceseelia/dev`, then
->         `node scripts/store-check-eval/run.mjs` (60 stores, ≈ $1) and review the results.
->         Until the key is there, every Go Live goes to review (`VALIDATION_NOT_CONFIGURED`).
+>         Ceseelia". **Switched on 2026-11-15:** `anthropicApiKey` is in `ceseelia/dev` and
+>         `ceseelia/prod`; the eval (`scripts/store-check-eval/run.mjs`, text only) got 60 of 60
+>         right (0 of 30 legitimate flagged, 0 of 30 sketchy missed), ≈ $0.34, slowest 6.5 s.
 > - [x] **L.3 Security hardening, S.14–S.17** (done 2026-11-14): helmet and nginx headers (HSTS,
 >       `server_tokens off`), a hardened Docker image (`npm ci --omit=dev`, non-root), legacy
 >       DinersXpress / PrimeFaya code removed, and **`certbot-renew.sh` fixed** (wrong
@@ -1553,6 +1560,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-11 | QA Q.23 (webapp): `POST /customer/quote` no longer takes `postalCode`. A Canada delivery is taxed for the province the shopper's IP is in (`resolveCaProvinceFromGeo`), else the store's, and `taxRegion.estimated` is true; `POSTAL_CODE_REQUIRED` is gone. `priceLines` still takes `postalCode` (it wins, `estimated: false`) for checkout. **Stage 5 must tax the order on its delivery address, not on the estimate.** |
 | 2026-11-11 | QA Q.21 (webapp): storefront and item responses are `private, no-cache` (was `max-age=30`), so an open storefront's quiet reload sees a disabled item or new discount at once (304 when nothing changed). |
 | 2026-11-11 | 2.7 done: stock and price per option combination (`storeItemVariants`); item stock/prices worked out from the rows on save; public data and the quote use the picked combination (`OPTION_UNAVAILABLE`). |
+| 2026-11-15 | §0: B8 and D2 checked done; AI store check eval 60/60 on dev (≈ $0.34); dev webapp deployed to dev.ceseelia.com. |
 | 2026-11-15 | §0: owner finished A1–A4, B1, B2 (push, password, old secret, Claude API key in `ceseelia/dev`, ALARM_EMAIL, L.4 merged to dev). |
 | 2026-11-15 | §0 Owner to-do added: every manual step in one ordered list (same in both repos). |
 | 2026-11-15 | L.9: link previews (`GET /store/public/preview/:slug[/:itemId]`, Open Graph HTML for bots); webapp S3 + CloudFront in the CloudFormation template (branch `dev_v1.0.0_l9_webapp_cloudfront`, not deployed); `iam/` AdminDeleteUser. |
