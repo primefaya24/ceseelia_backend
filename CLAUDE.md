@@ -134,6 +134,10 @@ export default function registerRoute(router: Router): void {
   | User's store (reverse) | `USER#<userId>` | `STORE#<storeId>` (same role; written with the member row in one transaction) |
   | Store invite | `STORE#<storeId>` | `INVITE#<email>` (pending, for an email with no account) |
   | Slug reservation | `SLUG#<slug>` | `STORE` (`storeId`; written/freed only in the store create, rename and delete paths; format rule in `constants/slug.ts`) |
+  | Store's own domain (9.8 phase 2) | `STORE#<storeId>` | `DOMAIN` (host, status, tenant, certificate; `dynamo-entities/domain`) |
+  | Domain reservation | `DOMAIN#<host>` | `DOMAIN` (`storeId`; one store per host) |
+  | Domains list (sweep) | `APP_DOMAIN` | `STORE#<storeId>` (`host`, `status`) |
+  | Tenant clean-up queue | `APP_DOMAIN_CLEANUP` | `<tenantId>` (`certificateArn`; removed domains' CloudFront tenants) |
   | Invite by email (reverse) | `INVITE#<email>` | `STORE#<storeId>` (found and claimed on that user's first `get-my-profile`) |
   | Order (5.3) | `STORE#<storeId>` | `ORDER#<createdAt>#<orderId>` (`StoreOrder`; written with its pointer by create-order) |
   | Order pointer | `ORDER#<orderId>` | `ORDER` (`storeId`, `orderSk`: find an order by id; never changes) |
@@ -192,6 +196,7 @@ export default function registerRoute(router: Router): void {
 | Admin (P.8) | `GET /admin/get-review-queue`, `POST /admin/review-store` `{storeId, decision: APPROVE\|REJECT, message?}`, `PUT /admin/set-store-plan` `{storeId, plan}` | ✅ approve → DRAFT approved (next Go Live skips the check, goes to checkout); reject → DRAFT with the reason; conditional on IN_REVIEW (409 `STATUS_CHANGED`). Set plan `SPARK\|NOVA\|NONE` = a plan with no subscription (`planSetByAdmin`, no checkout at Go Live), NONE takes it away (a live store → DRAFT), 409 `HAS_SUBSCRIPTION`. `get-all-stores` adds status / plan / billing per store |
 | Public | `GET /store/public/resolve-slug/:slug` → `{storeId}` (404 if unknown) | ✅ |
 | Store addresses (9.8 phase 1) | `layers/core/store-url` (`storeUrl`, `slugFromStoreOrigin`), env `STORE_URL_TEMPLATE` | ✅ prod: every store at `https://<slug>.ceseelia.com`; shopper links (Stripe return, order emails, previews) use it, CORS allows it; dev: `WEBAPP_URL/s/<slug>`. Custom domains = phase 2 (progress 9.8) |
+| Custom domains (9.8 phase 2) | `layers/custom-domains` (sweep, steps), `layers/core/custom-domain` (rules), `layers/aws/cloudfront/tenants`, `api/v1/store/domain`, env `CUSTOM_DOMAIN_DISTRIBUTION_ID` / `CUSTOM_DOMAIN_CONNECTION_GROUP_ID` / `CUSTOM_DOMAIN_TARGET` | Coded 2026-11-16, prod after the CloudFormation deploy (§0 G4–G5). A store on a plan CNAMEs `shop.theirbrand.com` → `domains.ceseelia.com`; the API makes a CloudFront tenant with a managed certificate; live domains win in `storeUrl` and pass CORS. Off without the env |
 | Link previews (L.9 / WA 3.6) | `GET /store/public/preview/:slug[/:itemId]` → HTML with Open Graph / Twitter tags | ✅ only for link-preview bots (the webapp's CloudFront function sends them); name, slogan, logo, or a live store's visible item; unknown / suspended → plain Ceseelia, 404; `public, max-age=300` |
 | Public | `GET /store/public/storefront/:slug` → `{storeId, settings, categories, items}` (no auth) | ✅ same body as `get-data-public` (`sendPublicStorefront`); 400 bad slug, 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (3.1); `Cache-Control: private, no-cache` (3.2; revalidated by ETag every time since QA Q.21) |
 | Public | `GET /store/public/item/:storeId/:itemId` → `{storeId, item, category, currencies}` (no auth) | ✅ storefront rules; 404 `ITEM_NOT_FOUND` for missing or hidden (3.3) |

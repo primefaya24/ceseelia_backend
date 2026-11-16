@@ -12,8 +12,15 @@ import { StoreCurrency, StoreInventoryData } from "../interfaces/store";
 import { getClientIp, resolveCurrencyFromGeo } from "../utils";
 import { CACHE_CONTROL, setCacheControl } from "./cache";
 import { log } from "../logger";
+import { liveCustomHost } from "../store-url";
 
-export type PublicStorefront = StoreInventoryData & { storeId: string };
+/** `ownDomain`: the store's live own domain (9.8 phase 2), for canonical and share links. */
+export type PublicStorefront = StoreInventoryData & { storeId: string; ownDomain?: string };
+
+const ownDomainOf = (slug: string | undefined): { ownDomain?: string } => {
+  const host = slug ? liveCustomHost(slug) : null;
+  return host ? { ownDomain: host } : {};
+};
 
 /*
  * Make the shopper's currency (from their location) the default, but only if the store offers it;
@@ -39,12 +46,13 @@ export const storeNotFound = (res: Response): void => {
  * is DRAFT or IN_REVIEW, the settings are cut to name, logo and look (`comingSoonSettings`), and
  * there are no categories or items. Members preview the real store through get-data.
  */
-export async function sendPublicStorefront(req: Request, res: Response, storeId: string): Promise<void> {
+export async function sendPublicStorefront(req: Request, res: Response, storeId: string, slug?: string): Promise<void> {
   try {
     const data = await getPublicStoreInventoryData(storeId);
     const body: PublicStorefront = {
       storeId,
       ...data,
+      ...ownDomainOf(slug),
       settings: { ...data.settings, currencies: withShopperCurrency(data.settings.currencies, shopperCurrency(req)) },
     };
     setCacheControl(res, CACHE_CONTROL.storefront);

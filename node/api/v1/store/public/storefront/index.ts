@@ -51,5 +51,5 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     storeNotFound(res);
     return;
   }
-  await sendPublicStorefront(req, res, storeId);
+  await sendPublicStorefront(req, res, storeId, slugParam(req));
 }

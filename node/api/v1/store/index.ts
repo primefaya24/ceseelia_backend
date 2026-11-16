@@ -11,6 +11,7 @@ import storeOrdersRouter from "./orders";
 import storeCustomersRouter from "./customers";
 import storeReviewsRouter from "./reviews";
 import storeMessagesRouter from "./messages";
+import registerDomainRoutes from "./domain";
 import route_create from './create/index';
 import route_delete from './delete/index';
 import route_get_header_strip_image_upload_url from './get-header-strip-image-upload-url/index';
@@ -44,6 +45,9 @@ storeRouter.use("/orders", storeOrdersRouter);
 storeRouter.use("/customers", storeCustomersRouter);
 storeRouter.use("/reviews", storeReviewsRouter);
 storeRouter.use("/messages", storeMessagesRouter); // L.10 messages
+const storeDomainRouter: Router = Router();
+registerDomainRoutes(storeDomainRouter);
+storeRouter.use("/domain", storeDomainRouter); // 9.8 phase 2 custom domains
 
 // Export Router
 export default storeRouter;

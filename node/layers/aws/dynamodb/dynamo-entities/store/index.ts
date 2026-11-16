@@ -35,6 +35,7 @@ import {
 } from "../../../../core/interfaces/store";
 import { getStorageImageUrl } from "../../../../core/utils";
 import { itemCheckKey, itemReviewKey } from "../item-review";
+import { DOMAIN_SK, hostKey as domainHostKey, indexKey as domainIndexKey, queueTenantCleanup } from "../domain";
 import { publicVariants, variantsReady } from "../../../../core/variants";
 import { reserveSlugPut, SlugTakenError, slugKey, transactionFailedAt } from "../slug";
 import { newStoreMembershipItems } from "../membership";
@@ -1006,6 +1007,12 @@ export async function deleteStore(storeId: string): Promise<boolean> {
       // L.2: its pending AI check and its place in the admin queue of hidden items
       const itemId = r.sk.slice(appConstants.DYNAMO_ENTITY_ITEM.length + 1);
       keys.push(itemCheckKey(storeId, itemId), itemReviewKey(storeId, itemId));
+    } else if (r.sk === DOMAIN_SK && typeof r.host === "string") {
+      // 9.8 phase 2: its own domain's reservation and list entry; its CloudFront tenant goes too.
+      keys.push(domainHostKey(r.host), domainIndexKey(storeId));
+      if (typeof r.tenantId === "string" && r.tenantId) {
+        await queueTenantCleanup(r.tenantId, typeof r.certificateArn === "string" ? r.certificateArn : null, Date.now());
+      }
     }
   }
   {

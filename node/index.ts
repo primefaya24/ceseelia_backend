@@ -5,6 +5,7 @@ import { sweepExpiredGrace } from './layers/payments/subscription-sync';
 import { sweepLostOrders } from './layers/payments/order-sweep';
 import { sweepItemChecks } from './layers/core/store-validation/item-check';
 import { sweepMessageEmails } from './layers/notifications/message-notify';
+import { refreshLiveDomains, sweepCustomDomains } from './layers/custom-domains';
 import { registerTimer } from './layers/core/utils';
 import { log } from "./layers/core/logger";
 
@@ -45,6 +46,18 @@ checkStripeConfig()
                     log[r.failed > 0 ? 'warn' : 'info']({ ...r }, '[messages] store email sweep');
                 }
             }));
+            // 9.8 phase 2: stores' own domains (DNS → certificate → live, plan checks, clean-ups).
+            if (appConfig.CUSTOM_DOMAINS_ENABLED) {
+                void refreshLiveDomains()
+                    .then((n) => log.info({ live: n }, '[domains] live list loaded'))
+                    .catch((e) => log.warn({ err: e }, '[domains] live list not loaded, the sweep retries'));
+                timers.push(registerTimer(appConfig.CUSTOM_DOMAIN_SWEEP_INTERVAL, async () => {
+                    const r = await sweepCustomDomains();
+                    if (r.changed + r.failed + r.cleaned > 0) {
+                        log[r.failed > 0 ? 'warn' : 'info']({ ...r }, '[domains] sweep');
+                    }
+                }));
+            }
         });
 
         // 9.3 graceful shutdown: `docker compose up` / stop sends SIGTERM. Stop the sweeps, refuse

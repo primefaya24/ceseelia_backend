@@ -71,6 +71,8 @@ const MEMBER_ROUTES: Array<[Method, string, object | undefined]> = [
   ["post", "/store/messages/read", { storeId: STORE, conversationId: ID }],
   ["get", `/store/messages/image-upload-urls/${STORE}/${ID}/0/1`, undefined],
   ["post", "/store/messages/report", { storeId: STORE, conversationId: ID, reason: "SPAM" }],
+  // 9.8 phase 2: a store's own domain (status for any member)
+  ["get", `/store/domain/${STORE}`, undefined],
 ];
 // Store-ADMIN routes: members with the ADMIN role (or platform admins), never MERCHANT members.
 const STORE_ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [
@@ -78,6 +80,9 @@ const STORE_ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [
   ["post", "/store/go-live", { storeId: STORE }],
   ["post", "/store/payments/create-connect-account-link", { storeId: STORE }],
   ["post", "/store/orders/refund", { storeId: STORE }],
+  ["post", "/store/domain/set", { storeId: STORE, host: "shop.example.com" }],
+  ["post", "/store/domain/check", { storeId: STORE }],
+  ["post", "/store/domain/remove", { storeId: STORE }],
 ];
 const ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [
   ["post", "/store/create", {}],

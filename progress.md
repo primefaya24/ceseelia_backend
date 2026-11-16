@@ -168,8 +168,21 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       not found" for an unknown slug, canonical set), app pages there and `admin.ceseelia.com`
       open sign-in on the app, CORS 204 for a store origin and none for `admin.` or other
       domains, bots get the preview, api / app / dev / storage unchanged._
-- [ ] G3. Owner: decide when phase 2 (custom domains, `shop.<their domain>`) starts; plan in
-      backend progress 9.8.
+- [x] G3. Owner: decide when phase 2 (custom domains, `shop.<their domain>`) starts. _Decided
+      2026-11-16: now, before launch; Spark and Nova; subdomains only; merchants CNAME to one
+      fixed name, `domains.ceseelia.com`; the address bar stays on their domain. Code done the
+      same day (9.8 phase 2)._
+- [ ] G4. Owner: merge CloudFormation `dev_v1.0.0_custom_domains` into `dev_v1.0.0` and push
+      (dev: no change but the bucket policy's condition), then into `prod_v1.0.0` and push
+      (prod: the multi-tenant `CustomDomainDistribution`, its connection group, router
+      function, `domains.ceseelia.com` CNAME + `_cf-challenge` TXT, and the server's
+      `CustomDomainServerPolicy`). Check the stack reaches UPDATE_COMPLETE.
+- [ ] G5. Claude, right after G4: put the stack outputs `CustomDomainDistributionId` and
+      `CustomDomainConnectionGroupId` into the prod server's `node/.env` as
+      `CUSTOM_DOMAIN_DISTRIBUTION_ID` / `CUSTOM_DOMAIN_CONNECTION_GROUP_ID` (the feature is off
+      without them: the card says "coming soon"), push backend and webapp to prod, check
+      `domains.ceseelia.com` resolves to the routing endpoint, the card works, and a test
+      domain goes PENDING_DNS → PENDING_CERT → ACTIVE and opens the store.
 
 **H. Automatic prod deploys (done by Claude 2026-11-16; owner decisions: on every push, prod only)**
 - [x] H1. Claude: GitHub OIDC login in AWS (no secrets in GitHub), roles
@@ -385,7 +398,7 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 | Merchant / customer APIs | ✅ Works | Store overview stats (1.5), customers, rewards, reviews (Stage 7) |
 | Cart, checkout, orders, payments | ✅ Works | Stages 4–6; first real test order is §0 C3 |
 | Admin stats, join requests, tickets | ✅ Works | Stage 8 (join requests superseded by P.3) |
-| Production readiness (logging, rate limits, CI, IaC) | ✅ Done | Stage 9 except 9.7 (lint warnings) and 9.8 phase 2 (custom domains; phase 1 store subdomains coded 2026-11-15); prod live 2026-11-15 |
+| Production readiness (logging, rate limits, CI, IaC) | ✅ Done | Stage 9 except 9.7 (lint warnings); 9.8 store subdomains live, custom domains coded 2026-11-16 (deploy §0 G4–G5); prod live 2026-11-15 |
 
 **Health check (2026-11-15):** `npm test` 1176/1176 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 68 warnings · `npm audit --omit=dev` 0 vulnerabilities.
@@ -945,8 +958,8 @@ Spark or Nova; a store without a plan is a draft.
 | Plan | Monthly (CAD / AUD / USD) | Commission per order (CAD / AUD / USD) | Orders | Custom domain |
 |---|---|---|---|---|
 | ~~FREE~~ (dropped 2026-11-13) | none | 2.95 / 2.95 / 2.45 | 30 paid orders per calendar month | No |
-| SPARK | 25 / 25 / 19 | 1.95 / 1.95 / 1.45 | Unlimited | Yes ("coming soon" until 9.8) |
-| NOVA | 49 / 49 / 39 | none | Unlimited | Yes ("coming soon" until 9.8) |
+| SPARK | 25 / 25 / 19 | 1.95 / 1.95 / 1.45 | Unlimited | Yes (9.8 phase 2) |
+| NOVA | 49 / 49 / 39 | none | Unlimited | Yes (9.8 phase 2) |
 
 No free trials. Payments are **online only** (owner, 2026-11-12): no "pay at pickup"; every order,
 pickup or delivery, goes through Stripe Checkout (5.4).
@@ -1609,7 +1622,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
     (not executed): no replacements. **Owner:** see L.4._
 - [ ] 9.7 Bring lint warnings (68 on 2026-11-15) down to zero, then make warnings fail CI.
 - [ ] 9.8 Store addresses: every store at its own subdomain (phase 1, ✅), then custom domains
-      (phase 2, not started). Owner decisions 2026-11-15: `<slug>.ceseelia.com` for every store
+      (phase 2, code done 2026-11-16, deploy §0 G4–G5). Owner decisions 2026-11-15: `<slug>.ceseelia.com` for every store
       (the slug's uniqueness is the DB's); a custom domain is always the store's own and always a
       subdomain (`shop.` suggested); `app.ceseelia.com/s/<slug>` keeps working; a changed slug
       frees the old address at once (a clear warning before saving).
@@ -1634,39 +1647,51 @@ pickup or delivery, goes through Stripe Checkout (5.4).
       reservation and the overview; emails and Stripe returns build links when sent; Stripe
       accounts carry only `storeId`; one wildcard record covers every store; cached previews
       expire within 5 minutes. Old order links still open (order page redirect).
-  - [ ] **Phase 2, custom domains** (plan only; P.9, Spark and Nova):
-    1. **CloudFront multi-tenant (SaaS Manager):** turn the webapp distribution into a
-       multi-tenant one (or add one) with a tenant per custom domain and a CloudFront-managed
-       certificate per tenant (HTTP validation, no ACM work per store). Check the limits and
-       the price per tenant first. The alternative, one ACM certificate per domain and
-       distribution aliases, tops out at 100 names a distribution.
-    2. **Domain record:** `STORE#<id> / DOMAIN` + `DOMAIN#<host> / STORE` (unique like slugs):
-       `host`, `status` PENDING_DNS / PENDING_CERT / ACTIVE / FAILED / DISABLED, `tenantId`,
-       timestamps. One custom domain a store.
-    3. **Setup API** (store ADMINs, paid plan): `POST /store/domain` `{storeId, host}` (must be a
-       subdomain: `shop.example.com`, not `example.com`; reserved and our own names refused),
-       `GET /store/domain/:storeId` (live status: DNS seen, certificate, active),
-       `DELETE /store/domain/:storeId`. Ownership = the CNAME `shop.example.com →
-       <slug>.ceseelia.com` resolving (checked server side over DNS), then the tenant and its
-       certificate are created; a sweep advances PENDING_* and retries.
-    4. **Public lookup:** `GET /store/public/domain/:host` → `{slug}` (cached), for the webapp
-       on a custom host, and the router function's bot previews (a KeyValueStore of host →
-       slug written by the API, so it needs no call).
-    5. **Webapp:** `StoreHostService` learns a third kind of host (not the app, not
-       `*.ceseelia.com`): look the host up, then behave as on `<slug>.ceseelia.com`. Setup
-       screen in Store front › Settings: enter `shop.example.com`, the exact CNAME to add (copy
-       buttons, help for common registrars), live status, "Remove". Canonical and share links
-       use the custom domain when ACTIVE.
-    6. **Backend links and CORS:** `storeUrl` prefers an ACTIVE custom domain; CORS allows
-       ACTIVE domains (looked up, cached).
-    7. **Plan and slug rules:** a plan that ends disables the domain (DISABLED, kept for 30 days,
-       back on with a plan); a slug change warns that the CNAME must point at the new
-       `<slug>.ceseelia.com` and the domain goes PENDING_DNS until it does (or point CNAMEs at
-       a stable per-store name such as `<storeId>.domains.ceseelia.com` so renames never touch
-       DNS: decide before building).
-    8. **Root domain:** not served; the setup screen explains a redirect `example.com →
-       shop.example.com` at their registrar.
-    9. **Later:** Domain Connect (one-click DNS at GoDaddy, Cloudflare, …).
+  - [x] **Phase 2, custom domains** (code done 2026-11-16; deploy = §0 G4–G5; P.9, Spark and
+    Nova). Owner decisions 2026-11-16: now; both paid plans; subdomains only; one fixed CNAME
+    target, so a slug rename never touches the merchant's DNS; the address bar stays on their
+    domain (no redirect).
+    - **CloudFront (CloudFormation, prod only):** a separate multi-tenant distribution
+      (`ConnectionMode: tenant-only`, same bucket, origins, caching and headers as the webapp)
+      on a connection group; `domains.ceseelia.com` is a plain CNAME to the group's routing
+      endpoint plus the `_cf-challenge` TXT. One distribution tenant per store domain, with a
+      CloudFront-managed certificate (HTTP validation: no DNS work for us or the merchant
+      beyond the one CNAME). Price: 10 tenants free, then a $20 a month bundle up to 200, then
+      $0.10 each; certificates free.
+    - **Records** (`dynamo-entities/domain`): `STORE#<id>/DOMAIN` (host, status, reason,
+      `dnsSeen`, tenant, certificate ARN, timestamps), `DOMAIN#<host>/DOMAIN` (`storeId`, unique
+      like slugs), `APP_DOMAIN/STORE#<id>` (the sweep's list), `APP_DOMAIN_CLEANUP/<tenantId>`.
+      Saves are conditional on `updatedAt`, so a remove or a retry in between wins.
+    - **States** (`layers/core/custom-domain`, `layers/custom-domains`): PENDING_DNS (the CNAME
+      must resolve to `domains.ceseelia.com` before anything is created: that proves control of
+      the domain; 7 days, then FAILED) → PENDING_CERT (tenant created; 72 hours, then FAILED and
+      the tenant cleaned up) → ACTIVE. The plan ends: ACTIVE → DISABLED (tenant off, back on with
+      a plan, removed after 30 days); one still being set up is dropped. FAILED → "Try again".
+      Removed tenants: disable, wait for Deployed, delete, then the ACM certificate (a few
+      sweeps). Sweep every minute (`CUSTOM_DOMAIN_SWEEP_INTERVAL`); setup and "Check now" run a
+      step at once.
+    - **API:** `GET /store/domain/:storeId` (members), `POST /store/domain/set | check | remove`
+      (store ADMIN; set needs a plan, 402 PLAN_REQUIRED; 409 DOMAIN_TAKEN / STORE_HAS_DOMAIN;
+      400 APEX_DOMAIN / OUR_DOMAIN / INVALID_DOMAIN; 503 DOMAINS_UNAVAILABLE without the env).
+      Public: `GET /store/public/domain/:host` → `{slug}` (live only), and
+      `/store/public/preview-domain/:host[/:itemId]` for bots (the custom distribution's router
+      function). The storefront answer carries `ownDomain` when live.
+    - **Links and CORS:** an in-memory list of live domains (refreshed every minute, after each
+      change and after a slug rename): `storeUrl` prefers the store's own domain (Stripe
+      returns, order emails, previews), CORS allows `https://<live host>`. Store deletion removes
+      the rows and queues the tenant.
+    - **Env:** `CUSTOM_DOMAIN_DISTRIBUTION_ID`, `CUSTOM_DOMAIN_CONNECTION_GROUP_ID` (stack
+      outputs), `CUSTOM_DOMAIN_TARGET` (prod default `domains.ceseelia.com`). Off when empty.
+    - **Webapp:** `StoreHostService` asks `/store/public/domain/<host>` at start-up on any other
+      host, then acts as on `<slug>.ceseelia.com`; canonical and Share use a live own domain.
+      Store front › Info › "Your own domain": enter it, the CNAME to add (copy buttons, a
+      Cloudflare "DNS only" note), live status (polled every 15 s while pending), Check now /
+      Try again, Remove.
+    - Tests: `tests/custom-domains.test.ts` (rules, every state step, clean-up, routes, links,
+      CORS) and the access matrix.
+    - **Not done / later:** apex domains (merchants redirect `example.com → shop.example.com` at
+      their registrar); Cloudflare-proxied CNAMEs don't show as CNAME (the card says DNS only);
+      Domain Connect (one-click DNS).
 
 ---
 
@@ -1674,6 +1699,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-16 | 9.8 phase 2 custom domains coded: CloudFront multi-tenant tenants per store domain (`layers/aws/cloudfront/tenants`), domain records + sweep (`dynamo-entities/domain`, `layers/custom-domains`), `/store/domain/*` and public `domain` / `preview-domain` routes, `storeUrl` / CORS / storefront `ownDomain` use live domains, store deletion cleans up. §0 G3 decided, G4–G5 added (deploy). Tests 1269. |
 | 2026-11-16 | §0 G1–G2 done (store subdomains live on prod). §0 H: automatic prod deploys: `.github/workflows/deploy-prod.yml` (CI checks via `workflow_call`, image → ECR `ceseelia-node`, SSM → `deploy-image.sh` with health check and rollback), GitHub OIDC role `CeseeliaGithubDeployBackendProd` (`iam/github-deploy-backend-*.json`), server role gains ECR pull + SSM agent; compose's node image is `${NODE_IMAGE}` from `./.env`. Tested on prod (deploy and rollback). |
 | 2026-11-16 | QA (C3): the admin store list's Completions, Cancelled and Last order were never updated (always 0 / NA). Now `markOrderPaid` sets the last-order time, Completed adds to Completions (`bumpStoreOrderCounter`), and a full refund adds to Cancelled (back off if a failed refund undoes it). Existing prod store backfilled by hand. |
 | 2026-11-16 | §0 C3 done (first test order on prod, all emails received); D3 done: `PAID_PLANS_ENABLED=true` on the prod server (test mode). Next: C4. |

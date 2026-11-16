@@ -1,3 +1,5 @@
+import { CUSTOM_DOMAINS_ENABLED } from "../../../../config";
+import { refreshLiveDomains } from "../../../../layers/custom-domains";
 import { Request, Response, Router } from "express";
 import { appConstants } from "../../../../constants";
 import { MAX_LENGTH } from "../../../../constants/input-limits";
@@ -64,6 +66,8 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   }
   try {
     const overview = await updateStoreInfo(storeId, req.body.storeName.trim(), req.body.storeSlug);
+    // 9.8 phase 2: a live own domain follows the new slug now, not at the next sweep.
+    if (CUSTOM_DOMAINS_ENABLED) void refreshLiveDomains().catch(() => {});
     res.send({ storeId, storeName: overview.storeName, storeSlug: overview.storeSlug });
   } catch (e) {
     if (e instanceof SlugTakenError) {

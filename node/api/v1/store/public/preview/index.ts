@@ -2,7 +2,7 @@ import { Request, Response, Router } from "express";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
 import { isValidSlug } from "../../../../../constants/slug";
 import { WEBAPP_URL } from "../../../../../config";
-import { storeUrl } from "../../../../../layers/core/store-url";
+import { slugForCustomHost, storeUrl } from "../../../../../layers/core/store-url";
 import { isUlid } from "../../../../../layers/core/utils";
 import { getStorageImageUrl } from "../../../../../layers/core/utils";
 import { getSlugOwner } from "../../../../../layers/aws/dynamodb/dynamo-entities/slug";
@@ -38,6 +38,28 @@ export default function registerRoute(router: Router): void {
   };
   router.get("/preview/:slug", handle);
   router.get("/preview/:slug/:itemId", handle);
+
+  // 9.8 phase 2: a store's own domain (the custom-domain distribution's router sends bots here
+  // with the host they asked for). Only live domains; anything else gets the plain preview.
+  const byHost = (req: Request, res: Response): void => {
+    validateAndExecuteHttpApiRoute(
+      req,
+      res,
+      (r) => typeof r.params.host === "string" && (r.params.itemId === undefined || typeof r.params.itemId === "string"),
+      (r) => String(r.params.host).length <= 253 && (r.params.itemId === undefined || isUlid(r.params.itemId)),
+      async (r, s) => {
+        const slug = slugForCustomHost(String(r.params.host));
+        if (!slug) {
+          send(s, 404, fallback());
+          return;
+        }
+        await sendPreview(s, slug, r.params.itemId === undefined ? null : String(r.params.itemId));
+      },
+      false
+    );
+  };
+  router.get("/preview-domain/:host", byHost);
+  router.get("/preview-domain/:host/:itemId", byHost);
 }
 
 /** Text safe inside an HTML attribute or element (all five specials). */
@@ -110,8 +132,10 @@ const fallback = (): PreviewPage => ({
 });
 
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
-  const slug = String(req.params.slug).toLowerCase();
-  const itemId = req.params.itemId === undefined ? null : String(req.params.itemId);
+  await sendPreview(res, String(req.params.slug).toLowerCase(), req.params.itemId === undefined ? null : String(req.params.itemId));
+}
+
+async function sendPreview(res: Response, slug: string, itemId: string | null): Promise<void> {
   // The store's own address (9.8 phase 1), the one shoppers should share.
   const pageUrl = storeUrl(slug);
   try {

@@ -3,7 +3,7 @@ import cors, { CorsOptions } from 'cors';
 import helmet from 'helmet';
 import { CORS_ORIGINS, IN_DEV, STORE_URL_TEMPLATE, TRUST_PROXY_HOPS } from './config';
 import { isValidSlug } from './constants/slug';
-import { slugFromStoreOrigin } from './layers/core/store-url';
+import { slugFromStoreOrigin, slugFromCustomOrigin } from './layers/core/store-url';
 import { domainRouter } from './middleware';
 import { requestLogger } from './layers/core/logger';
 import {
@@ -32,7 +32,12 @@ export function buildCorsOptions(
     return {
         origin: (origin, callback) => {
             // Non-browser requests (curl, server-to-server, Stripe) send no Origin header
-            if (!origin || allowedOrigins.includes(origin) || isValidSlug(slugFromStoreOrigin(origin, storeTemplate))) {
+            if (
+                !origin ||
+                allowedOrigins.includes(origin) ||
+                isValidSlug(slugFromStoreOrigin(origin, storeTemplate)) ||
+                slugFromCustomOrigin(origin) !== null // 9.8 phase 2: a store's live own domain
+            ) {
                 return callback(null, true);
             }
             return callback(null, false);

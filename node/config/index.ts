@@ -61,6 +61,18 @@ export const STORE_URL_TEMPLATE: string = env(
     stageValue === appConstants.STAGE_DEV ? "" : "https://{slug}.ceseelia.com"
 ).replace(/\/+$/, "");
 
+// 9.8 phase 2: stores' own domains (shop.theirbrand.com). The multi-tenant CloudFront
+// distribution and connection group come from the CloudFormation stack's outputs
+// (CustomDomainDistributionId / CustomDomainConnectionGroupId); without them the feature is off
+// (setup answers 503, nothing is swept). CUSTOM_DOMAIN_TARGET is what merchants CNAME to.
+export const CUSTOM_DOMAIN_DISTRIBUTION_ID: string = env("CUSTOM_DOMAIN_DISTRIBUTION_ID", "");
+export const CUSTOM_DOMAIN_CONNECTION_GROUP_ID: string = env("CUSTOM_DOMAIN_CONNECTION_GROUP_ID", "");
+export const CUSTOM_DOMAIN_TARGET: string = env(
+    "CUSTOM_DOMAIN_TARGET",
+    stageValue === appConstants.STAGE_DEV ? "" : "domains.ceseelia.com"
+).toLowerCase().replace(/\.$/, "");
+export const CUSTOM_DOMAINS_ENABLED: boolean = CUSTOM_DOMAIN_DISTRIBUTION_ID !== "" && CUSTOM_DOMAIN_TARGET !== "";
+
 /*
 * DynamoDB
 */
@@ -118,6 +130,8 @@ export const SERVER_WATCH_CHECK_FOR_LOST_ORDERS_INTERVAL: number = 10 * 60 * 100
 export const ITEM_CHECK_SWEEP_INTERVAL: number = 60 * 1000;
 /* L.10: emails to stores about shopper messages unread for 30 minutes. */
 export const MESSAGE_EMAIL_SWEEP_INTERVAL: number = 60 * 1000;
+/* 9.8 phase 2: stores' own domains move through DNS → certificate → live (and plan checks). */
+export const CUSTOM_DOMAIN_SWEEP_INTERVAL: number = 60 * 1000;
 
 /*
 * Fail fast on missing production configuration
