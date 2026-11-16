@@ -151,7 +151,7 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       that build is on prod, so the CSP can go live. **Owner:** merge `dev_v1.0.0_csp` into
       `dev_v1.0.0`, push, then into `prod_v1.0.0`, push; then Claude rechecks prod._
       _Live on prod 2026-11-16 (owner pushed; stack UPDATE_COMPLETE 07:42 UTC). Claude checked in headless Chrome against prod: no violations on sign-in, sign-up, a storefront on its subdomain and on `/s/`, checkout, legal; images load; the custom-domain distribution has the same policy; bot previews still work; dev has it too._
-- [ ] F2. Legal pages: privacy policy and terms (WA 9.1), linked from the storefront footer and
+- [x] F2. Legal pages: privacy policy and terms (WA 9.1), linked from the storefront footer and
       sign-up. Claude drafts; **the owner reviews the text** (and ideally a lawyer).
       _Claude part done 2026-11-16 (webapp dev, not on prod): Terms of Service, Privacy Policy
       and End User Agreement at `/legal/…` (Primefaya Computer Services, Alberta law,
@@ -159,6 +159,7 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       a legal header linking the three; sign-up needs a consent checkbox; the storefront footer
       links Terms and Privacy. **Owner:** review the text (business name, contact email, the
       7-year order retention, the CAD 100 liability floor), then Claude pushes it to prod._
+      _Owner reviewed and approved the text 2026-11-16; on prod the same day._
 - [x] F3. Owner: an accountant to confirm the delivery-tax simplification (backend 4.2
       follow-up: delivery taxed like the goods), and which provinces' PST/QST Ceseelia must
       collect on its subscriptions, from what sales level (BC, SK, MB, QC).
@@ -192,11 +193,11 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       function, `domains.ceseelia.com` CNAME + `_cf-challenge` TXT, and the server's
       `CustomDomainServerPolicy`). Check the stack reaches UPDATE_COMPLETE. _Done 2026-11-16
       (first prod attempt failed on CAPABILITY_NAMED_IAM; the policy's fixed name was dropped)._
-- [ ] G5. Claude, right after G4. _Mostly done 2026-11-16: env set on the server (backup
+- [x] G5. Claude, right after G4. _Done 2026-11-16: env set on the server (backup
       `node/.env.bak-customdomains`), backend and webapp on prod, `domains.ceseelia.com` →
       `dytlp5vmoldm8.cloudfront.net` plus the TXT, the sweep running ("live list loaded"), the
       server role may call the tenant API, public lookup 404s an unknown host, `/store/domain`
-      needs sign-in. **Left:** a real domain end to end (needs a subdomain the owner controls)._
+      needs sign-in. Owner tested a real domain end to end on prod 2026-11-16: works._
       The steps: put the stack outputs `CustomDomainDistributionId` and
       `CustomDomainConnectionGroupId` into the prod server's `node/.env` as
       `CUSTOM_DOMAIN_DISTRIBUTION_ID` / `CUSTOM_DOMAIN_CONNECTION_GROUP_ID` (the feature is off
@@ -1719,6 +1720,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-16 | Launch checklist: G4–G5 done (custom domains live on prod, owner tested a real domain), F1 CSP live and checked, F2 legal pages approved by the owner and on prod. |
 | 2026-11-16 | 9.8 phase 2 custom domains coded: CloudFront multi-tenant tenants per store domain (`layers/aws/cloudfront/tenants`), domain records + sweep (`dynamo-entities/domain`, `layers/custom-domains`), `/store/domain/*` and public `domain` / `preview-domain` routes, `storeUrl` / CORS / storefront `ownDomain` use live domains, store deletion cleans up. §0 G3 decided, G4–G5 added (deploy). Tests 1269. |
 | 2026-11-16 | §0 G1–G2 done (store subdomains live on prod). §0 H: automatic prod deploys: `.github/workflows/deploy-prod.yml` (CI checks via `workflow_call`, image → ECR `ceseelia-node`, SSM → `deploy-image.sh` with health check and rollback), GitHub OIDC role `CeseeliaGithubDeployBackendProd` (`iam/github-deploy-backend-*.json`), server role gains ECR pull + SSM agent; compose's node image is `${NODE_IMAGE}` from `./.env`. Tested on prod (deploy and rollback). |
 | 2026-11-16 | QA (C3): the admin store list's Completions, Cancelled and Last order were never updated (always 0 / NA). Now `markOrderPaid` sets the last-order time, Completed adds to Completions (`bumpStoreOrderCounter`), and a full refund adds to Cancelled (back off if a failed refund undoes it). Existing prod store backfilled by hand. |
