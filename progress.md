@@ -26,7 +26,7 @@ The same list is in both repos' `progress.md`; tick it in both. In order: each p
 one before it. Details stay where they're linked.
 
 _A1–B3, B5–B9, C1, D2, D4 and E1 done 2026-11-15 (C2 mostly); `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
-serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **Next: C3 (first test order), C4.** Store subdomains (9.8 phase 1) are coded and tested: G1 (owner push) then G2 (Claude deploys)._
+serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **C3 done 2026-11-16; paid plans on (D3). Next: C4 (Spark checkout).** Store subdomains (9.8 phase 1) are coded and tested: G1 (owner push) then G2 (Claude deploys)._
 
 **A. Now (nothing blocks these)**
 - [x] A1. **Push** every repo from your own shell: backend and webapp
@@ -109,11 +109,15 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       the open invoice in the portal and keep the plan), invoice left overdue. Claude checked:
       25 CAD Spark → AB 5% GST, ON 13% HST, QC and BC GST only (no QST/PST registration; F3
       asks the accountant which provinces need one)._
-- [ ] C3. **L.0 first real test order:** checkout → paid (receipt, PDF, alerts) → Store › Orders →
-      ready / on its way emails → refund part → refund the rest.
+- [x] C3. **L.0 first real test order:** checkout → paid (receipt, PDF, alerts) → Store › Orders →
+      ready / on its way emails → refund part → refund the rest. _Done 2026-11-16 on
+      `pressed-by-pmerch-1.ceseelia.com` (Spark given by an admin): AB GST 5% on goods + delivery,
+      receipt with PDF, alerts, shipped and refund emails all arrived; partial then full refund →
+      REFUNDED; a second order Completed; a review shows on the storefront; a custom 3.95 CAD
+      commission taken as the application fee. Fixes found on the way: Go Live sheet wording
+      with no plan open (WA fa9575d), admin list counters (BE 5bb43eb)._
 - [ ] C4. **A Spark checkout** (Go Live → Stripe Checkout → live) and a plan switch in the portal.
-      Needs paid plans on: **Claude** sets `PAID_PLANS_ENABLED=true` on the server first (test
-      mode, safe), then the owner runs the checkout.
+      Paid plans are on (D3, 2026-11-16): the owner runs the checkout.
 
 **D. Going live**
 - [ ] D1. Repeat C1 and C2 in **live mode**; live keys and both webhook secrets into
@@ -121,8 +125,10 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 - [x] D2. `anthropicApiKey` in `ceseelia/prod`, once you've reviewed the eval (A4). _Done
       2026-11-15 (Claude checked: present, a valid key format; value never read out). Eval on
       dev: 60 of 60 right, no legitimate store flagged, no sketchy store missed, ≈ $0.34._
-- [ ] D3. `PAID_PLANS_ENABLED=true` on the prod server; restart. **Claude** (server access),
-      if C4 hasn't already turned it on.
+- [x] D3. `PAID_PLANS_ENABLED=true` on the prod server; restart. _Done by Claude 2026-11-16
+      (SSM: added to the server's `node/.env`, node recreated, healthy; `/store/public/plans`
+      shows both available). Still Stripe test mode until D1. The automatic deploy never touches
+      `node/.env`._
 - [x] D4. Deploy the webapp: `tools/deploy-s3.sh prod` (from `ceseelia_webapp/`). _Done by Claude
       2026-11-15 (early, so C3 can run on prod in test mode; run it again after any webapp change).
       `app.ceseelia.com` serves the app with the prod config; link previews reach the API._
@@ -193,7 +199,7 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 > (2026-11-15); Claude works on L.2–L.9 in the order shown. **L.2–L.8 are done, L.9 is done
 > except custom domains (after launch). What's left is the owner's §0 list (C2–D5) and the
 > "Still open" list at the end of this section.** (2026-11-15)
-> - [ ] **L.0 Owner: the first real test order** (= §0 C3) in Stripe test mode (Connect webhook first,
+> - [x] **L.0 Owner: the first real test order** (= §0 C3, done 2026-11-16) in Stripe test mode (Connect webhook first,
 >       with the refund events, BE 5.5 "Setup"): checkout → paid (receipt + PDF, alerts) →
 >       Store › Orders → steps (ready / on its way emails) → refund part → refund the rest.
 > - [ ] **L.1 Owner: Stripe and secrets** (= §0 C2, C4, D1, D3; S.2 done). Stripe Billing setup (P.5 "Setup") and a Spark
@@ -1651,6 +1657,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 |---|---|
 | 2026-11-16 | §0 G1–G2 done (store subdomains live on prod). §0 H: automatic prod deploys: `.github/workflows/deploy-prod.yml` (CI checks via `workflow_call`, image → ECR `ceseelia-node`, SSM → `deploy-image.sh` with health check and rollback), GitHub OIDC role `CeseeliaGithubDeployBackendProd` (`iam/github-deploy-backend-*.json`), server role gains ECR pull + SSM agent; compose's node image is `${NODE_IMAGE}` from `./.env`. Tested on prod (deploy and rollback). |
 | 2026-11-16 | QA (C3): the admin store list's Completions, Cancelled and Last order were never updated (always 0 / NA). Now `markOrderPaid` sets the last-order time, Completed adds to Completions (`bumpStoreOrderCounter`), and a full refund adds to Cancelled (back off if a failed refund undoes it). Existing prod store backfilled by hand. |
+| 2026-11-16 | §0 C3 done (first test order on prod, all emails received); D3 done: `PAID_PLANS_ENABLED=true` on the prod server (test mode). Next: C4. |
 | 2026-11-15 | 9.8 phase 1: store subdomains `https://<slug>.ceseelia.com` (`STORE_URL_TEMPLATE`, `layers/core/store-url`): Stripe return URLs, order email links and link previews use them; CORS allows them; 20 more reserved slugs. Phase 2 (custom domains) planned under 9.8. §0 G added (deploy order). Tests 1176. |
 | 2026-11-14 | Secrets: one per stage (`ceseelia/dev`, `ceseelia/prod`, `APP_SECRET_ID`, flat keys incl. `anthropicApiKey`); Stripe reads it (checked against the Stripe sandbox). `CeseeliaServerRole` + instance profile for the future prod server (`iam/`). The API isn't deployed yet; the certbot error in `~/tasks.md` is primehost-0's (another project). |
 | 2026-11-14 | L.3 done: S.14 helmet + nginx hardening + pinned images; S.15 non-root image with `npm ci --omit=dev` and HEALTHCHECK; S.16 legacy auth/PayPal/PrimeFaya/DinersXpress code deleted; S.17 certbot renewal fixed (paths, executable bit, nginx reload from the host). 9.3 `/healthz` + graceful shutdown. Server step: `crontab -e`, make the line `0 2,14 * * * /bin/bash <project>/certbot-renew.sh >> <project>/certbot-renew.log 2>&1`. |
