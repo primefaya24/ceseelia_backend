@@ -23,8 +23,8 @@ Everything here is for the owner to do by hand; Claude can't (no GitHub, console
 access, and secrets never go through chat). The same list is in both repos' `progress.md`; tick
 it in both. In order: each phase needs the one before it. Details stay where they're linked.
 
-_A1–B3, B8 and D2 done 2026-11-15; `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
-serves the app; API calls fail until a dev API exists). Next is B5 (B6 can run now: prod's log group exists)._
+_A1–B3, B6, B8, D2 and E1 done 2026-11-15; `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
+serves the app; API calls fail until a dev API exists). Next is B5._
 
 **A. Now (nothing blocks these)**
 - [x] A1. **Push** every repo from your own shell: backend and webapp
@@ -59,10 +59,10 @@ serves the app; API calls fail until a dev API exists). Next is B5 (B6 can run n
       profile, point `api.ceseelia.com` at it (Route53 A record), run `generate-cert.sh`. Tell
       Claude the host so it can fix the `ssh`/`scp` deploy scripts (they still point at
       dinersxpress-0).
-- [ ] B6. After prod's stack is deployed, update the server role from the file (adds the prod log
+- [x] B6. After prod's stack is deployed, update the server role from the file (adds the prod log
       group and `cognito-idp:AdminDeleteUser` for account delete):
       `aws iam put-role-policy --role-name CeseeliaServerRole --policy-name ceseelia-server-prod --policy-document file://iam/ceseelia-server-policy.json`
-      (from `ceseelia_backend/`).
+      (from `ceseelia_backend/`). _Done by Claude 2026-11-15._
 - [ ] B7. Prod server environment: `APP_SECRET_ID=ceseelia/prod`,
       `CORS_ORIGINS=https://app.ceseelia.com` (required; the API won't start without it),
       `ADMIN_ALERT_EMAIL` (where review, ticket and hidden-item alerts go). Leave
@@ -96,11 +96,9 @@ serves the app; API calls fail until a dev API exists). Next is B5 (B6 can run n
       in WhatsApp or Slack and check the preview (name, slogan, logo).
 
 **E. Optional, any time**
-- [ ] E1. The two storage distributions (`dev.storage` / `prod.storage`, made by hand) use
+- [x] E1. The two storage distributions (`dev.storage` / `prod.storage`, made by hand) use
       `PriceClass_All`; `PriceClass_200` costs less and still covers North America, Europe and
-      Asia. _Claude's attempt was blocked by its permission settings (it changes live prod
-      CloudFront), so this one is yours: CloudFront console › each distribution › Edit › Price
-      class._
+      Asia. _Done by Claude 2026-11-15 (both now `PriceClass_200`)._
 
 _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-08), rewards
 `normalize-rewards-method.mjs --write` on dev and prod (2026-11-15), Stage P QA (2026-11-13)._
