@@ -197,7 +197,7 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       `node/.env.bak-customdomains`), backend and webapp on prod, `domains.ceseelia.com` →
       `dytlp5vmoldm8.cloudfront.net` plus the TXT, the sweep running ("live list loaded"), the
       server role may call the tenant API, public lookup 404s an unknown host, `/store/domain`
-      needs sign-in. A real domain (`shoppo.northernhoop.com`) first stuck in PENDING_CERT: the issued certificate must be put on the tenant (`useTenantCertificate`), fixed and deployed (f80f5d7); then live with its own certificate, the store, canonical and bot preview on that domain, no CSP violations. Remove + add again verified the clean-up: old tenant and its ACM certificate deleted, clean-up queue empty._
+      needs sign-in. A real domain (`shoppo.northernhoop.com`) first stuck in PENDING_CERT: the issued certificate must be put on the tenant (`useTenantCertificate`), fixed and deployed (f80f5d7); then live with its own certificate, the store, canonical and bot preview on that domain, no CSP violations. Remove + add again verified the clean-up: old tenant and its ACM certificate deleted, clean-up queue empty. Removed again by the owner at 08:27 UTC: rows gone at once; tenant disabled, deleted 08:28, its certificate deleted 08:29, queue empty, no tenants left; the public lookup 404s, CloudFront no longer serves the host, CORS refuses it._
       The steps: put the stack outputs `CustomDomainDistributionId` and
       `CustomDomainConnectionGroupId` into the prod server's `node/.env` as
       `CUSTOM_DOMAIN_DISTRIBUTION_ID` / `CUSTOM_DOMAIN_CONNECTION_GROUP_ID` (the feature is off
@@ -1720,6 +1720,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-16 | Custom domain removal verified on prod (owner removed `shoppo.northernhoop.com`): rows, tenant, ACM certificate and clean-up queue all gone within 2 minutes; lookup, serving and CORS off. Webapp domain card redesigned. |
 | 2026-11-16 | Custom domains fix: an issued certificate is now put on the tenant (domains stayed in Securing), and tenant updates send the whole configuration (turning one off can't drop its certificate). `shoppo.northernhoop.com` live; removal clean-up verified in AWS. |
 | 2026-11-16 | Launch checklist: G4–G5 done (custom domains live on prod, owner tested a real domain), F1 CSP live and checked, F2 legal pages approved by the owner and on prod. |
 | 2026-11-16 | 9.8 phase 2 custom domains coded: CloudFront multi-tenant tenants per store domain (`layers/aws/cloudfront/tenants`), domain records + sweep (`dynamo-entities/domain`, `layers/custom-domains`), `/store/domain/*` and public `domain` / `preview-domain` routes, `storeUrl` / CORS / storefront `ownDomain` use live domains, store deletion cleans up. §0 G3 decided, G4–G5 added (deploy). Tests 1269. |
