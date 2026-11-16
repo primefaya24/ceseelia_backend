@@ -116,8 +116,10 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       REFUNDED; a second order Completed; a review shows on the storefront; a custom 3.95 CAD
       commission taken as the application fee. Fixes found on the way: Go Live sheet wording
       with no plan open (WA fa9575d), admin list counters (BE 5bb43eb)._
-- [ ] C4. **A Spark checkout** (Go Live → Stripe Checkout → live) and a plan switch in the portal.
-      Paid plans are on (D3, 2026-11-16): the owner runs the checkout.
+- [x] C4. **A Spark checkout** (Go Live → Stripe Checkout → live) and a plan switch in the portal.
+      Paid plans are on (D3, 2026-11-16): the owner runs the checkout. _Done 2026-11-16: the test
+      store went live on Spark through Checkout (Paying) and Spark → Nova in the portal works
+      (proration set the same day, see changelog)._
 
 **D. Going live**
 - [ ] D1. Repeat C1 and C2 in **live mode**; live keys and both webhook secrets into
@@ -143,9 +145,10 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       CloudFormation branch (dev, then prod).
 - [ ] F2. Legal pages: privacy policy and terms (WA 9.1), linked from the storefront footer and
       sign-up. Claude drafts; **the owner reviews the text** (and ideally a lawyer).
-- [ ] F3. Owner: an accountant to confirm the delivery-tax simplification (backend 4.2
+- [x] F3. Owner: an accountant to confirm the delivery-tax simplification (backend 4.2
       follow-up: delivery taxed like the goods), and which provinces' PST/QST Ceseelia must
       collect on its subscriptions, from what sales level (BC, SK, MB, QC).
+      _Done by the owner 2026-11-16._
 - [x] F4. Owner: push every commit Claude made (both repos are ahead of GitHub). _Done 2026-11-16;
       Claude now pushes dev itself and asks before every prod push._
 
@@ -1674,6 +1677,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-16 | §0 G1–G2 done (store subdomains live on prod). §0 H: automatic prod deploys: `.github/workflows/deploy-prod.yml` (CI checks via `workflow_call`, image → ECR `ceseelia-node`, SSM → `deploy-image.sh` with health check and rollback), GitHub OIDC role `CeseeliaGithubDeployBackendProd` (`iam/github-deploy-backend-*.json`), server role gains ECR pull + SSM agent; compose's node image is `${NODE_IMAGE}` from `./.env`. Tested on prod (deploy and rollback). |
 | 2026-11-16 | QA (C3): the admin store list's Completions, Cancelled and Last order were never updated (always 0 / NA). Now `markOrderPaid` sets the last-order time, Completed adds to Completions (`bumpStoreOrderCounter`), and a full refund adds to Cancelled (back off if a failed refund undoes it). Existing prod store backfilled by hand. |
 | 2026-11-16 | §0 C3 done (first test order on prod, all emails received); D3 done: `PAID_PLANS_ENABLED=true` on the prod server (test mode). Next: C4. |
+| 2026-11-16 | §0 C4 done (Spark checkout and portal plan switch tested by the owner); F3 done (owner, accountant). |
 | 2026-11-16 | Stripe portal (test mode) set by Claude with `scripts/setup-billing-portal.mjs`: upgrades invoice the difference at once (`always_invoice`), downgrades wait for the period's end. Was `create_prorations` (difference on the next invoice). |
 | 2026-11-16 | L.10 on prod (backend and webapp); owner tested it end to end. Webapp: the empty Admin › Merchants page removed. |
 | 2026-11-16 | L.10 messages (backend): store ↔ shopper async chat per order and from Contact us (inquiries with an emailed private link); text + up to 4 photos; paginated inbox and messages; unread both ways; push on shopper messages, store email after 30 min unread (setting, default on), shopper email per unread reply; reports → admin dismiss/block. 57 new tests. |
