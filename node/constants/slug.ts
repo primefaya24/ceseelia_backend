@@ -9,14 +9,17 @@ export const SLUG_MAX_LENGTH = MAX_LENGTH.storeSlug; // 40
 /* Lowercase letters and digits, in groups joined by single hyphens (no leading/trailing hyphen). */
 export const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
-/* Words a store can't take: app routes, infrastructure names, and things that would confuse buyers. */
+/* Words a store can't take: app routes, infrastructure names and subdomains (a slug is also the
+ * store's address, `<slug>.ceseelia.com`, 9.8), and things that would confuse buyers. */
 export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
-  "about", "account", "admin", "administrator", "api", "app", "assets", "auth", "billing", "blog",
-  "cart", "cdn", "ceseelia", "checkout", "contact", "customer", "customers", "dashboard", "dev",
-  "docs", "edit", "eula", "faq", "help", "home", "legal", "login", "logout", "mail", "merchant",
-  "merchants", "new", "null", "official", "order", "orders", "privacy", "profile", "root",
-  "settings", "signin", "signup", "sign-in", "sign-up", "staff", "staging", "static", "status",
-  "store", "stores", "storefront", "support", "system", "terms", "undefined", "www",
+  "about", "account", "admin", "administrator", "api", "app", "assets", "auth", "autoconfig",
+  "autodiscover", "billing", "blog", "cart", "cdn", "ceseelia", "checkout", "connect", "contact",
+  "customer", "customers", "dashboard", "dev", "docs", "domains", "edit", "email", "eula", "faq",
+  "files", "ftp", "help", "home", "images", "imap", "img", "legal", "login", "logout", "mail",
+  "media", "merchant", "merchants", "new", "null", "official", "order", "orders", "pop", "preview",
+  "privacy", "prod", "production", "profile", "root", "settings", "shop", "sign-in", "sign-up",
+  "signin", "signup", "smtp", "staff", "staging", "static", "status", "storage", "store",
+  "storefront", "stores", "support", "system", "terms", "test", "undefined", "webmail", "www",
 ]);
 
 export function isValidSlug(slug: unknown): slug is string {

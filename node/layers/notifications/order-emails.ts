@@ -1,4 +1,5 @@
 import { WEBAPP_URL } from "../../config";
+import { storeUrl } from "../core/store-url";
 import { StoreOrder, StoreOrderStatus } from "../core/interfaces/store";
 import { sendEmail, sendEmailWithAttachments } from "../aws/ses";
 import { receiptPdf } from "./receipt-pdf";
@@ -77,7 +78,7 @@ async function storeFor(storeId: string): Promise<StoreForEmail> {
 async function orderLink(order: StoreOrder, storeSlug: string): Promise<string> {
   const { token, hash } = newStatusToken();
   await addOrderLinkTokenHash(order, hash);
-  return `${base()}/s/${encodeURIComponent(storeSlug)}/order/${order.storeOrderId}#t=${token}`;
+  return `${storeUrl(storeSlug, `/order/${order.storeOrderId}`)}#t=${token}`;
 }
 
 async function send(to: string, fromName: string, email: RenderedEmail, replyTo?: string): Promise<boolean> {

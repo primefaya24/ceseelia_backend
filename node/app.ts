@@ -1,7 +1,9 @@
 import express, { Express } from 'express';
 import cors, { CorsOptions } from 'cors';
 import helmet from 'helmet';
-import { CORS_ORIGINS, IN_DEV, TRUST_PROXY_HOPS } from './config';
+import { CORS_ORIGINS, IN_DEV, STORE_URL_TEMPLATE, TRUST_PROXY_HOPS } from './config';
+import { isValidSlug } from './constants/slug';
+import { slugFromStoreOrigin } from './layers/core/store-url';
 import { domainRouter } from './middleware';
 import { requestLogger } from './layers/core/logger';
 import {
@@ -16,16 +18,21 @@ import { handleBillingWebhook } from './layers/payments/billing-webhook';
 import { handleConnectWebhook } from './layers/payments/order-webhook';
 
 /*
-* CORS: explicit allow-list from CORS_ORIGINS; in dev with no list, reflect any origin.
+* CORS: explicit allow-list from CORS_ORIGINS plus every store's own address (STORE_URL_TEMPLATE,
+* 9.8 phase 1: `https://<slug>.ceseelia.com`); in dev with no list, reflect any origin.
 */
-export function buildCorsOptions(allowedOrigins: string[] = CORS_ORIGINS, inDev: boolean = IN_DEV): CorsOptions {
+export function buildCorsOptions(
+    allowedOrigins: string[] = CORS_ORIGINS,
+    inDev: boolean = IN_DEV,
+    storeTemplate: string = STORE_URL_TEMPLATE
+): CorsOptions {
     if (allowedOrigins.length === 0 && inDev) {
         return { origin: true, credentials: true };
     }
     return {
         origin: (origin, callback) => {
             // Non-browser requests (curl, server-to-server, Stripe) send no Origin header
-            if (!origin || allowedOrigins.includes(origin)) {
+            if (!origin || allowedOrigins.includes(origin) || isValidSlug(slugFromStoreOrigin(origin, storeTemplate))) {
                 return callback(null, true);
             }
             return callback(null, false);

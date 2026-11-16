@@ -2,6 +2,7 @@ import { Request, Response, Router } from "express";
 import { validateAndExecuteHttpApiRoute } from "../../../../../layers/core/http";
 import { isValidSlug } from "../../../../../constants/slug";
 import { WEBAPP_URL } from "../../../../../config";
+import { storeUrl } from "../../../../../layers/core/store-url";
 import { isUlid } from "../../../../../layers/core/utils";
 import { getStorageImageUrl } from "../../../../../layers/core/utils";
 import { getSlugOwner } from "../../../../../layers/aws/dynamodb/dynamo-entities/slug";
@@ -111,7 +112,8 @@ const fallback = (): PreviewPage => ({
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   const slug = String(req.params.slug).toLowerCase();
   const itemId = req.params.itemId === undefined ? null : String(req.params.itemId);
-  const storeUrl = `${WEBAPP_URL}/s/${encodeURIComponent(slug)}`;
+  // The store's own address (9.8 phase 1), the one shoppers should share.
+  const pageUrl = storeUrl(slug);
   try {
     const storeId = await getSlugOwner(slug);
     const store = storeId ? await getStorePreview(storeId) : null;
@@ -123,7 +125,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       title: store.storeName,
       description: previewText(store.slogan || (store.live ? `Shop ${store.storeName} online.` : `${store.storeName} is coming soon.`)),
       image: imageUrl(store.logoUri),
-      url: storeUrl,
+      url: pageUrl,
       type: "website",
     };
     if (itemId && store.live) {
@@ -133,7 +135,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
           title: `${found.item.storeItemName} · ${store.storeName}`,
           description: previewText(found.item.storeItemDescription || storePage.description),
           image: imageUrl(found.item.storeItemImageUris?.[0] ?? "") || storePage.image,
-          url: `${storeUrl}?item=${encodeURIComponent(itemId)}`,
+          url: storeUrl(slug, `/?item=${encodeURIComponent(itemId)}`),
           type: "product",
         });
         return;

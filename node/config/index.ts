@@ -52,6 +52,14 @@ export const WEBAPP_URL: string = env(
     "WEBAPP_URL",
     stageValue === appConstants.STAGE_DEV ? "http://localhost:4200" : "https://app.ceseelia.com"
 ).replace(/\/+$/, "");
+// 9.8 phase 1: every store's own address, `{slug}` replaced by its slug. Shopper links (Stripe
+// return, order emails, link previews) use it, and CORS accepts it. Empty = no store subdomains:
+// links are `${WEBAPP_URL}/s/<slug>` (the dev default; a local test can use
+// `http://{slug}.localhost:4200`). Must be `http(s)://{slug}.<host>[:port]`.
+export const STORE_URL_TEMPLATE: string = env(
+    "STORE_URL_TEMPLATE",
+    stageValue === appConstants.STAGE_DEV ? "" : "https://{slug}.ceseelia.com"
+).replace(/\/+$/, "");
 
 /*
 * DynamoDB

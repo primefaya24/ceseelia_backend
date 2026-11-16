@@ -128,7 +128,7 @@ describe("callers no longer report false success", () => {
       .post("/api/v1/store/create")
       .set("Host", "localhost")
       .set("Authorization", "Bearer good")
-      .send({ storeName: "Shop", storeSlug: "shop" });
+      .send({ storeName: "Shop", storeSlug: "my-shop" });
     expect(res.status).toBe(500);
   });
 });

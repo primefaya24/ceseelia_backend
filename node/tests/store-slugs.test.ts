@@ -90,7 +90,7 @@ describe("create / update-store-info validate the slug (1.8a)", () => {
   it.each([
     ["post", "/store/create", { storeName: "Shop", storeSlug: "Bad Slug" }],
     ["post", "/admin/update-store-info", { storeId: STORE, storeName: "Shop", storeSlug: "admin" }],
-    ["post", "/store/create", { storeName: "   ", storeSlug: "shop" }],
+    ["post", "/store/create", { storeName: "   ", storeSlug: "my-shop" }],
   ] as const)("%s %s → 400 before touching the table", async (method, path, body) => {
     const res = await call(method, path, body);
     expect(res.status).toBe(400);
@@ -101,14 +101,14 @@ describe("create / update-store-info validate the slug (1.8a)", () => {
 describe("create reserves the slug (1.8b)", () => {
   it("returns 409 with a message when another store holds the slug", async () => {
     ddb.on(TransactWriteCommand).rejects(cancelled(["None", "None", "ConditionalCheckFailed"]));
-    const res = await call("post", "/store/create", { storeName: "Shop", storeSlug: "shop" });
+    const res = await call("post", "/store/create", { storeName: "Shop", storeSlug: "my-shop" });
     expect(res.status).toBe(409);
     expect(res.body.message).toBe("That slug is already taken.");
   });
 
   it("other transaction failures are still 500", async () => {
     ddb.on(TransactWriteCommand).rejects(cancelled(["ConditionalCheckFailed", "None", "None"]));
-    expect((await call("post", "/store/create", { storeName: "Shop", storeSlug: "shop" })).status).toBe(500);
+    expect((await call("post", "/store/create", { storeName: "Shop", storeSlug: "my-shop" })).status).toBe(500);
   });
 });
 

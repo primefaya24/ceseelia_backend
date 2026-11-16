@@ -26,7 +26,7 @@ The same list is in both repos' `progress.md`; tick it in both. In order: each p
 one before it. Details stay where they're linked.
 
 _A1–B3, B5–B9, C1, D2, D4 and E1 done 2026-11-15 (C2 mostly); `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
-serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **Next: the rest of C2 (Stripe Tax, Smart Retries), then C3.**_
+serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **Next: the rest of C2 (Stripe Tax, Smart Retries), then C3.** Store subdomains (9.8 phase 1) are coded and tested: G1 (owner push) then G2 (Claude deploys)._
 
 **A. Now (nothing blocks these)**
 - [x] A1. **Push** every repo from your own shell: backend and webapp
@@ -132,6 +132,21 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 - [ ] F3. Owner: an accountant to confirm the delivery-tax simplification (backend 4.2
       follow-up: delivery taxed like the goods).
 - [ ] F4. Owner: push every commit Claude made (both repos are ahead of GitHub).
+
+**G. Store subdomains (9.8 phase 1, code done 2026-11-15; deploy in this order)**
+- [ ] G1. Owner: merge CloudFormation `dev_v1.0.0_store_subdomains` into `dev_v1.0.0` and push
+      (dev: no change but the router function's code), then into `prod_v1.0.0` and push (prod:
+      `*.ceseelia.com` alias on the webapp distribution + wildcard A/AAAA records). Check the
+      stack reaches UPDATE_COMPLETE. Explicit records (api, app, dev, *.storage, mail) keep
+      working: DNS and CloudFront prefer the exact name.
+- [ ] G2. Claude, right after G1: deploy the backend (`scp-fs.sh build` + restart; the prod default
+      `STORE_URL_TEMPLATE=https://{slug}.ceseelia.com` needs no `.env` change) and the webapp
+      (`tools/deploy-s3.sh prod`), then check `https://<slug>.ceseelia.com` opens the store,
+      `app.ceseelia.com/s/<slug>` still works, an app page on a store address goes to the app,
+      CORS answers a store origin, and a bot on `/` gets the preview. Not before G1: the new
+      Stripe return URLs and email links point at store subdomains.
+- [ ] G3. Owner: decide when phase 2 (custom domains, `shop.<their domain>`) starts; plan in
+      backend progress 9.8.
 
 **E. Optional, any time**
 - [x] E1. The two storage distributions (`dev.storage` / `prod.storage`, made by hand) use
@@ -315,9 +330,9 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 | Merchant / customer APIs | ✅ Works | Store overview stats (1.5), customers, rewards, reviews (Stage 7) |
 | Cart, checkout, orders, payments | ✅ Works | Stages 4–6; first real test order is §0 C3 |
 | Admin stats, join requests, tickets | ✅ Works | Stage 8 (join requests superseded by P.3) |
-| Production readiness (logging, rate limits, CI, IaC) | ✅ Done | Stage 9 except 9.7 (lint warnings) and 9.8 (custom domains); prod live 2026-11-15 |
+| Production readiness (logging, rate limits, CI, IaC) | ✅ Done | Stage 9 except 9.7 (lint warnings) and 9.8 phase 2 (custom domains; phase 1 store subdomains coded 2026-11-15); prod live 2026-11-15 |
 
-**Health check (2026-11-15):** `npm test` 1167/1167 passing · `npm run typecheck` clean ·
+**Health check (2026-11-15):** `npm test` 1176/1176 passing · `npm run typecheck` clean ·
 `npm run lint` 0 errors, 68 warnings · `npm audit --omit=dev` 0 vulnerabilities.
 
 ---
@@ -1069,7 +1084,8 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         GET adds `planSetByAdmin` and `paysForPlan`.
       - Not done: emails to the merchant on a decision (Stage 8 / 6.3 notifications); the
         merchant sees it in the Go Live sheet.
-- [ ] P.9 Custom domains: listed on SPARK / NOVA as "coming soon" at launch; built in 9.8.
+- [ ] P.9 Custom domains: listed on SPARK / NOVA as "coming soon" at launch; built in 9.8
+      (phase 1, store subdomains, done 2026-11-15; phase 2 planned there).
 - [x] P.10 **No Free plan** (owner, 2026-11-13): only SPARK and NOVA; going live and subscribing
       go hand in hand; merchants switch freely between the two; a cancelled plan ends at the
       period's end and the store is no longer live. Done 2026-11-13 (supersedes the FREE parts
@@ -1537,7 +1553,65 @@ pickup or delivery, goes through Stripe Checkout (5.4).
     `ApiLogsProd` (write to that log group only). Previewed as a change set on `ceseelia-dev`
     (not executed): no replacements. **Owner:** see L.4._
 - [ ] 9.7 Bring lint warnings (68 on 2026-11-15) down to zero, then make warnings fail CI.
-- [ ] 9.8 Optional: custom store domains via `layers/aws/route53`.
+- [ ] 9.8 Store addresses: every store at its own subdomain (phase 1, ✅), then custom domains
+      (phase 2, not started). Owner decisions 2026-11-15: `<slug>.ceseelia.com` for every store
+      (the slug's uniqueness is the DB's); a custom domain is always the store's own and always a
+      subdomain (`shop.` suggested); `app.ceseelia.com/s/<slug>` keeps working; a changed slug
+      frees the old address at once (a clear warning before saving).
+  - [x] **Phase 1, store subdomains** (done 2026-11-15; deploy = §0 G1–G2).
+    - Backend: `STORE_URL_TEMPLATE` (prod default `https://{slug}.ceseelia.com`, dev empty =
+      `WEBAPP_URL/s/<slug>`), `layers/core/store-url` (`storeUrl`, `slugFromStoreOrigin`).
+      Shopper links use it: Stripe Checkout success / cancel, order emails' `#t=` links, link
+      previews' `og:url`. Merchant links (billing, onboarding, admin alerts) stay on the app.
+      CORS also allows any origin matching the template whose slug is valid (`buildCorsOptions`).
+      20 more reserved slugs (subdomain and infrastructure names: `shop`, `storage`, `prod`,
+      `mail` hosts, `domains`, …), mirrored in the webapp. `tests/store-url.test.ts`.
+    - Webapp: config `storeUrlTemplate`; `core/routing/store-host` (host detection, a
+      `UrlSerializer` that routes `/x` as `/s/<slug>/x` on a store address and shows it
+      without the prefix, guards sending app pages to the app and another store's `/s/` path to
+      that store). Share, the go-live sheet and the canonical tag use the store address. The
+      order page moves an old link (renamed store) to the store's current address, token in
+      `#t=`. Store-link editor: shows `https://<slug>.ceseelia.com`, a warning box while the
+      slug differs, and a confirm.
+    - CloudFormation (prod): `*.ceseelia.com` alias (the wildcard certificate covers it) and
+      wildcard A/AAAA; the router function gives bots the preview for `/` on a store address.
+    - On a slug change nothing else needs updating: the slug transaction already moves the
+      reservation and the overview; emails and Stripe returns build links when sent; Stripe
+      accounts carry only `storeId`; one wildcard record covers every store; cached previews
+      expire within 5 minutes. Old order links still open (order page redirect).
+  - [ ] **Phase 2, custom domains** (plan only; P.9, Spark and Nova):
+    1. **CloudFront multi-tenant (SaaS Manager):** turn the webapp distribution into a
+       multi-tenant one (or add one) with a tenant per custom domain and a CloudFront-managed
+       certificate per tenant (HTTP validation, no ACM work per store). Check the limits and
+       the price per tenant first. The alternative, one ACM certificate per domain and
+       distribution aliases, tops out at 100 names a distribution.
+    2. **Domain record:** `STORE#<id> / DOMAIN` + `DOMAIN#<host> / STORE` (unique like slugs):
+       `host`, `status` PENDING_DNS / PENDING_CERT / ACTIVE / FAILED / DISABLED, `tenantId`,
+       timestamps. One custom domain a store.
+    3. **Setup API** (store ADMINs, paid plan): `POST /store/domain` `{storeId, host}` (must be a
+       subdomain: `shop.example.com`, not `example.com`; reserved and our own names refused),
+       `GET /store/domain/:storeId` (live status: DNS seen, certificate, active),
+       `DELETE /store/domain/:storeId`. Ownership = the CNAME `shop.example.com →
+       <slug>.ceseelia.com` resolving (checked server side over DNS), then the tenant and its
+       certificate are created; a sweep advances PENDING_* and retries.
+    4. **Public lookup:** `GET /store/public/domain/:host` → `{slug}` (cached), for the webapp
+       on a custom host, and the router function's bot previews (a KeyValueStore of host →
+       slug written by the API, so it needs no call).
+    5. **Webapp:** `StoreHostService` learns a third kind of host (not the app, not
+       `*.ceseelia.com`): look the host up, then behave as on `<slug>.ceseelia.com`. Setup
+       screen in Store front › Settings: enter `shop.example.com`, the exact CNAME to add (copy
+       buttons, help for common registrars), live status, "Remove". Canonical and share links
+       use the custom domain when ACTIVE.
+    6. **Backend links and CORS:** `storeUrl` prefers an ACTIVE custom domain; CORS allows
+       ACTIVE domains (looked up, cached).
+    7. **Plan and slug rules:** a plan that ends disables the domain (DISABLED, kept for 30 days,
+       back on with a plan); a slug change warns that the CNAME must point at the new
+       `<slug>.ceseelia.com` and the domain goes PENDING_DNS until it does (or point CNAMEs at
+       a stable per-store name such as `<storeId>.domains.ceseelia.com` so renames never touch
+       DNS: decide before building).
+    8. **Root domain:** not served; the setup screen explains a redirect `example.com →
+       shop.example.com` at their registrar.
+    9. **Later:** Domain Connect (one-click DNS at GoDaddy, Cloudflare, …).
 
 ---
 
@@ -1545,6 +1619,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-15 | 9.8 phase 1: store subdomains `https://<slug>.ceseelia.com` (`STORE_URL_TEMPLATE`, `layers/core/store-url`): Stripe return URLs, order email links and link previews use them; CORS allows them; 20 more reserved slugs. Phase 2 (custom domains) planned under 9.8. §0 G added (deploy order). Tests 1176. |
 | 2026-11-14 | Secrets: one per stage (`ceseelia/dev`, `ceseelia/prod`, `APP_SECRET_ID`, flat keys incl. `anthropicApiKey`); Stripe reads it (checked against the Stripe sandbox). `CeseeliaServerRole` + instance profile for the future prod server (`iam/`). The API isn't deployed yet; the certbot error in `~/tasks.md` is primehost-0's (another project). |
 | 2026-11-14 | L.3 done: S.14 helmet + nginx hardening + pinned images; S.15 non-root image with `npm ci --omit=dev` and HEALTHCHECK; S.16 legacy auth/PayPal/PrimeFaya/DinersXpress code deleted; S.17 certbot renewal fixed (paths, executable bit, nginx reload from the host). 9.3 `/healthz` + graceful shutdown. Server step: `crontab -e`, make the line `0 2,14 * * * /bin/bash <project>/certbot-renew.sh >> <project>/certbot-renew.log 2>&1`. |
 | 2026-11-14 | Launch checklist L.0–L.9 added at the top of §1 (owner: everything in it must be done before launch). |

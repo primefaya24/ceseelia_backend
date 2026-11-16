@@ -1,5 +1,5 @@
 import Stripe from "stripe";
-import { WEBAPP_URL } from "../../config";
+import { storeUrl } from "../core/store-url";
 import { Quote } from "../core/pricing";
 import { getStripe } from "./stripe";
 import { allocate } from "../core/rewards";
@@ -54,7 +54,6 @@ export function orderSessionParams(input: {
   customerEmail: string;
   now?: number;
 }): Stripe.Checkout.SessionCreateParams {
-  const base = `${WEBAPP_URL.replace(/\/$/, "")}/s/${input.storeSlug}`;
   const metadata = { orderId: input.orderId, storeId: input.storeId };
   return {
     mode: "payment",
@@ -64,8 +63,9 @@ export function orderSessionParams(input: {
     metadata,
     payment_intent_data: { application_fee_amount: input.feeMinor, metadata },
     // The status token stays in the shopper's browser; it never goes to Stripe.
-    success_url: `${base}/order/${input.orderId}?paid=1`,
-    cancel_url: `${base}/checkout?cancelled=${input.orderId}`,
+    // The store's own address (9.8 phase 1); an old one after a rename still finds the order.
+    success_url: storeUrl(input.storeSlug, `/order/${input.orderId}?paid=1`),
+    cancel_url: storeUrl(input.storeSlug, `/checkout?cancelled=${input.orderId}`),
     expires_at: Math.floor((input.now ?? Date.now()) / 1000) + ORDER_CHECKOUT_LIFETIME_S,
   };
 }
