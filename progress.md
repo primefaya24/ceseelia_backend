@@ -26,7 +26,7 @@ The same list is in both repos' `progress.md`; tick it in both. In order: each p
 one before it. Details stay where they're linked.
 
 _A1–B3, B5–B9, C1, D2, D4 and E1 done 2026-11-15 (C2 mostly); `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
-serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **Next: the rest of C2 (Stripe Tax, Smart Retries), then C3.** Store subdomains (9.8 phase 1) are coded and tested: G1 (owner push) then G2 (Claude deploys)._
+serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **Next: C3 (first test order), C4.** Store subdomains (9.8 phase 1) are coded and tested: G1 (owner push) then G2 (Claude deploys)._
 
 **A. Now (nothing blocks these)**
 - [x] A1. **Push** every repo from your own shell: backend and webapp
@@ -93,7 +93,7 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       `stripeWebhookSecret`. _Done by Claude 2026-11-15 through the Stripe API (test mode):
       `we_1UcEEvGS7poxugeoEGr30Pl1`, Connect, the 13 events, API version `2025-08-27.basil`
       (the SDK's); secret stored without being shown. Unsigned calls get 400._
-- [ ] C2. **Billing setup** (backend P.5 "Setup" 1–5): prices script, Stripe Tax (origin address,
+- [x] C2. **Billing setup** (backend P.5 "Setup" 1–5): prices script, Stripe Tax (origin address,
       GST/HST, SaaS tax code), billing webhook (`stripeBillingWebhookSecret`), Smart Retries →
       mark unpaid, customer portal.
       _Done by Claude 2026-11-15 (test mode): prices (Spark and Nova × CAD/AUD/USD; the script
@@ -103,6 +103,12 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       Stripe dashboard (test mode):** Stripe Tax on + origin address + GST/HST registration
       (Settings › Tax); Billing › Revenue recovery › Smart Retries on, "if all retries fail" →
       mark the subscription unpaid._
+      _Owner part done 2026-11-15 (test mode): head office Alberta; test registration Canada
+      GST/HST (live mode: the real number, RT0001, also as the invoice tax ID); Smart Retries 8
+      times in 2 weeks, all retries failed → subscription **unpaid** (the merchant can still pay
+      the open invoice in the portal and keep the plan), invoice left overdue. Claude checked:
+      25 CAD Spark → AB 5% GST, ON 13% HST, QC and BC GST only (no QST/PST registration; F3
+      asks the accountant which provinces need one)._
 - [ ] C3. **L.0 first real test order:** checkout → paid (receipt, PDF, alerts) → Store › Orders →
       ready / on its way emails → refund part → refund the rest.
 - [ ] C4. **A Spark checkout** (Go Live → Stripe Checkout → live) and a plan switch in the portal.
@@ -130,7 +136,8 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 - [ ] F2. Legal pages: privacy policy and terms (WA 9.1), linked from the storefront footer and
       sign-up. Claude drafts; **the owner reviews the text** (and ideally a lawyer).
 - [ ] F3. Owner: an accountant to confirm the delivery-tax simplification (backend 4.2
-      follow-up: delivery taxed like the goods).
+      follow-up: delivery taxed like the goods), and which provinces' PST/QST Ceseelia must
+      collect on its subscriptions, from what sales level (BC, SK, MB, QC).
 - [x] F4. Owner: push every commit Claude made (both repos are ahead of GitHub). _Done 2026-11-16;
       Claude now pushes dev itself and asks before every prod push._
 
