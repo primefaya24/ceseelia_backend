@@ -1720,6 +1720,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 
 | Date | Change |
 |---|---|
+| 2026-11-16 | UX-D: `get-all-stores?filter=` with `counts` per filter (Admin › Stores chips; Admin › Overview links to them). |
 | 2026-11-16 | UX-B: order codes are now the store's unique prefix + a per-store number (`PB-1001`), from `dynamo-entities/order-code` (atomic counter, prefix reserved on the first order). Old orders keep their codes. UI/UX list (UX-A–E) lives in the webapp's progress.md §1c. |
 | 2026-11-16 | Custom domain removal verified on prod (owner removed `shoppo.northernhoop.com`): rows, tenant, ACM certificate and clean-up queue all gone within 2 minutes; lookup, serving and CORS off. Webapp domain card redesigned. |
 | 2026-11-16 | Custom domains fix: an issued certificate is now put on the tenant (domains stayed in Securing), and tenant updates send the whole configuration (turning one off can't drop its certificate). `shoppo.northernhoop.com` live; removal clean-up verified in AWS. |

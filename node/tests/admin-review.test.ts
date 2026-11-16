@@ -374,7 +374,7 @@ describe("GET /admin/get-all-stores adds status, plan and billing (P.8)", () => 
     expect(ddb.commandCalls(BatchGetCommand)[0].args[0].input.RequestItems![Object.keys(ddb.commandCalls(BatchGetCommand)[0].args[0].input.RequestItems!)[0]].ProjectionExpression).toContain("lifecycle");
   });
 
-  it("L.9: pages and searches; only the page's stores are read from SETTINGS", async () => {
+  it("L.9: pages and searches", async () => {
     ddb.on(QueryCommand).resolves({
       Items: Array.from({ length: 7 }, (_, i) => ({
         pk: "APP_STORE",
@@ -389,13 +389,46 @@ describe("GET /admin/get-all-stores adds status, plan and billing (P.8)", () => 
     const first = await call("get", "/get-all-stores?limit=3");
     expect(first.body.stores.map((s: { storeId: string }) => s.storeId)).toEqual(["S6", "S5", "S4"]);
     expect(first.body).toMatchObject({ next: "3", total: 7 });
-    const keys = Object.values(ddb.commandCalls(BatchGetCommand)[0].args[0].input.RequestItems!)[0].Keys!;
-    expect(keys).toHaveLength(3);
     const last = await call("get", "/get-all-stores?limit=3&cursor=6");
     expect(last.body).toMatchObject({ next: null, total: 7 });
     expect(last.body.stores).toHaveLength(1);
     const tea = await call("get", "/get-all-stores?q=TEA");
     expect(tea.body.stores.map((s: { storeId: string }) => s.storeId)).toEqual(["S5"]);
     expect((await call("get", "/get-all-stores?limit=abc")).status).toBe(400);
+  });
+
+  it("UX-D: filters by status, past due and hidden items, with a count per filter", async () => {
+    const ids = ["L", "R", "D", "S", "P", "H"];
+    ddb.on(QueryCommand).callsFake((input) =>
+      input.ExpressionAttributeValues[":pk"] === "APP_STORE"
+        ? { Items: ids.map((id) => ({ pk: "APP_STORE", sk: `STORE#${id}#OVERVIEW`, storeId: id, storeName: `Store ${id}` })) }
+        : { Items: [{ storeId: "H", itemId: "i1", flaggedAt: 1 }, { storeId: "H", itemId: "i2", flaggedAt: 2 }] }
+    );
+    const sub = (status: string) => ({ subscriptionId: "s", customerId: "c", plan: "SPARK", status, cancelAtPeriodEnd: false, currentPeriodEnd: 9, graceEndsAt: null });
+    const rows: Record<string, object> = {
+      L: { lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: sub("active") },
+      R: { lifecycle: { status: "IN_REVIEW", plan: "NONE" } },
+      D: { lifecycle: { status: "DRAFT", plan: "NONE" } },
+      S: { lifecycle: { status: "LIVE", plan: "NOVA" }, admin: { suspended: true } },
+      P: { lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: sub("past_due") },
+      H: { lifecycle: { status: "LIVE", plan: "NOVA" } },
+    };
+    ddb.on(BatchGetCommand).callsFake((input) => {
+      const table = Object.keys(input.RequestItems)[0];
+      const keys = input.RequestItems[table].Keys as { pk: string }[];
+      return { Responses: { [table]: keys.map((k) => ({ pk: k.pk, ...rows[k.pk.slice(6)] })) } };
+    });
+    const got = async (filter: string) => (await call("get", `/get-all-stores?filter=${filter}`)).body;
+    const all = await got("all");
+    expect(all.counts).toEqual({ all: 6, "in-review": 1, items: 1, "past-due": 1, live: 3, draft: 1, suspended: 1 });
+    const only = async (filter: string) => (await got(filter)).stores.map((s: { storeId: string }) => s.storeId).sort();
+    expect(await only("in-review")).toEqual(["R"]);
+    expect(await only("items")).toEqual(["H"]);
+    expect(await only("past-due")).toEqual(["P"]);
+    expect(await only("live")).toEqual(["H", "L", "P"]);
+    expect(await only("draft")).toEqual(["D"]);
+    expect(await only("suspended")).toEqual(["S"]);
+    expect((await got("past-due")).total).toBe(1);
+    expect((await call("get", "/get-all-stores?filter=nope")).status).toBe(400);
   });
 });
