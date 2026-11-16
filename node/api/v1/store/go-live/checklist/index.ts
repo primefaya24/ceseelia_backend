@@ -10,6 +10,8 @@ import {
 import { NO_PLAN } from "../../../../../layers/core/plans";
 import { sendPaymentsError } from "../../payments/errors";
 import { planOptions } from "../shared";
+import { CUSTOM_DOMAINS_ENABLED } from "../../../../../config";
+import { getStoreDomain } from "../../../../../layers/aws/dynamodb/dynamo-entities/domain";
 
 /*
  * GET /store/go-live/checklist/:storeId (store members, progress.md P.4a)
@@ -19,6 +21,8 @@ import { planOptions } from "../shared";
  * steps: STORE_NAME, ITEMS, FULFILMENT, PAYMENTS (Stripe read live, as payments/status does).
  * ready: every step ok. canGoLive: this user may press Go Live (platform admin or store ADMIN).
  * billingCurrency: from the Stripe account's country (A1), null until it's connected.
+ * ownDomain: the store's own domain while it's live (ACTIVE), else null: the webapp's Live
+ * button and share links point there (read from the record, so a removal shows at once).
  * plan: NONE until the store has one (a live store always has one). Plans are
  * PLAN_NOT_AVAILABLE while PAID_PLANS_ENABLED is off, except one an admin gave.
  * POST /store/go-live checks all of this again.
@@ -42,7 +46,11 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     const storeId = req.params.storeId as string;
     const auth = getAuth(res);
-    const [data, stripe] = await Promise.all([getStoreInventoryData(storeId), readStoreStripeAccount(storeId)]);
+    const [data, stripe, domain] = await Promise.all([
+      getStoreInventoryData(storeId),
+      readStoreStripeAccount(storeId),
+      CUSTOM_DOMAINS_ENABLED ? getStoreDomain(storeId).catch(() => null) : Promise.resolve(null),
+    ]);
     const lifecycle = normalizeStoreLifecycle(data.settings.lifecycle);
     const steps = goLiveChecklist(data, {
       chargesEnabled: stripe.connected && stripe.chargesEnabled,
@@ -51,6 +59,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const currency = stripe.connected ? billingCurrencyFor(stripe.account.country) : null;
     res.send({
       status: lifecycle.status,
+      ownDomain: domain?.status === "ACTIVE" ? domain.host : null,
       pausedReason: lifecycle.pausedReason ?? null,
       // P.8: the admin's answer after a review, and a plan an admin gave (goes live without paying).
       reviewRejection: lifecycle.reviewRejection ?? null,

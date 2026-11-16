@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import request from "supertest";
+import { getStoreDomain } from "../layers/aws/dynamodb/dynamo-entities/domain";
 import { mockClient } from "aws-sdk-client-mock";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
@@ -11,6 +12,11 @@ import {
 import { ulid } from "ulid";
 
 vi.mock("../layers/aws/cognito", () => ({ verifyCognitoAccessToken: vi.fn() }));
+vi.mock("../config", async (orig) => ({ ...(await orig<object>()), CUSTOM_DOMAINS_ENABLED: true }));
+vi.mock("../layers/aws/dynamodb/dynamo-entities/domain", async (orig) => ({
+  ...(await orig<object>()),
+  getStoreDomain: vi.fn(async () => null),
+}));
 vi.mock("../layers/aws/dynamodb/dynamo-entities/user", async (orig) => ({
   ...(await orig<typeof import("../layers/aws/dynamodb/dynamo-entities/user")>()),
   findUserIdByCognitoId: vi.fn(async () => "USER1"),
@@ -359,6 +365,14 @@ describe("GET /store/go-live/checklist/:storeId (P.4a)", () => {
     const res = await checklist();
     expect(res.body).toMatchObject({ canGoLive: true, ready: true });
     expect(res.body.plans.map((p: { available: boolean }) => p.available)).toEqual([true, true]);
+  });
+
+  it("gives the store's own domain only while it's live (the Live button points there)", async () => {
+    vi.mocked(getStoreDomain).mockResolvedValueOnce({ host: "shop.brand.com", status: "ACTIVE" } as never);
+    expect((await checklist()).body.ownDomain).toBe("shop.brand.com");
+    vi.mocked(getStoreDomain).mockResolvedValueOnce({ host: "shop.brand.com", status: "PENDING_DNS" } as never);
+    expect((await checklist()).body.ownDomain).toBeNull();
+    expect((await checklist()).body.ownDomain).toBeNull(); // none, or removed
   });
 
   it("non-members can't see it", async () => {
