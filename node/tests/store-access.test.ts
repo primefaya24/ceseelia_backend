@@ -63,6 +63,14 @@ const MEMBER_ROUTES: Array<[Method, string, object | undefined]> = [
   ["post", "/store/reviews/report", { storeId: STORE, orderId: STORE, reason: "SPAM" }],
   ["get", `/store/orders/get/${STORE}/${ID}`, undefined],
   ["put", "/store/orders/update-status", { storeId: STORE }],
+  // L.10 messages
+  ["get", `/store/messages/list/${STORE}`, undefined],
+  ["get", `/store/messages/unread/${STORE}`, undefined],
+  ["get", `/store/messages/thread/${STORE}/${ID}`, undefined],
+  ["post", "/store/messages/send", { storeId: STORE, conversationId: ID, body: "x" }],
+  ["post", "/store/messages/read", { storeId: STORE, conversationId: ID }],
+  ["get", `/store/messages/image-upload-urls/${STORE}/${ID}/0/1`, undefined],
+  ["post", "/store/messages/report", { storeId: STORE, conversationId: ID, reason: "SPAM" }],
 ];
 // Store-ADMIN routes: members with the ADMIN role (or platform admins), never MERCHANT members.
 const STORE_ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [

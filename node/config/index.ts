@@ -116,6 +116,8 @@ export const S3_STORAGE_BUCKET_ORIGIN: string = withTrailingSlash(
 export const SERVER_WATCH_CHECK_FOR_LOST_ORDERS_INTERVAL: number = 10 * 60 * 1000;
 /* L.2: how often the AI check looks for live stores' saved items that are due. */
 export const ITEM_CHECK_SWEEP_INTERVAL: number = 60 * 1000;
+/* L.10: emails to stores about shopper messages unread for 30 minutes. */
+export const MESSAGE_EMAIL_SWEEP_INTERVAL: number = 60 * 1000;
 
 /*
 * Fail fast on missing production configuration

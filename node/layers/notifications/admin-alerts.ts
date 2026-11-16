@@ -81,6 +81,23 @@ export function notifyReviewReported(storeId: string, storeName: string, rating:
   );
 }
 
+const CONVO_REASON_TEXT: Record<string, string> = { ABUSIVE: "Abusive or threatening", SPAM: "Spam", SCAM: "Scam or fraud", OTHER: "Something else" };
+
+/** L.10: a store reported a conversation with a shopper. */
+export function notifyConversationReported(storeId: string, storeName: string, reason: string): Promise<void> {
+  return send(
+    `Conversation reported at ${storeName || storeId}`,
+    page(
+      `A conversation at "${storeName || storeId}" was reported`,
+      "The store asked Ceseelia to look at a conversation with a shopper. It stays open until you dismiss the report or block it.",
+      [`Reason: ${CONVO_REASON_TEXT[reason] ?? reason}`],
+      "/admin/reviews",
+      "Open reported conversations"
+    ),
+    "Ceseelia messages"
+  );
+}
+
 const CATEGORY_TEXT: Record<string, string> = {
   ORDERS_PAYMENTS: "Orders and payments",
   BILLING: "Plan and billing",

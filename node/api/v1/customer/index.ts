@@ -19,6 +19,8 @@ import route_review from './review/index';
 route_review(customerRouter);
 import route_rewards from './rewards/index';
 route_rewards(customerRouter);
+import route_messages from './messages/index';
+route_messages(customerRouter); // L.10
 
 // Export Router
 export default customerRouter;

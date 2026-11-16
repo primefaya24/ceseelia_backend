@@ -20,6 +20,8 @@ import route_decide_review_report from './decide-review-report/index';
 import route_support from './support/index';
 import route_commission_report from './commission-report/index';
 import route_queue_counts from './queue-counts/index';
+import route_get_message_reports from './get-message-reports/index';
+import route_decide_message_report from './decide-message-report/index';
 dotenv.config();
 
 // User Router
@@ -45,5 +47,7 @@ route_decide_review_report(adminRouter);
 route_support(adminRouter);
 route_commission_report(adminRouter);
 route_queue_counts(adminRouter);
+route_get_message_reports(adminRouter); // L.10
+route_decide_message_report(adminRouter);
 // Export Router
 export default adminRouter;

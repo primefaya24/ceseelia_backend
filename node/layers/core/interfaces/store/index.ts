@@ -117,6 +117,11 @@ export interface StoreSettings {
      */
     emailOrderAlerts?: boolean;
     /*
+     * L.10: email the store (members and `emailaddress`) about a shopper message nobody has read
+     * for 30 minutes. Missing = on. Never in public responses.
+     */
+    emailMessageAlerts?: boolean;
+    /*
      * Public responses only (set by toPublicInventory, never saved): the store has an email, so
      * the Contact us form can be offered even when the address itself is hidden.
      */
@@ -636,7 +641,7 @@ export function isStoreSettingsPure(storeSettings: StoreSettings): boolean {
   if (typeof s.templateId !== "string" || typeof s.themeId !== "string") return false;
 
   if (!isObject(s.storeInfo) || !allStrings(s.storeInfo, STORE_INFO_STRING_KEYS)) return false;
-  for (const key of ["showEmail", "showPhone", "emailOrderAlerts"]) {
+  for (const key of ["showEmail", "showPhone", "emailOrderAlerts", "emailMessageAlerts"]) {
     if (s.storeInfo[key] !== undefined && typeof s.storeInfo[key] !== "boolean") return false;
   }
   if (s.storeInfo.taxNumber !== undefined && typeof s.storeInfo.taxNumber !== "string") return false;

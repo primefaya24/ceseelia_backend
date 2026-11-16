@@ -4,6 +4,7 @@ import { checkStripeConfig } from './layers/payments/stripe';
 import { sweepExpiredGrace } from './layers/payments/subscription-sync';
 import { sweepLostOrders } from './layers/payments/order-sweep';
 import { sweepItemChecks } from './layers/core/store-validation/item-check';
+import { sweepMessageEmails } from './layers/notifications/message-notify';
 import { registerTimer } from './layers/core/utils';
 import { log } from "./layers/core/logger";
 
@@ -35,6 +36,13 @@ checkStripeConfig()
                 const r = await sweepItemChecks();
                 if (r.checked + r.failed > 0) {
                     log[r.failed > 0 ? 'warn' : 'info']({ ...r }, '[item check] done');
+                }
+            }));
+            // L.10: email stores about shopper messages nobody has read for 30 minutes.
+            timers.push(registerTimer(appConfig.MESSAGE_EMAIL_SWEEP_INTERVAL, async () => {
+                const r = await sweepMessageEmails();
+                if (r.sent + r.failed > 0) {
+                    log[r.failed > 0 ? 'warn' : 'info']({ ...r }, '[messages] store email sweep');
                 }
             }));
         });

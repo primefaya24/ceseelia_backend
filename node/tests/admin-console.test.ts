@@ -315,14 +315,14 @@ describe("GET /admin/queue-counts (L.9: menu badges)", () => {
     resetQueueCountsCacheForTests();
   });
 
-  it("admins only; four numbers from the queues", async () => {
+  it("admins only; five numbers from the queues", async () => {
     ddb.on(QueryCommand).resolves({ Items: [], Count: 0 });
     as("USER-ann");
     expect((await call("get", "/admin/queue-counts")).status).toBe(403);
     as("ADMIN-1", true);
     const res = await call("get", "/admin/queue-counts");
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ storeReviews: 0, itemReviews: 0, reviewReports: 0, openTickets: 0 });
+    expect(res.body).toEqual({ storeReviews: 0, itemReviews: 0, reviewReports: 0, messageReports: 0, openTickets: 0 });
     expect(res.headers["cache-control"]).toMatch(/no-store/);
   });
 });

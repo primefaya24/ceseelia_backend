@@ -291,6 +291,19 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 >       hosting on S3 + CloudFront (3.2b, deployed to dev and prod 2026-11-15; prod app uploaded)
 >       and link previews (WA 3.6, `/store/public/preview`). **Later:** 9.8 custom
 >       domains (after launch; listed as "coming soon").
+>
+> - [~] **L.10 Messages (owner, 2026-11-16: before launch):** an async chat between a store and
+>       its shoppers on Ceseelia, not email. One conversation per order (the shopper opens it from
+>       the order page with the order's token; either side can write first) and inquiries from the
+>       storefront's Contact us (the shopper gets a private link by email). Text and up to 4
+>       photos per message; the inbox and each conversation are paginated; unread both ways;
+>       Store › Messages with a menu badge, push on new messages, an email to the store after 30
+>       minutes unread (Settings, default on) and to the shopper on a reply (once until read).
+>       Messages stay with their order, or with the store for an inquiry, until the store is
+>       deleted. Stores report a conversation; admins dismiss or block it.
+>       **Backend done 2026-11-16** (routes, 57 tests). **Webapp:** Store › Messages, the order
+>       page's Messages, Contact us as a conversation, the shopper's `/messages/:id` page, the
+>       order drawer's "Message customer", the Settings switch, Admin reported conversations.
 
 > **Prod as of 2026-11-15 (replaces the 2026-11-14 notes on secrets, the server and the AI key).**
 > - **API:** `https://api.ceseelia.com` on `ceseelia-0` (i-0533c778bf9ef2411, t3.micro, Amazon
@@ -1658,6 +1671,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 | 2026-11-16 | §0 G1–G2 done (store subdomains live on prod). §0 H: automatic prod deploys: `.github/workflows/deploy-prod.yml` (CI checks via `workflow_call`, image → ECR `ceseelia-node`, SSM → `deploy-image.sh` with health check and rollback), GitHub OIDC role `CeseeliaGithubDeployBackendProd` (`iam/github-deploy-backend-*.json`), server role gains ECR pull + SSM agent; compose's node image is `${NODE_IMAGE}` from `./.env`. Tested on prod (deploy and rollback). |
 | 2026-11-16 | QA (C3): the admin store list's Completions, Cancelled and Last order were never updated (always 0 / NA). Now `markOrderPaid` sets the last-order time, Completed adds to Completions (`bumpStoreOrderCounter`), and a full refund adds to Cancelled (back off if a failed refund undoes it). Existing prod store backfilled by hand. |
 | 2026-11-16 | §0 C3 done (first test order on prod, all emails received); D3 done: `PAID_PLANS_ENABLED=true` on the prod server (test mode). Next: C4. |
+| 2026-11-16 | L.10 messages (backend): store ↔ shopper async chat per order and from Contact us (inquiries with an emailed private link); text + up to 4 photos; paginated inbox and messages; unread both ways; push on shopper messages, store email after 30 min unread (setting, default on), shopper email per unread reply; reports → admin dismiss/block. 57 new tests. |
 | 2026-11-15 | 9.8 phase 1: store subdomains `https://<slug>.ceseelia.com` (`STORE_URL_TEMPLATE`, `layers/core/store-url`): Stripe return URLs, order email links and link previews use them; CORS allows them; 20 more reserved slugs. Phase 2 (custom domains) planned under 9.8. §0 G added (deploy order). Tests 1176. |
 | 2026-11-14 | Secrets: one per stage (`ceseelia/dev`, `ceseelia/prod`, `APP_SECRET_ID`, flat keys incl. `anthropicApiKey`); Stripe reads it (checked against the Stripe sandbox). `CeseeliaServerRole` + instance profile for the future prod server (`iam/`). The API isn't deployed yet; the certbot error in `~/tasks.md` is primehost-0's (another project). |
 | 2026-11-14 | L.3 done: S.14 helmet + nginx hardening + pinned images; S.15 non-root image with `npm ci --omit=dev` and HEALTHCHECK; S.16 legacy auth/PayPal/PrimeFaya/DinersXpress code deleted; S.17 certbot renewal fixed (paths, executable bit, nginx reload from the host). 9.3 `/healthz` + graceful shutdown. Server step: `crontab -e`, make the line `0 2,14 * * * /bin/bash <project>/certbot-renew.sh >> <project>/certbot-renew.log 2>&1`. |

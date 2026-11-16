@@ -40,19 +40,22 @@ import { alertNewOrder } from "./order-alerts";
 
 const base = () => WEBAPP_URL.replace(/\/$/, "");
 
-interface StoreForEmail extends EmailStore {
+export interface StoreForEmail extends EmailStore {
   storeSlug: string;
   taxNumber: string;
   /** Send new-order alerts to `storeEmail` too (Settings, default on). */
   emailOrderAlerts: boolean;
+  /** L.10: email the store about messages it hasn't read in 30 minutes (Settings, default on). */
+  emailMessageAlerts: boolean;
 }
 
-async function storeFor(storeId: string): Promise<StoreForEmail> {
+export async function storeFor(storeId: string): Promise<StoreForEmail> {
   const overview = await getStoreOverviewRow(storeId).catch(() => null);
   let storeEmail = "";
   let pickupAddress = "";
   let taxNumber = "";
   let emailOrderAlerts = true;
+  let emailMessageAlerts = true;
   let storeName = String(overview?.storeName ?? "");
   try {
     const settings = await getPublicStoreSettings(storeId);
@@ -60,6 +63,7 @@ async function storeFor(storeId: string): Promise<StoreForEmail> {
     pickupAddress = settings.general?.pickupAddress?.trim() ?? "";
     taxNumber = settings.storeInfo?.taxNumber?.trim() ?? "";
     emailOrderAlerts = settings.storeInfo?.emailOrderAlerts !== false;
+    emailMessageAlerts = settings.storeInfo?.emailMessageAlerts !== false;
     storeName = settings.storeInfo?.storeName?.trim() || storeName;
   } catch {
     // A suspended or deleted store: the name from the overview is enough.
@@ -70,6 +74,7 @@ async function storeFor(storeId: string): Promise<StoreForEmail> {
     pickupAddress,
     taxNumber,
     emailOrderAlerts,
+    emailMessageAlerts,
     storeSlug: String(overview?.storeSlug ?? ""),
   };
 }
@@ -81,13 +86,13 @@ async function orderLink(order: StoreOrder, storeSlug: string): Promise<string> 
   return `${storeUrl(storeSlug, `/order/${order.storeOrderId}`)}#t=${token}`;
 }
 
-async function send(to: string, fromName: string, email: RenderedEmail, replyTo?: string): Promise<boolean> {
+export async function send(to: string, fromName: string, email: RenderedEmail, replyTo?: string): Promise<boolean> {
   if (!to) return false;
   const sent = await sendEmail(email.subject, fromName, to, email.html, false, replyTo || undefined);
   return !!sent;
 }
 
-const shopperFrom = (store: EmailStore) => `${store.storeName} via Ceseelia`;
+export const shopperFrom = (store: EmailStore) => `${store.storeName} via Ceseelia`;
 
 function logged(what: string, orderId: string) {
   return (e: unknown) => log.error({ err: e }, `[order emails] ${what} for order ${orderId} failed`);

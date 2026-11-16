@@ -10,6 +10,7 @@ import storeBillingRouter from "./billing";
 import storeOrdersRouter from "./orders";
 import storeCustomersRouter from "./customers";
 import storeReviewsRouter from "./reviews";
+import storeMessagesRouter from "./messages";
 import route_create from './create/index';
 import route_delete from './delete/index';
 import route_get_header_strip_image_upload_url from './get-header-strip-image-upload-url/index';
@@ -42,6 +43,7 @@ storeRouter.use("/billing", storeBillingRouter);
 storeRouter.use("/orders", storeOrdersRouter);
 storeRouter.use("/customers", storeCustomersRouter);
 storeRouter.use("/reviews", storeReviewsRouter);
+storeRouter.use("/messages", storeMessagesRouter); // L.10 messages
 
 // Export Router
 export default storeRouter;

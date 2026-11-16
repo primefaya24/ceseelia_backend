@@ -840,14 +840,12 @@ export function comingSoonSettings(settings: StoreSettings): StoreSettings {
 
 /*
  * The settings a shopper may see: the email and phone number are left out when the merchant hid
- * them (`showEmail` / `showPhone` false: often personal details), and `contactFormAvailable`
- * says whether Contact us can be offered (the store has an email; contact-store reads the real
- * one on the server).
+ * them (`showEmail` / `showPhone` false: often personal details). `contactFormAvailable` is
+ * always true since L.10 (Contact us starts a conversation in the store's inbox).
  */
 export function toPublicSettings(settings: StoreSettings): StoreSettings {
   const info = settings.storeInfo ?? initStoreSettings().storeInfo;
-  const email = (info.emailaddress ?? "").trim();
-  const { contactFormAvailable: _ignored, emailOrderAlerts: _alerts, ...rest } = info;
+  const { contactFormAvailable: _ignored, emailOrderAlerts: _alerts, emailMessageAlerts: _msgAlerts, ...rest } = info;
   const { lifecycle, subscription: _s, billingCheckout: _c, ...others } = settings;
   return {
     ...others,
@@ -857,7 +855,8 @@ export function toPublicSettings(settings: StoreSettings): StoreSettings {
       ...rest,
       emailaddress: info.showEmail === false ? "" : info.emailaddress,
       phoneNumber: info.showPhone === false ? "" : info.phoneNumber,
-      contactFormAvailable: email.length > 0,
+      // L.10: Contact us starts a conversation in the store's inbox: no email needed.
+      contactFormAvailable: true,
     },
   };
 }

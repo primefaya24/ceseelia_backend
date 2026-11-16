@@ -218,3 +218,55 @@ export function rewardsCodeEmail(storeName: string, code: string, minutes: numbe
     ),
   };
 }
+
+/* L.10: messages. No message text in any of these (it stays on Ceseelia, behind the link). */
+const about = (orderCode: string | null) => (orderCode ? ` about order #${orderCode}` : "");
+
+/** The shopper started a conversation from Contact us: their link to it. */
+export function inquiryStartedEmail(store: EmailStore, link: string): RenderedEmail {
+  return {
+    subject: `Your message to ${store.storeName}`,
+    html: layout(
+      "Your message was sent",
+      [
+        p(`We've passed your message to <strong>${e(store.storeName)}</strong>. We'll email you when they reply.`),
+        p(`You can see the conversation and add to it any time:`),
+        button(link, "Open the conversation"),
+        p(`<span style="color:#6b7280;font-size:13px">Keep this email: the button is your private link. Don't forward it.</span>`),
+      ].join(""),
+      `Sent by Ceseelia for ${e(store.storeName)}. If you didn't write to this store, ignore this email.`
+    ),
+  };
+}
+
+/** The store replied (one email until the shopper has read it). */
+export function messageReplyEmail(store: EmailStore, orderCode: string | null, link: string): RenderedEmail {
+  return {
+    subject: `${store.storeName} replied to you${about(orderCode)}`,
+    html: layout(
+      "You have a new message",
+      [
+        p(`<strong>${e(store.storeName)}</strong> sent you a message${e(about(orderCode))}.`),
+        button(link, "Read and reply"),
+        p(`<span style="color:#6b7280;font-size:13px">The button is your private link to this conversation. Don't forward it.</span>`),
+      ].join(""),
+      `Sent by Ceseelia for ${e(store.storeName)}. Reply on the conversation page: replies to this email aren't read.`
+    ),
+  };
+}
+
+/** A shopper's message nobody at the store has read for 30 minutes. */
+export function storeMessageAlertEmail(storeName: string, customerName: string, orderCode: string | null, link: string): RenderedEmail {
+  return {
+    subject: `New message from ${customerName}${about(orderCode)}`,
+    html: layout(
+      "A customer is waiting for a reply",
+      [
+        p(`<strong>${e(customerName)}</strong> sent <strong>${e(storeName)}</strong> a message${e(about(orderCode))} that nobody has read yet.`),
+        button(link, "Open messages"),
+        p(`<span style="color:#6b7280;font-size:13px">You can turn these emails off in Store front › Settings.</span>`),
+      ].join(""),
+      "Sent by Ceseelia."
+    ),
+  };
+}

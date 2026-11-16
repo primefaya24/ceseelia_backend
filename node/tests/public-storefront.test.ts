@@ -104,10 +104,10 @@ describe("store email on the storefront (showEmail)", () => {
     expect(info.contactFormAvailable).toBe(true);
   });
 
-  it("no email: no Contact us; a contactFormAvailable sent in is not trusted", () => {
+  it("no email: Contact us still offered (L.10: it starts a conversation in the store's inbox)", () => {
     const base = liveStoreSettings();
-    const forged = { ...base, storeInfo: { ...base.storeInfo, contactFormAvailable: true } };
-    expect(toPublicSettings(forged).storeInfo.contactFormAvailable).toBe(false);
+    const forged = { ...base, storeInfo: { ...base.storeInfo, contactFormAvailable: false } };
+    expect(toPublicSettings(forged).storeInfo.contactFormAvailable).toBe(true);
   });
 
   it("the phone number can be hidden on its own, or both together", () => {

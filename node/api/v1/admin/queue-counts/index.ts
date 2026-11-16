@@ -5,12 +5,13 @@ import { CACHE_CONTROL, setCacheControl } from "../../../../layers/core/http/cac
 import { listReviewQueue } from "../../../../layers/aws/dynamodb/dynamo-entities/store-admin";
 import { listItemReviewQueue } from "../../../../layers/aws/dynamodb/dynamo-entities/item-review";
 import { listReviewReports } from "../../../../layers/aws/dynamodb/dynamo-entities/review";
+import { listConversationReports } from "../../../../layers/aws/dynamodb/dynamo-entities/conversation";
 import { countOpenTickets } from "../../../../layers/aws/dynamodb/dynamo-entities/support-ticket";
 import { log } from "../../../../layers/core/logger";
 
 /*
  * GET /admin/queue-counts (admins; L.9): what's waiting, for the admin menu's badges.
- * → { storeReviews, itemReviews, reviewReports, openTickets }. Four queue reads, no order or
+ * → { storeReviews, itemReviews, reviewReports, messageReports, openTickets }. Five queue reads, no order or
  * store scans; cached 20 s (every admin tab asks once a minute).
  */
 let cached: { at: number; body: Record<string, number> } | null = null;
@@ -26,15 +27,22 @@ async function executeRouteCore(_req: Request, res: Response): Promise<void> {
   setCacheControl(res, CACHE_CONTROL.none);
   try {
     if (!cached || Date.now() - cached.at > 20_000) {
-      const [storeReviews, itemReviews, reviewReports, openTickets] = await Promise.all([
+      const [storeReviews, itemReviews, reviewReports, messageReports, openTickets] = await Promise.all([
         listReviewQueue(),
         listItemReviewQueue(),
         listReviewReports(),
+        listConversationReports(),
         countOpenTickets(),
       ]);
       cached = {
         at: Date.now(),
-        body: { storeReviews: storeReviews.length, itemReviews: itemReviews.length, reviewReports: reviewReports.length, openTickets },
+        body: {
+          storeReviews: storeReviews.length,
+          itemReviews: itemReviews.length,
+          reviewReports: reviewReports.length,
+          messageReports: messageReports.length,
+          openTickets,
+        },
       };
     }
     res.send(cached.body);
