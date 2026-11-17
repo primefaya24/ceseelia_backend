@@ -26,7 +26,7 @@ The same list is in both repos' `progress.md`; tick it in both. In order: each p
 one before it. Details stay where they're linked.
 
 _A1–B3, B5–B9, C1, D2, D4 and E1 done 2026-11-15 (C2 mostly); `tools/deploy-s3.sh dev` run by Claude (dev.ceseelia.com
-serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **C3 and C4 done 2026-11-16; paid plans on (D3). Next: D1 (Stripe live mode), then D5.** Store subdomains (9.8 phase 1) are coded and tested: G1 (owner push) then G2 (Claude deploys)._
+serves the app; API calls fail until a dev API exists). `https://api.ceseelia.com` is live (Stripe test mode). **Launch list done 2026-11-16: prod is live (Stripe live mode, fresh data). Next: the first client's onboarding, 2026-11-21/22 (D5).** Store subdomains (9.8 phase 1) are coded and tested: G1 (owner push) then G2 (Claude deploys)._
 
 **A. Now (nothing blocks these)**
 - [x] A1. **Push** every repo from your own shell: backend and webapp
@@ -154,8 +154,13 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       4 test logins (the owner's admin login kept), the leftover custom-domain tenant cleaned by
       the sweep. API restarted: `mode: live`; a signed live event reached the billing webhook
       (200)._
-- [ ] D5. Smoke test on prod: sign up, create a store, Go Live, a real order; paste a store link
-      in WhatsApp or Slack and check the preview (name, slogan, logo).
+- [x] D5. ~~Smoke test on prod~~ **Replaced by the first real client (owner decision
+      2026-11-16):** no test data on the fresh prod, and no live-mode self-payments (Stripe
+      forbids testing with real cards). The flows were tested end to end in test mode on prod
+      (C3, C4); live mode is checked by its key and a signed live billing event (200). The first
+      client onboards on the weekend of **2026-11-21/22** and uses the platform as any user
+      would: Claude watches the API logs and both webhooks during it (store created → Connect →
+      Go Live checkout → first order). Paste a store link in WhatsApp then to check the preview.
 
 **F. Claude, before launch (code)**
 - [x] F1. Webapp Content-Security-Policy on CloudFront (WA S.14: Amplify keeps tokens in
