@@ -122,7 +122,7 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       (proration set the same day, see changelog)._
 
 **D. Going live**
-- [ ] D1. Repeat C1 and C2 in **live mode**; live keys and both webhook secrets into
+- [x] D1. Repeat C1 and C2 in **live mode**; live keys and both webhook secrets into
       `ceseelia/prod` (AWS console).
       Then run `node/scripts/setup-billing-portal.mjs --write` against live mode (plan switches:
       upgrades charged at once, downgrades at the period's end).
@@ -147,6 +147,13 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 - [x] D4. Deploy the webapp: `tools/deploy-s3.sh prod` (from `ceseelia_webapp/`). _Done by Claude
       2026-11-15 (early, so C3 can run on prod in test mode; run it again after any webapp change).
       `app.ceseelia.com` serves the app with the prod config; link previews reach the API._
+      _D1 finished 2026-11-16: owner activated the account (charges and payouts on, nothing due;
+      public name Ceseelia, descriptor CESEELIA, CAD payouts, Radar Lite, website ceseelia.com),
+      Connect branding, Smart Retries, GST/HST tax ID. Prod wiped for a fresh start (owner's
+      choice; backup `ceseelia-prod-before-fresh-start-2026-11-16`): every table row, uploads,
+      4 test logins (the owner's admin login kept), the leftover custom-domain tenant cleaned by
+      the sweep. API restarted: `mode: live`; a signed live event reached the billing webhook
+      (200)._
 - [ ] D5. Smoke test on prod: sign up, create a store, Go Live, a real order; paste a store link
       in WhatsApp or Slack and check the preview (name, slogan, logo).
 
