@@ -126,6 +126,17 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
       `ceseelia/prod` (AWS console).
       Then run `node/scripts/setup-billing-portal.mjs --write` against live mode (plan switches:
       upgrades charged at once, downgrades at the period's end).
+      _Claude part done 2026-11-16 (live key in `ceseelia/prod`, account `acct_1UapRHGru8fjnPO1`):
+      `scripts/setup-stripe-account.mjs` (new, rerunnable) made the Connect webhook
+      `we_1UccwNGru8fjnPO15tXDI7ZC` (13 events) and the billing one `we_1UccwNGru8fjnPO1MExAltCF`
+      (9 events), both secrets stored (the test ones replaced; values never shown); Stripe Tax
+      active (head office Lloydminster AB, Canada GST/HST registration); `setup-billing-prices.mjs`
+      made Spark and Nova × CAD/AUD/USD with the SaaS tax code; portal `bpc_1UccwwGru8fjnPO1JfFZ6MTh`
+      (default; same settings as test, privacy/terms links). Checked: 25 CAD Spark → AB 1.25,
+      ON 3.25. **The running API still has the test values cached until it restarts** (any backend
+      deploy restarts it). **Owner, before the restart:** activate the account (charges and
+      payouts are off), Connect platform profile + branding, Smart Retries, the GST/HST number
+      as the account's tax ID, and decide what happens to the test-mode stores on prod._
 - [x] D2. `anthropicApiKey` in `ceseelia/prod`, once you've reviewed the eval (A4). _Done
       2026-11-15 (Claude checked: present, a valid key format; value never read out). Eval on
       dev: 60 of 60 right, no legitimate store flagged, no sketchy store missed, ≈ $0.34._
@@ -1722,6 +1733,7 @@ pickup or delivery, goes through Stripe Checkout (5.4).
 |---|---|
 | 2026-11-16 | Owner request: `GET /store/go-live/checklist` returns `ownDomain` (the store's own domain while ACTIVE, else null; read from the domain record so a removal shows at once). The webapp's Live button links there. |
 | 2026-11-16 | UX-D: `get-all-stores?filter=` with `counts` per filter (Admin › Stores chips; Admin › Overview links to them). |
+| 2026-11-16 | §0 D1 Claude part: live Stripe set up by `scripts/setup-stripe-account.mjs` (webhooks + secrets, Stripe Tax, GST/HST registration, product tax codes), live prices and portal. API restart (switch to live) waits for the owner's account activation and the test-data decision. |
 | 2026-11-16 | UX-B: order codes are now the store's unique prefix + a per-store number (`PB-1001`), from `dynamo-entities/order-code` (atomic counter, prefix reserved on the first order). Old orders keep their codes. UI/UX list (UX-A–E) lives in the webapp's progress.md §1c. |
 | 2026-11-16 | Custom domain removal verified on prod (owner removed `shoppo.northernhoop.com`): rows, tenant, ACM certificate and clean-up queue all gone within 2 minutes; lookup, serving and CORS off. Webapp domain card redesigned. |
 | 2026-11-16 | Custom domains fix: an issued certificate is now put on the tenant (domains stayed in Securing), and tenant updates send the whole configuration (turning one off can't drop its certificate). `shoppo.northernhoop.com` live; removal clean-up verified in AWS. |
