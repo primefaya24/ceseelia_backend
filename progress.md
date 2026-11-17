@@ -254,6 +254,31 @@ serves the app; API calls fail until a dev API exists). `https://api.ceseelia.co
 _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-08), rewards
 `normalize-rewards-method.mjs --write` on dev and prod (2026-11-15), Stage P QA (2026-11-13)._
 
+
+**After launch: to do later (added 2026-11-16, owner: "ready for paying users")**
+Nothing here blocks paying users. Claude's items first, then the owner's.
+- [ ] Z1. **Alarms check (Claude):** confirm the CloudWatch alarms (B2) cover API 5xx errors,
+      failed Stripe webhooks (Connect and billing) and the server/health check going down, and
+      that they email `ALARM_EMAIL`; add what's missing.
+- [ ] Z2. **Merchant onboarding guide (Claude):** a one-page guide to send new merchants: sign
+      up, create the store, add items, connect Stripe (what Stripe asks: ID, bank, business
+      details), Go Live, share the link.
+- [ ] Z3. **Ad tracking on ceseelia.com (owner → Claude):** the owner sends the Google tag and
+      Meta Pixel IDs; Claude adds them (`GTAG_ID`, `META_PIXEL_ID` in the site's
+      `assets/js/site.js`, CodeCommit `ceseelia-v1`).
+- [ ] Z4. **Lint warnings (Claude, 9.7):** clear the remaining legacy warnings in both repos.
+- [ ] Z5. **Link-before-verify fix (Claude, 1.1c):** must land before any social sign-in
+      ("Sign in with Google") is added.
+- [ ] Z6. **Webapp Stage 9 (Claude):** accessibility pass (9.2: keyboard, focus traps, contrast
+      with custom colours) and error tracking with a global error page (9.4).
+- [ ] Z7. **Restricted Stripe key (owner + Claude):** Claude lists the exact permissions the
+      backend uses; the owner makes an `rk_live_…` key with them (IP-limited to the server) and
+      swaps it in `ceseelia/prod`; restart the API. Today's key has full access.
+- [ ] Z8. **USD bank account (owner):** add one in Stripe (Settings › Payouts) once USD income is
+      meaningful, to skip the conversion fee; AUD keeps converting to CAD.
+- [ ] Z9. **Trade name (owner):** ask the accountant or a registry agent whether "Ceseelia" needs
+      an Alberta trade name registration under Primefaya Computer Services.
+
 ## 1. Where things stand
 
 > **🚀 Launch checklist (owner, 2026-11-14): EVERY item below must be done before launch.**
@@ -264,7 +289,7 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 > - [x] **L.0 Owner: the first real test order** (= §0 C3, done 2026-11-16) in Stripe test mode (Connect webhook first,
 >       with the refund events, BE 5.5 "Setup"): checkout → paid (receipt + PDF, alerts) →
 >       Store › Orders → steps (ready / on its way emails) → refund part → refund the rest.
-> - [ ] **L.1 Owner: Stripe and secrets** (= §0 C2, C4, D1, D3; S.2 done). Stripe Billing setup (P.5 "Setup") and a Spark
+> - [x] **L.1 Owner: Stripe and secrets** _(done 2026-11-16: §0 C2, C4, D1, D3 all done; prod on live Stripe)_ (= §0 C2, C4, D1, D3; S.2 done). Stripe Billing setup (P.5 "Setup") and a Spark
 >       checkout test; `PAID_PLANS_ENABLED=true` in prod; live Stripe keys and webhook secrets
 >       in `ceseelia/prod` (one secret per stage, see the note below); S.2 password rotation.
 > - [x] **L.2 The AI store check** in `runSmartStoreValidation` (P.4c). Code done 2026-11-15;
@@ -345,14 +370,14 @@ _Already done by the owner: the old Google Cloud API key revoked (S.1b, 2026-11-
 >       commission reporting (8.4). (8.2 join requests stay superseded by P.3.) **Done
 >       2026-11-15** (backend and webapp); checked read-only on dev (6 draft stores, 7 merchants,
 >       no orders or tickets yet).
-> - [~] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
+> - [x] **L.9 The rest:** CloudFront in front of the storefront and the bucket (3.2b), WA 3.6
 >       SEO / link previews, account delete (BE `delete-user`, WA 1.6d), custom domains
 >       (P.9 / 9.8), the admin menu's review-queue badge, paging Admin › Stores.
 >       **Done 2026-11-15:** menu badges (`GET /admin/queue-counts`), paging Admin › Stores
 >       (`get-all-stores?q=&limit=&cursor=`), account delete (`delete-user`, WA 1.6d), webapp
 >       hosting on S3 + CloudFront (3.2b, deployed to dev and prod 2026-11-15; prod app uploaded)
 >       and link previews (WA 3.6, `/store/public/preview`). **Later:** 9.8 custom
->       domains (after launch; listed as "coming soon").
+>       domains (after launch; listed as "coming soon"). _Custom domains went live on prod 2026-11-16 (§0 G4–G5), so L.9 is done._
 >
 > - [x] **L.10 Messages (owner, 2026-11-16: before launch):** an async chat between a store and
 >       its shoppers on Ceseelia, not email. One conversation per order (the shopper opens it from
