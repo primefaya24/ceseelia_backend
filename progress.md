@@ -1316,7 +1316,7 @@ Where each plan is cheapest (monthly price + commission × orders):
       commission" and "Spark ↔ Nova").
 
 ### Q.2 Every place that names a plan (BE)
-- [ ] Q.2a Search the backend for `SPARK|NOVA|Spark|Nova` and fix each hit. Known places:
+- [x] Q.2a Search the backend for `SPARK|NOVA|Spark|Nova` and fix each hit. Known places:
       `PUT /admin/set-store-plan` validation (accept LUMINA), Go Live's plan check ("must be
       SPARK / NOVA"), `GET /store/public/plans` and the checklist's plan list, admin
       get-all-stores and overview counts per plan, the commission report and its CSV `Plan`
@@ -1337,20 +1337,22 @@ Where each plan is cheapest (monthly price + commission × orders):
       copied when it was created (5.4c). Test both directions.
 
 ### Q.4 Switching plans (BE)
-- [ ] Q.4a Subscription sync: going up to Lumina (the price changes now) moves
+- [x] Q.4a Subscription sync: going up to Lumina (the price changes now) moves
       `lifecycle.plan` on `customer.subscription.updated`.
-- [ ] Q.4b Going down at the period's end: the portal schedules it (a subscription schedule /
+- [x] Q.4b Going down at the period's end: the portal schedules it (a subscription schedule /
       pending update). The sync must not change the plan until Stripe actually switches the
-      price, and must change it when Stripe does. Find out which events Stripe sends for this and
-      test with recorded fixtures.
-- [ ] Q.4c `GET /store/billing/status` adds `pendingPlan` and `pendingPlanAt` when a downgrade
+      price, and must change it when Stripe does. Done 2026-11-17: the sync reads the subscription
+      with `schedule.phases.items.price` expanded (`pendingPlanChange`), and the billing webhook
+      also takes `subscription_schedule.*` events (added to the endpoint by
+      `setup-stripe-account.mjs`).
+- [x] Q.4c `GET /store/billing/status` adds `pendingPlan` and `pendingPlanAt` when a downgrade
       is scheduled, so the UI can show "Switches to Spark on Dec 17". Mirror it in the WA
       interface.
-- [ ] Q.4d Cancel, failed payment (7 days' grace) and ENDED work the same on Lumina (the rules
+- [x] Q.4d Cancel, failed payment (7 days' grace) and ENDED work the same on Lumina (the rules
       in `layers/core/billing` don't depend on the plan; add Lumina cases anyway).
-- [ ] Q.4e The subscription's currency stays the store's country currency on a switch (no
+- [x] Q.4e The subscription's currency stays the store's country currency on a switch (no
       CAD → USD surprises).
-- [ ] Q.4f Plan changes made by an admin (`set-store-plan`) between all three plans, and
+- [x] Q.4f Plan changes made by an admin (`set-store-plan`) between all three plans, and
       `planSetByAdmin` against a later subscription.
 
 ### Q.5 Stripe setup (OPS, Claude: dev in test mode first, then prod in live mode)
@@ -1367,17 +1369,17 @@ Where each plan is cheapest (monthly price + commission × orders):
       Lumina would get a 503.
 
 ### Q.6 Tests (BE, `npm test`, lint, typecheck all green)
-- [ ] Q.6a `plans-lifecycle.test.ts`: the catalogue values for all 3 plans, lookup keys in both
+- [x] Q.6a `plans-lifecycle.test.ts`: the catalogue values for all 3 plans, lookup keys in both
       directions, `planRank`, an unknown or old plan → NONE.
-- [ ] Q.6b Fees: Spark 195/145, Nova 95/75, Lumina 0 per currency; capped at the order total;
+- [x] Q.6b Fees: Spark 195/145, Nova 95/75, Lumina 0 per currency; capped at the order total;
       CUSTOM FIXED / PERCENT overrides on each plan; a store with no plan → Spark's fee.
-- [ ] Q.6c `billing.test.ts`: `planEffect` and `lifecycleAfter` for each plan; every switch
+- [x] Q.6c `billing.test.ts`: `planEffect` and `lifecycleAfter` for each plan; every switch
       (Spark↔Nova, Nova↔Lumina, Spark↔Lumina); cancel from Lumina; grace on Lumina; a stale
       event after a switch doesn't undo it (`mayReplace`).
-- [ ] Q.6d Webhook end to end with fixture events: an upgrade, a scheduled downgrade arriving
+- [x] Q.6d Webhook end to end with fixture events: an upgrade, a scheduled downgrade arriving
       at the period's end, a portal switch.
-- [ ] Q.6e An order created before a switch keeps its fee; one created after uses the new fee.
-- [ ] Q.6f Routes: public plans returns 3 plans in order; Go Live on LUMINA; set-store-plan
+- [x] Q.6e An order created before a switch keeps its fee; one created after uses the new fee.
+- [x] Q.6f Routes: public plans returns 3 plans in order; Go Live on LUMINA; set-store-plan
       LUMINA; billing status `pendingPlan`; commission report and CSV with a Lumina store.
 
 ### Q.7 Stores already on Nova (OPS, Claude)

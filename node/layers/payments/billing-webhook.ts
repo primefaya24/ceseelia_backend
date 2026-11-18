@@ -25,6 +25,16 @@ const SUBSCRIPTION_EVENTS = new Set([
   "customer.subscription.resumed",
 ]);
 
+/* A downgrade at the period's end is a schedule on the subscription (Q.4). */
+const SCHEDULE_EVENTS = new Set([
+  "subscription_schedule.created",
+  "subscription_schedule.updated",
+  "subscription_schedule.released",
+  "subscription_schedule.canceled",
+  "subscription_schedule.completed",
+  "subscription_schedule.aborted",
+]);
+
 const idOf = (v: unknown): string | null =>
   typeof v === "string" ? v : v && typeof (v as { id?: unknown }).id === "string" ? (v as { id: string }).id : null;
 
@@ -32,6 +42,7 @@ const idOf = (v: unknown): string | null =>
 export function subscriptionIdOf(event: Stripe.Event): string | null {
   const obj = event.data.object as unknown as Record<string, unknown>;
   if (SUBSCRIPTION_EVENTS.has(event.type)) return idOf(obj.id);
+  if (SCHEDULE_EVENTS.has(event.type)) return idOf(obj.subscription);
   if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
     return obj.mode === "subscription" ? idOf(obj.subscription) : null;
   }

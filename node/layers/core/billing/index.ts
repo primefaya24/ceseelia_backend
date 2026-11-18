@@ -35,6 +35,9 @@ export interface SubscriptionSnapshot {
   /** When it ended (ms), or null. */
   endedAt: number | null;
   metadata: { storeId?: string; userId?: string; plan?: string };
+  /** A plan change Stripe will make later (a downgrade waits for the period's end, Q.4): the
+   * next phase of the subscription's schedule, when its plan differs from today's. */
+  pending?: { plan: StorePlan; at: number };
 }
 
 const PAYING = new Set(["active", "trialing", "past_due"]);
@@ -159,5 +162,6 @@ export function subscriptionRecord(
     cancelAtPeriodEnd: snap.cancelAtPeriodEnd,
     graceEndsAt: effect.kind === "GRACE" ? effect.until : null,
     syncedAt: now,
+    ...(snap.pending ? { pendingPlan: snap.pending.plan, pendingPlanAt: snap.pending.at } : {}),
   };
 }

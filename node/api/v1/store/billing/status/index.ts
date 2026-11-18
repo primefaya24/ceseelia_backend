@@ -9,7 +9,9 @@ import { sendBillingError } from "../shared";
  * GET /store/billing/status/:storeId (store members, progress.md P.5)
  * → { status, plan, pausedReason, suspended, canManage, checkoutPending,
  *     subscription: { plan, status, currency, currentPeriodEnd, cancelAtPeriodEnd, graceEndsAt,
- *                     isPayer } | null }
+ *                     isPayer, pendingPlan, pendingPlanAt } | null }
+ * `pendingPlan` / `pendingPlanAt`: a switch Stripe has scheduled (a downgrade at the period's
+ * end, Q.4), else null.
  * `canManage` = may start a checkout (store ADMIN or platform admin); `isPayer` = may open the
  * billing portal (only the user who subscribed: the portal shows their card and invoices).
  * No ids (customer, subscription) are sent.
@@ -47,6 +49,8 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
               cancelAtPeriodEnd: sub.cancelAtPeriodEnd,
               graceEndsAt: sub.graceEndsAt,
               isPayer: !!auth.userId && auth.userId === sub.payerUserId,
+              pendingPlan: sub.pendingPlan ?? null,
+              pendingPlanAt: sub.pendingPlan ? (sub.pendingPlanAt ?? null) : null,
             }
           : null,
     });

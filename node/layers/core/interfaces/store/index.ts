@@ -315,6 +315,9 @@ export interface StoreSubscription {
   /** Payment failed for good: the plan stays until then, then it ends and the store is a draft (ms). */
   graceEndsAt: number | null;
   syncedAt: number;
+  /** A switch Stripe has scheduled (a downgrade at the period's end, Q.4): the plan, and when (ms). */
+  pendingPlan?: StorePlan;
+  pendingPlanAt?: number;
 }
 
 /** A Billing Checkout started for this store and not finished yet (P.5), so a second click reuses it. */

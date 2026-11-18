@@ -72,7 +72,7 @@ import {
   planEffect,
   SubscriptionSnapshot,
 } from "../layers/core/billing";
-import { resetBillingPriceCache, resolvePlanPrice, toSnapshot } from "../layers/payments/billing";
+import { pendingPlanChange, resetBillingPriceCache, resolvePlanPrice, toSnapshot } from "../layers/payments/billing";
 import { subscriptionIdOf } from "../layers/payments/billing-webhook";
 import { sweepExpiredGrace, syncSubscription } from "../layers/payments/subscription-sync";
 import { createApp } from "../app";
@@ -415,6 +415,101 @@ describe("syncSubscription (P.5)", () => {
     expect(ddb.commandCalls(TransactWriteCommand)).toHaveLength(2);
   });
 
+  // ─── switching plans (Q.4) ───
+  const item = (plan: string, cur = "cad") => ({ price: { lookup_key: `ceseelia_${plan}_${cur}` }, current_period_end: NOW / 1000 + 30 * 86400 });
+  const PERIOD_END_S = NOW / 1000 + 30 * 86400;
+  const schedule = (now: string, next: string, p: Record<string, unknown> = {}) => ({
+    id: "sub_sched_1",
+    status: "active",
+    current_phase: { start_date: NOW / 1000 - 86400, end_date: PERIOD_END_S },
+    phases: [
+      { start_date: NOW / 1000 - 86400, end_date: PERIOD_END_S, items: [{ price: { lookup_key: `ceseelia_${now}_cad` } }] },
+      { start_date: PERIOD_END_S, end_date: PERIOD_END_S + 30 * 86400, items: [{ price: { lookup_key: `ceseelia_${next}_cad` } }] },
+    ],
+    ...p,
+  });
+
+  it.each([
+    ["SPARK", "NOVA"],
+    ["NOVA", "LUMINA"],
+    ["SPARK", "LUMINA"],
+  ])("upgrade %s → %s: the live store's plan (and so its commission) changes at once", async (from, to) => {
+    withSettings({ lifecycle: { status: "LIVE", plan: from }, subscription: record({ plan: from }) });
+    stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ items: { data: [item(to.toLowerCase())] } }));
+    expect(await syncSubscription("sub_1", () => NOW)).toBe("UPDATED");
+    expect(savedLifecycle()).toEqual({ status: "LIVE", plan: to });
+    expect(savedSub()).toMatchObject({ plan: to, status: "active" });
+    expect(savedSub()).not.toHaveProperty("pendingPlan");
+  });
+
+  it.each([
+    ["LUMINA", "SPARK"],
+    ["LUMINA", "NOVA"],
+    ["NOVA", "SPARK"],
+  ])("downgrade %s → %s: scheduled, the plan stays until Stripe switches the price at the period's end", async (from, to) => {
+    const f = from.toLowerCase();
+    const t = to.toLowerCase();
+    withSettings({ lifecycle: { status: "LIVE", plan: from }, subscription: record({ plan: from }) });
+    stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ items: { data: [item(f)] }, schedule: schedule(f, t) }));
+    expect(await syncSubscription("sub_1", () => NOW)).toBe("UPDATED");
+    expect(savedLifecycle()).toBeUndefined(); // still on the plan paid for
+    expect(savedSub()).toMatchObject({ plan: from, pendingPlan: to, pendingPlanAt: PERIOD_END_S * 1000 });
+
+    // The period ends: Stripe moves the price, the schedule is released.
+    withSettings({
+      lifecycle: { status: "LIVE", plan: from },
+      subscription: record({ plan: from, pendingPlan: to, pendingPlanAt: PERIOD_END_S * 1000 }),
+    });
+    stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ items: { data: [item(t)] }, schedule: null }));
+    await syncSubscription("sub_1", () => NOW + 31 * DAY_MS);
+    expect(savedLifecycle(1)).toEqual({ status: "LIVE", plan: to });
+    expect(savedSub(1).plan).toBe(to);
+    expect(savedSub(1)).not.toHaveProperty("pendingPlan");
+  });
+
+  it("a scheduled downgrade the merchant takes back is forgotten", async () => {
+    withSettings({
+      lifecycle: { status: "LIVE", plan: "LUMINA" },
+      subscription: record({ plan: "LUMINA", pendingPlan: "SPARK", pendingPlanAt: PERIOD_END_S * 1000 }),
+    });
+    stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ items: { data: [item("lumina")] }, schedule: schedule("lumina", "spark", { status: "released" }) }));
+    await syncSubscription("sub_1", () => NOW);
+    expect(savedLifecycle()).toBeUndefined();
+    expect(savedSub()).not.toHaveProperty("pendingPlan");
+  });
+
+  it("pendingPlanChange: only a later phase with another of our plans counts", () => {
+    expect(pendingPlanChange(null, "NOVA")).toBeUndefined();
+    expect(pendingPlanChange("sub_sched_1" as never, "NOVA")).toBeUndefined(); // not expanded
+    expect(pendingPlanChange(schedule("nova", "nova") as never, "NOVA")).toBeUndefined();
+    expect(pendingPlanChange(schedule("nova", "gold") as never, "NOVA")).toBeUndefined();
+    expect(pendingPlanChange(schedule("nova", "spark", { status: "canceled" }) as never, "NOVA")).toBeUndefined();
+    expect(pendingPlanChange(schedule("nova", "spark") as never, "NOVA")).toEqual({ plan: "SPARK", at: PERIOD_END_S * 1000 });
+    const onePhase = { ...schedule("nova", "spark"), phases: [schedule("nova", "spark").phases[0]] };
+    expect(pendingPlanChange(onePhase as never, "NOVA")).toBeUndefined();
+  });
+
+  it("Lumina: cancelled ends at the period's end; a failed payment gets the same 7 days' grace", async () => {
+    withSettings({ lifecycle: { status: "LIVE", plan: "LUMINA" }, subscription: record({ plan: "LUMINA" }) });
+    stripe.subscriptions.retrieve.mockResolvedValue(
+      stripeSub({ items: { data: [item("lumina")] }, status: "canceled", cancellation_details: { reason: "cancellation_requested" } })
+    );
+    await syncSubscription("sub_1", () => NOW);
+    expect(savedLifecycle()).toMatchObject({ status: "DRAFT", plan: "NONE", pausedReason: "PLAN_ENDED" });
+
+    withSettings({ lifecycle: { status: "LIVE", plan: "LUMINA" }, subscription: record({ plan: "LUMINA" }) });
+    stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ items: { data: [item("lumina")] }, status: "unpaid" }));
+    await syncSubscription("sub_1", () => NOW);
+    expect(savedSub(1)).toMatchObject({ plan: "LUMINA", graceEndsAt: NOW + 7 * DAY_MS });
+  });
+
+  it("a switch keeps the subscription's currency (a US store stays in USD)", async () => {
+    withSettings({ lifecycle: { status: "LIVE", plan: "SPARK" }, subscription: record({ currency: "USD" }) });
+    stripe.subscriptions.retrieve.mockResolvedValue(stripeSub({ currency: "usd", items: { data: [item("lumina", "usd")] } }));
+    await syncSubscription("sub_1", () => NOW);
+    expect(savedSub()).toMatchObject({ plan: "LUMINA", currency: "USD" });
+  });
+
   it("the sweep re-syncs stores whose grace ended", async () => {
     ddb.on(QueryCommand).resolves({ Items: [{ storeId: STORE, graceEndsAt: NOW - 1 }] });
     ddb.on(DeleteCommand).resolves({});
@@ -448,7 +543,7 @@ describe("POST /api/v1/billing/stripe-webhook (P.5)", () => {
   it("each event syncs the subscription it's about, read fresh from Stripe", async () => {
     const res = await send(event("checkout.session.completed", { id: "cs_1", mode: "subscription", subscription: "sub_1" }));
     expect(res.status).toBe(200);
-    expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith("sub_1");
+    expect(stripe.subscriptions.retrieve).toHaveBeenCalledWith("sub_1", { expand: ["schedule.phases.items.price"] });
     expect(savedLifecycle()).toMatchObject({ status: "LIVE", plan: "SPARK" });
   });
 
@@ -458,6 +553,10 @@ describe("POST /api/v1/billing/stripe-webhook (P.5)", () => {
     expect(subscriptionIdOf(e("invoice.payment_failed", { parent: { subscription_details: { subscription: "sub_8" } } }))).toBe("sub_8");
     expect(subscriptionIdOf(e("checkout.session.completed", { mode: "payment", subscription: null }))).toBeNull();
     expect(subscriptionIdOf(e("charge.succeeded", { id: "ch_1" }))).toBeNull();
+    // A downgrade at the period's end is a schedule (Q.4b).
+    for (const t of ["created", "updated", "released", "canceled", "completed", "aborted"]) {
+      expect(subscriptionIdOf(e(`subscription_schedule.${t}`, { id: "sub_sched_1", subscription: "sub_7" }))).toBe("sub_7");
+    }
   });
 
   it("Connect events and events we don't use: 200, nothing done; a failure: 500 so Stripe retries", async () => {
@@ -561,9 +660,23 @@ describe("/store/billing (P.5)", () => {
         cancelAtPeriodEnd: true,
         graceEndsAt: null,
         isPayer: true,
+        pendingPlan: null,
+        pendingPlanAt: null,
       },
     });
     expect(JSON.stringify(res.body)).not.toMatch(/sub_1|cus_1/);
+  });
+
+  it("status: a downgrade waiting for the period's end (Q.4c)", async () => {
+    withSettings({
+      lifecycle: { status: "LIVE", plan: "LUMINA" },
+      subscription: record({ plan: "LUMINA", pendingPlan: "SPARK", pendingPlanAt: NOW + 30 * DAY_MS }),
+    });
+    expect((await get(`/billing/status/${STORE}`)).body.subscription).toMatchObject({
+      plan: "LUMINA",
+      pendingPlan: "SPARK",
+      pendingPlanAt: NOW + 30 * DAY_MS,
+    });
   });
 });
 

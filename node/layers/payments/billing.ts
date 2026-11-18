@@ -141,11 +141,34 @@ export async function createBillingPortal(customerId: string, storeId: string): 
 export async function retrieveSubscriptionSnapshot(subscriptionId: string): Promise<SubscriptionSnapshot | null> {
   const stripe = await getStripe();
   try {
-    return toSnapshot(await stripe.subscriptions.retrieve(subscriptionId));
+    // The schedule (with its prices) tells of a downgrade waiting for the period's end (Q.4).
+    return toSnapshot(await stripe.subscriptions.retrieve(subscriptionId, { expand: ["schedule.phases.items.price"] }));
   } catch (e) {
     if (e instanceof Stripe.errors.StripeInvalidRequestError && e.code === "resource_missing") return null;
     throw e;
   }
+}
+
+/*
+ * The plan change a subscription schedule will make (Q.4): the first phase starting at or after
+ * the current one ends, if its price is one of ours for another plan. A schedule that wasn't
+ * expanded (an id) or has no later phase means nothing is pending.
+ */
+export function pendingPlanChange(
+  schedule: Stripe.Subscription["schedule"],
+  currentPlan: StorePlan | null
+): { plan: StorePlan; at: number } | undefined {
+  if (!schedule || typeof schedule === "string") return undefined;
+  if (schedule.status !== "active" && schedule.status !== "not_started") return undefined;
+  const from = schedule.current_phase?.end_date ?? 0;
+  const next = [...(schedule.phases ?? [])]
+    .filter((p) => p.start_date >= from && (!schedule.current_phase || p.start_date > schedule.current_phase.start_date))
+    .sort((a, b) => a.start_date - b.start_date)[0];
+  if (!next) return undefined;
+  const plan = next.items
+    .map((i) => (typeof i.price === "string" || i.price.deleted ? null : planFromLookupKey(i.price.lookup_key)?.plan))
+    .find(Boolean);
+  return plan && plan !== currentPlan ? { plan, at: next.start_date * 1000 } : undefined;
 }
 
 export function toSnapshot(sub: Stripe.Subscription): SubscriptionSnapshot {
@@ -155,6 +178,7 @@ export function toSnapshot(sub: Stripe.Subscription): SubscriptionSnapshot {
   const plan = items.map((i) => planFromLookupKey(i.price?.lookup_key)?.plan).find(Boolean) ?? null;
   const periodEnds = items.map((i) => i.current_period_end).filter((n): n is number => typeof n === "number");
   const md = sub.metadata ?? {};
+  const pending = pendingPlanChange(sub.schedule, plan);
   return {
     id: sub.id,
     customerId: typeof sub.customer === "string" ? sub.customer : sub.customer.id,
@@ -170,6 +194,7 @@ export function toSnapshot(sub: Stripe.Subscription): SubscriptionSnapshot {
       ...(typeof md.userId === "string" ? { userId: md.userId } : {}),
       ...(typeof md.plan === "string" ? { plan: md.plan } : {}),
     },
+    ...(pending && sub.status !== "canceled" ? { pending } : {}),
   };
 }
 

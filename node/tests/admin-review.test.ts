@@ -279,6 +279,14 @@ describe("PUT /admin/set-store-plan (P.8)", () => {
     expect(input.ConditionExpression).toBe("attribute_exists(pk) AND #lc.#st = :st AND #lc.#pl = :pl AND attribute_not_exists(#sub)");
   });
 
+  it("any plan can be given, Lumina included, and moved between plans (Q.4f)", async () => {
+    for (const [from, to] of [["NONE", "LUMINA"], ["LUMINA", "SPARK"], ["SPARK", "NOVA"]]) {
+      ddb.reset();
+      withSettings({ lifecycle: { status: "LIVE", plan: from, ...(from === "NONE" ? {} : { planSetByAdmin: true }) } });
+      expect((await call("put", "/set-store-plan", { storeId: STORE, plan: to })).body).toMatchObject({ plan: to, planSetByAdmin: true });
+    }
+  });
+
   it("NONE takes the plan away: a live store goes back to DRAFT; an ended subscription doesn't block", async () => {
     withSettings({
       lifecycle: { status: "LIVE", plan: "SPARK", planSetByAdmin: true },
