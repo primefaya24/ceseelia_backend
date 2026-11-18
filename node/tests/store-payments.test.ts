@@ -39,6 +39,7 @@ import { verifyCognitoAccessToken } from "../layers/aws/cognito";
 import {
   getStripe,
   parseStripeSecrets,
+  withListenSecret,
   PaymentsNotConfiguredError,
 } from "../layers/payments/stripe";
 import { createApp } from "../app";
@@ -388,6 +389,18 @@ describe("payments stay private", () => {
       expect(JSON.stringify(res.body)).not.toContain(ACCT);
     }
   );
+});
+
+describe("withListenSecret (local testing with stripe listen)", () => {
+  const base = { secretKey: "sk_test_1", webhookSecret: "whsec_store", billingWebhookSecret: "whsec_bill" };
+  it("in dev, the listener's secret signs both webhooks", () => {
+    expect(withListenSecret(base, "whsec_listen1", true)).toEqual({ secretKey: "sk_test_1", webhookSecret: "whsec_listen1", billingWebhookSecret: "whsec_listen1" });
+  });
+  it("never in prod; ignored when missing or not a signing secret", () => {
+    expect(withListenSecret(base, "whsec_listen1", false)).toBe(base);
+    expect(withListenSecret(base, undefined, true)).toBe(base);
+    expect(withListenSecret(base, "sk_test_oops", true)).toBe(base);
+  });
 });
 
 describe("parseStripeSecrets", () => {

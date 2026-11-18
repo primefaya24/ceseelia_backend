@@ -143,6 +143,10 @@ if (!IN_DEV) {
     if (missing.length > 0) {
         throw new Error(`Missing required production environment variables: ${missing.join(", ")}`);
     }
+    // Local testing only (kickstart): a stripe-listen signing secret must never reach prod.
+    if (process.env.STRIPE_LISTEN_SECRET) {
+        throw new Error("STRIPE_LISTEN_SECRET is for local testing (STAGE=dev) only");
+    }
 }
 
 function withTrailingSlash(url: string): string {

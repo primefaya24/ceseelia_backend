@@ -71,6 +71,12 @@ The dev site (https://dev.ceseelia.com) calls the backend on your own machine at
 `http://localhost:3100`: run `npm run dev` and open dev.ceseelia.com in a browser on the same machine
 (Chrome asks once to let it reach this device; `allowPrivateNetwork` answers its preflight in dev).
 
+Full local testing: `npm run kickstart` in the webapp (`tools/kickstart.sh`) runs this backend with
+`WEBAPP_URL=http://localhost:4200`, `STORE_URL_TEMPLATE=http://{slug}.localhost:4200` and
+`STRIPE_LISTEN_SECRET` (the `stripe listen` signing secret; in dev it replaces both webhook secrets,
+and prod refuses to start with it set), plus `stripe listen` forwarding the events in
+`scripts/stripe-webhooks.mjs` (the same list `setup-stripe-account.mjs` gives the real endpoints).
+
 Config comes from env vars (see `node/.env.example`): `STAGE` (dev|prod), `ALLOWED_API_HOSTS`,
 `CORS_ORIGINS` (required in prod), `WEBAPP_URL` (links in emails), `STORE_URL_TEMPLATE` (store
 addresses, 9.8), plus optional overrides for

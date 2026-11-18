@@ -49,6 +49,18 @@ export function parseStripeSecrets(raw: string | undefined, inDev: boolean): Str
   return { secretKey, webhookSecret, billingWebhookSecret };
 }
 
+/*
+ * Local testing (kickstart, owner 2026-11-17): `stripe listen` forwards test-mode events to the
+ * local API, signed with its own secret, which kickstart passes as STRIPE_LISTEN_SECRET. In dev it
+ * replaces both webhook secrets (one listener forwards platform and Connect events). Never in
+ * prod: the server refuses to start with it set (config/index.ts).
+ */
+export function withListenSecret(s: StripeSecrets, listenSecret: string | undefined, inDev: boolean): StripeSecrets {
+  const secret = (listenSecret ?? "").trim();
+  if (!inDev || !/^whsec_[A-Za-z0-9]+$/.test(secret)) return s;
+  return { ...s, webhookSecret: secret, billingWebhookSecret: secret };
+}
+
 let secretsPromise: Promise<StripeSecrets> | null = null;
 let clientPromise: Promise<Stripe> | null = null;
 
@@ -59,7 +71,7 @@ async function loadSecrets(): Promise<StripeSecrets> {
   } catch (e) {
     throw new PaymentsNotConfiguredError((e as Error).message);
   }
-  return parseStripeSecrets(raw, IN_DEV);
+  return withListenSecret(parseStripeSecrets(raw, IN_DEV), process.env.STRIPE_LISTEN_SECRET, IN_DEV);
 }
 
 /* The secrets, read once. A failed read isn't cached, so the next call tries again. */
