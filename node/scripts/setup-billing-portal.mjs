@@ -24,7 +24,9 @@ const { stripeSecretKey: secretKey } = JSON.parse((await sm.send(new GetSecretVa
 const stripe = new Stripe(secretKey);
 console.log(`${SECRET_ID} · ${secretKey.includes("_live_") ? "LIVE" : "test"} mode · ${WRITE ? "writing" : "dry run"}`);
 
-const configs = await stripe.billingPortal.configurations.list({ is_default: true, limit: 1 });
+// The plans list is only returned when expanded.
+const EXPAND = ["features.subscription_update.products"];
+const configs = await stripe.billingPortal.configurations.list({ is_default: true, limit: 1, expand: EXPAND.map((e) => `data.${e}`) });
 const config = configs.data[0];
 if (!config) throw new Error("No default portal configuration: save the customer portal once in the dashboard.");
 const show = (c) => {
@@ -68,6 +70,6 @@ const want = {
 if (!WRITE) {
   console.log(`would set: ${planProducts.length} plans; proration always_invoice; downgrades at period end. Run with --write.`);
 } else {
-  const updated = await stripe.billingPortal.configurations.update(config.id, want);
+  const updated = await stripe.billingPortal.configurations.update(config.id, { ...want, expand: EXPAND });
   console.log("after: ", show(updated));
 }
