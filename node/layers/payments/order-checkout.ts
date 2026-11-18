@@ -61,7 +61,8 @@ export function orderSessionParams(input: {
     customer_email: input.customerEmail,
     client_reference_id: input.orderId,
     metadata,
-    payment_intent_data: { application_fee_amount: input.feeMinor, metadata },
+    // No fee (Lumina, or a custom 0 deal): leave the field out rather than send 0 (Q.3b).
+    payment_intent_data: input.feeMinor > 0 ? { application_fee_amount: input.feeMinor, metadata } : { metadata },
     // The status token stays in the shopper's browser; it never goes to Stripe.
     // The store's own address (9.8 phase 1); an old one after a rename still finds the order.
     success_url: storeUrl(input.storeSlug, `/order/${input.orderId}?paid=1`),

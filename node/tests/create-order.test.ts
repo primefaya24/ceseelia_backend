@@ -114,6 +114,19 @@ beforeEach(() => {
 });
 
 describe("POST /customer/create-order (5.4)", () => {
+  it.each([
+    ["SPARK", 145],
+    ["NOVA", 75],
+    ["LUMINA", 0],
+  ] as const)("on %s the order takes the plan's USD commission (%i cents) and keeps it (Q.3)", async (plan, fee) => {
+    world({ lifecycle: { status: "LIVE", plan } });
+    expect((await post(body())).status).toBe(200);
+    const [params] = vi.mocked(createOrderCheckout).mock.calls[0];
+    if (fee > 0) expect(params.payment_intent_data!.application_fee_amount).toBe(fee);
+    else expect(params.payment_intent_data).not.toHaveProperty("application_fee_amount");
+    expect(savedOrder().storeOrderPlatformFeeMinor).toBe(fee);
+  });
+
   it("re-prices, opens a session on the store's account and saves a PENDING_PAYMENT order", async () => {
     world();
     const res = await post(body());
@@ -345,6 +358,9 @@ describe("order Checkout Session params (5.4c)", () => {
       expires_at: 30 * 60,
     });
     expect(p.success_url).not.toContain("token");
+    // No fee (Lumina, a custom 0 deal): the field is left out, never sent as 0 (Q.3b).
+    const free = orderSessionParams({ orderId: "O1", storeId: "S1", storeSlug: "hoop", quote, feeMinor: 0, customerEmail: "a@b.co", now: 0 });
+    expect(free.payment_intent_data).toEqual({ metadata: { orderId: "O1", storeId: "S1" } });
     const names = checkoutLineItems(quote).map((l) => l.price_data!.product_data!.name);
     expect(names).toEqual(["Tea × 7", "Delivery", "Tax 5%"]);
   });
