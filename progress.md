@@ -1356,14 +1356,14 @@ Where each plan is cheapest (monthly price + commission × orders):
       `planSetByAdmin` against a later subscription.
 
 ### Q.5 Stripe setup (OPS, Claude: dev in test mode first, then prod in live mode)
-- [ ] Q.5a `npm run build`, then `scripts/setup-billing-prices.mjs` as a dry run, then
+- [x] Q.5a `npm run build`, then `scripts/setup-billing-prices.mjs` as a dry run, then
       `--write`. It creates the "Ceseelia Lumina" product and its 3 prices. Nova's prices don't
       change, so nothing moves.
-- [ ] Q.5b `scripts/setup-billing-portal.mjs`: make it set `subscription_update.products` from
+- [x] Q.5b `scripts/setup-billing-portal.mjs`: make it set `subscription_update.products` from
       `PLANS` (every product and price), so the portal offers Spark, Nova and Lumina and can't
       drift from the code. Keep `always_invoice` and moving down at the period's end. Dry run,
       then `--write`.
-- [ ] Q.5c Order on prod: prices → backend + webapp deploy (owner confirms the prod push) →
+- [x] Q.5c Order on prod: prices → backend + webapp deploy (owner confirms the prod push) →
       portal products. If the portal offered Lumina before the backend knew LUMINA, the sync
       would read it as no plan. If the backend shipped before the prices existed, choosing
       Lumina would get a 503.
@@ -1383,11 +1383,14 @@ Where each plan is cheapest (monthly price + commission × orders):
       LUMINA; billing status `pendingPlan`; commission report and CSV with a Lumina store.
 
 ### Q.7 Stores already on Nova (OPS, Claude)
-- [ ] Q.7a List prod subscriptions by plan (Stripe live, read only) and tell the owner.
-- [ ] Q.7b Do what Q.0c decided (an admin CUSTOM 0 per store, or a notice email), before the
-      deploy.
+- [x] Q.7a List prod subscriptions by plan (Stripe live, read only) and tell the owner.
+- [x] Q.7b Do what Q.0c decided (an admin CUSTOM 0 per store, or a notice email), before the
+      deploy. 2026-11-17: live Stripe has no subscriptions at all, so nothing to move.
 
-### Q.8 End-to-end QA in Stripe test mode (owner + Claude, before the prod push)
+### Q.8 End-to-end QA in Stripe test mode (owner + Claude)
+
+_Not done before the 2026-11-17 release (the owner asked to ship once every automated test
+passed). Test mode is set up for it: Lumina prices, portal with three plans, schedule events._
 - [ ] Q.8a Go live on each plan from a CA, a US and an AU store: the right price and
       currency, and the GST/HST line on Ceseelia's invoice.
 - [ ] Q.8b Spark → Nova → Lumina in the portal: a prorated invoice each time, and the plan
@@ -1401,11 +1404,11 @@ Where each plan is cheapest (monthly price + commission × orders):
 - [ ] Q.8f An admin gives Lumina; an admin CUSTOM commission on Lumina.
 
 ### Q.9 Release (Claude; the prod push only after the owner confirms)
-- [ ] Q.9a Push dev (backend + webapp), CI green.
-- [ ] Q.9b Prod: Q.5a on live → owner OK → merge into `prod_v1.0.0` and push both repos → watch
+- [x] Q.9a Push dev (backend + webapp), CI green.
+- [x] Q.9b Prod: Q.5a on live → owner OK → merge into `prod_v1.0.0` and push both repos → watch
       `gh run watch` → Q.5b on live → SITE deploy (WA §6b Q.S) → smoke test (the plans route
       returns 3 plans, the Go Live sheet shows Lumina, the portal offers it).
-- [ ] Q.9c Changelog row, tick here and in the webapp.
+- [x] Q.9c Changelog row, tick here and in the webapp.
 
 ---
 
@@ -1908,6 +1911,7 @@ Where each plan is cheapest (monthly price + commission × orders):
 
 | Date | Change |
 |---|---|
+| 2026-11-17 | Stage Q shipped to prod (owner-approved push): three plans (Spark; Nova 49/49/39 with 0.95/0.95/0.75 per order; Lumina 79/79/65 with no commission), `planRank`, a 0 fee leaves `application_fee_amount` out, plan switches and a scheduled downgrade (`pendingPlan` from the subscription schedule, `subscription_schedule.*` webhook events). Live Stripe: Lumina product and prices, webhook events, tax code, portal offering all three (`setup-billing-portal.mjs` now reads PLANS). No live subscriptions existed. Q.8 manual QA still open. |
 | 2026-11-16 | Owner request: `GET /store/go-live/checklist` returns `ownDomain` (the store's own domain while ACTIVE, else null; read from the domain record so a removal shows at once). The webapp's Live button links there. |
 | 2026-11-16 | UX-D: `get-all-stores?filter=` with `counts` per filter (Admin › Stores chips; Admin › Overview links to them). |
 | 2026-11-16 | §0 D1 Claude part: live Stripe set up by `scripts/setup-stripe-account.mjs` (webhooks + secrets, Stripe Tax, GST/HST registration, product tax codes), live prices and portal. API restart (switch to live) waits for the owner's account activation and the test-data decision. |
