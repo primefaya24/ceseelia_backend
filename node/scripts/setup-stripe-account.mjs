@@ -73,6 +73,13 @@ const WEBHOOKS = [
       "customer.subscription.resumed",
       "invoice.paid",
       "invoice.payment_failed",
+      // A downgrade at the period's end is a subscription schedule (Stage Q.4).
+      "subscription_schedule.created",
+      "subscription_schedule.updated",
+      "subscription_schedule.released",
+      "subscription_schedule.canceled",
+      "subscription_schedule.completed",
+      "subscription_schedule.aborted",
     ],
   },
 ];
