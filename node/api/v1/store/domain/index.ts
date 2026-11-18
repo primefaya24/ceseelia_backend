@@ -18,7 +18,7 @@ import { log } from "../../../../layers/core/logger";
  *   POST /store/domain/check  { storeId }       (ADMIN)   → { … } (one step now; "Try again" after a failure)
  *   POST /store/domain/remove { storeId }       (ADMIN)   → { … domain: null }
  * `host` may be pasted as a URL; it must be a subdomain (`shop.example.com`). Needs a plan
- * (Spark or Nova; 402 PLAN_REQUIRED). 409 DOMAIN_TAKEN (another store), STORE_HAS_DOMAIN (one per
+ * (any plan; 402 PLAN_REQUIRED). 409 DOMAIN_TAKEN (another store), STORE_HAS_DOMAIN (one per
  * store: remove it first). 400 INVALID_DOMAIN / APEX_DOMAIN / OUR_DOMAIN. 503 when the server
  * isn't set up for custom domains. The sweep (every minute) moves a domain on by itself.
  */

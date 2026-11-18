@@ -189,6 +189,8 @@ describe("GET /admin/get-store-admin-settings/:storeId", () => {
     ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: saved, lifecycle: { status: "LIVE", plan: "SPARK" } } });
     expect((await getAdmin()).body).toEqual(read(saved, "SPARK", { CAD: 195, AUD: 195, USD: 145 }));
     ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: saved, lifecycle: { status: "DRAFT", plan: "NOVA" } } });
+    expect((await getAdmin()).body.planCommissions).toEqual({ CAD: 95, AUD: 95, USD: 75 });
+    ddb.on(GetCommand).resolves({ Item: { pk: "x", admin: saved, lifecycle: { status: "LIVE", plan: "LUMINA" } } });
     expect((await getAdmin()).body.planCommissions).toEqual({ CAD: 0, AUD: 0, USD: 0 });
   });
 
@@ -347,19 +349,24 @@ describe("platformFeeForStore: the plan's fee unless an admin set a custom one (
     ["SPARK", "CAD", 195],
     ["SPARK", "AUD", 195],
     ["SPARK", "USD", 145],
-    ["NOVA", "CAD", 0],
-    ["NOVA", "USD", 0],
+    ["NOVA", "CAD", 95],
+    ["NOVA", "AUD", 95],
+    ["NOVA", "USD", 75],
+    ["LUMINA", "CAD", 0],
+    ["LUMINA", "AUD", 0],
+    ["LUMINA", "USD", 0],
   ] as const)("%s in %s: %i cents per order", (plan, currency, fee) => {
     expect(platformFeeForStore(undefined, plan, q({ currency }))).toBe(fee);
     // The admin's custom fields don't count while the source is PLAN.
     expect(platformFeeForStore({ ...custom, commissionSource: "PLAN" }, plan, q({ currency }))).toBe(fee);
   });
 
-  it("a CUSTOM deal overrides the plan, on every plan (NOVA included)", () => {
-    for (const plan of ["NONE", "SPARK", "NOVA"] as const) {
+  it("a CUSTOM deal overrides the plan, on every plan (LUMINA included)", () => {
+    for (const plan of ["NONE", "SPARK", "NOVA", "LUMINA"] as const) {
       expect(platformFeeForStore(custom, plan, q())).toBe(500); // 10% of 50.00
     }
     expect(platformFeeForStore({ ...custom, commissionMode: "FIXED" }, "NOVA", q())).toBe(50);
+    expect(platformFeeForStore({ ...custom, commissionMode: "FIXED" }, "LUMINA", q())).toBe(50);
   });
 
   it("stores saved before P.6 follow their plan; no plan (or an unknown one) pays SPARK's fee, never nothing", () => {
@@ -377,6 +384,8 @@ describe("platformFeeForStore: the plan's fee unless an admin set a custom one (
 
   it("is never more than the order total", () => {
     expect(platformFeeForStore(undefined, "SPARK", q({ totalMinor: 100 }))).toBe(100);
+    expect(platformFeeForStore(undefined, "NOVA", q({ currency: "CAD", totalMinor: 50 }))).toBe(50);
+    expect(platformFeeForStore(undefined, "LUMINA", q({ totalMinor: 100 }))).toBe(0);
     expect(platformFeeForStore(undefined, "SPARK", q({ totalMinor: 0 }))).toBe(0);
   });
 

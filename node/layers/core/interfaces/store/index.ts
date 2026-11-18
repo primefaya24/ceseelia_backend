@@ -182,7 +182,7 @@ export interface StoreSettings {
   admin: {
     /**
      * Where the store's commission comes from (P.6; missing = PLAN): PLAN = its plan's default
-     * (PLANS[plan].commissionMinor, a fixed fee, 0 on NOVA), CUSTOM = the fields below, set by a
+     * (PLANS[plan].commissionMinor, a fixed fee, 0 on LUMINA), CUSTOM = the fields below, set by a
      * platform admin for a negotiated deal. Read the fee with `platformFeeForStore`.
      */
     commissionSource: CommissionSource;
@@ -537,7 +537,7 @@ export interface CommissionInEffect {
 
 /*
  * The commission in effect for a store (P.6): the admin's CUSTOM one if set, else the plan's
- * default as a fixed fee per order (NOVA = 0). This is also what an order copies (5.4c), so a
+ * default as a fixed fee per order (LUMINA = 0). This is also what an order copies (5.4c), so a
  * later plan or admin change never alters an order in progress. A store with no plan isn't live
  * and takes no orders; if one ever did, it pays SPARK's fee, never nothing.
  */

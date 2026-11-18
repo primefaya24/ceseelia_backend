@@ -25,7 +25,7 @@ import { callerUserId, sendBillingError, startPlanCheckout } from "../../billing
 import { log } from "../../../../../layers/core/logger";
 
 /*
- * POST /store/go-live { storeId, plan: "SPARK" | "NOVA" } (store ADMINs and platform admins, P.4b)
+ * POST /store/go-live { storeId, plan: StorePlan (SPARK | NOVA | LUMINA) } (store ADMINs and platform admins, P.4b)
  * Going live and subscribing are one step (no Free plan, 2026-11-13):
  * → 200 { status: "DRAFT", plan, checkoutUrl } once everything passed (P.5): the store goes live
  *   from the billing webhook once the subscription is paid.

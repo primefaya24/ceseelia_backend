@@ -10,7 +10,7 @@ import { blocksNewSubscription } from "../../../../layers/core/billing";
 import { sendServerError } from "../route-errors";
 
 /*
- * PUT /admin/set-store-plan { storeId, plan: "SPARK" | "NOVA" | "NONE" } (admin, progress.md P.8)
+ * PUT /admin/set-store-plan { storeId, plan: StorePlan (SPARK | NOVA | LUMINA) | "NONE" } (admin, progress.md P.8)
  * → { status, plan, planSetByAdmin }
  * Gives a store a plan without a subscription (a deal, a free month, support), or takes it away
  * (NONE). Giving one leaves the status alone: a draft still goes live through Go Live, which then

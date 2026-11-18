@@ -1028,7 +1028,8 @@ Spark or Nova; a store without a plan is a draft.
 |---|---|---|---|---|
 | ~~FREE~~ (dropped 2026-11-13) | none | 2.95 / 2.95 / 2.45 | 30 paid orders per calendar month | No |
 | SPARK | 25 / 25 / 19 | 1.95 / 1.95 / 1.45 | Unlimited | Yes (9.8 phase 2) |
-| NOVA | 49 / 49 / 39 | none | Unlimited | Yes (9.8 phase 2) |
+| NOVA | 49 / 49 / 39 | ~~none~~ 0.95 / 0.95 / 0.75 since Stage Q | Unlimited | Yes (9.8 phase 2) |
+| LUMINA (Stage Q, 2026-11-17) | 79 / 79 / 65 | none | Unlimited | Yes |
 
 No free trials. Payments are **online only** (owner, 2026-11-12): no "pay at pickup"; every order,
 pickup or delivery, goes through Stripe Checkout (5.4).
@@ -1266,6 +1267,143 @@ pickup or delivery, goes through Stripe Checkout (5.4).
         once (owner): old links and QR codes stop working, anyone may take it.
       - `/store/update-settings` copies a non-empty `storeInfo.storeName` to the overview row
         after saving (best effort), so Profile / Overview / Admin › Stores follow the storefront.
+
+---
+
+## 6b. Stage Q — Plan lineup v2: Nova commission + Lumina (owner, 2026-11-17)
+
+Three plans instead of two. Spark is unchanged. Nova keeps its monthly price and gets a small
+commission. **Lumina** is new: the top plan, with no Ceseelia commission. Positioning: Spark =
+starter, Nova = up-and-coming, Lumina = high volume, keep the most revenue. Each task names its
+side: **BE** (this repo), **WA** (webapp, its `progress.md` §6b), **SITE** (ceseelia.com,
+`CodeCommit/ceseelia-v1`), **OPS** (Stripe / deploy, Claude unless marked owner).
+
+| Plan | Monthly (CAD / AUD / USD) | Commission per order (CAD / AUD / USD) |
+|---|---|---|
+| SPARK | 25 / 25 / 19 | 1.95 / 1.95 / 1.45 (unchanged) |
+| NOVA | 49 / 49 / 39 (unchanged) | **0.95 / 0.95 / 0.75** (was none) |
+| LUMINA (new) | **79 / 79 / 65** | none |
+
+Where each plan is cheapest (monthly price + commission × orders):
+
+| | Spark cheapest | Nova cheapest | Lumina cheapest |
+|---|---|---|---|
+| CAD / AUD | up to 23 orders/month (tie at 24) | 25–31 | 32+ |
+| USD | up to 28 | 29–34 | 35+ |
+
+### Q.0 Decisions (owner, 2026-11-17: all settled)
+- [x] Q.0a Lumina is US$65 (with US$59, Nova would never be the cheapest plan for a US store).
+- [x] Q.0b Positioning follows the bands in the table above: Spark up to about 24 orders a month,
+      Nova about 25–31, Lumina 32+ (CAD/AUD).
+- [x] Q.0c No stores on prod have a plan yet. If any had, they would move to the new terms.
+- [x] Q.0d Same switching rules as today for all three plans: moving up switches now and charges
+      the difference for the rest of the month (`always_invoice`); moving down waits until the
+      period ends. The commission follows the plan from the moment the switch is recorded.
+- [x] Q.0e Lumina is Nova without the commission. Nothing else changes (it covers the business
+      model).
+- [x] Q.0f Ship as soon as it's done and every test passes. The owner approved this prod push
+      (2026-11-17).
+- [x] Q.0g Wording: "No Ceseelia commission" (Stripe's processing fees still apply), never "no
+      fees".
+
+### Q.1 Plan catalogue (BE)
+- [x] Q.1a `layers/core/plans`: change NOVA's `commissionMinor` to `{CAD: 95, AUD: 95, USD: 75}`.
+      Add `LUMINA` to `STORE_PLANS` and `PLANS` (prices from Q.0, commission 0,
+      `customDomain: true`). Order the plans Spark, Nova, Lumina. Update the header comment.
+- [x] Q.1b A `planRank(plan)` helper (SPARK 1 < NOVA 2 < LUMINA 3) for "upgrade" or
+      "downgrade" wording in the UI and in emails. Its only source is `STORE_PLANS`.
+- [x] Q.1c Update the Stage P table (§6a) and CLAUDE.md §4 / §6 Stage P (they say "NOVA: no
+      commission" and "Spark ↔ Nova").
+
+### Q.2 Every place that names a plan (BE)
+- [ ] Q.2a Search the backend for `SPARK|NOVA|Spark|Nova` and fix each hit. Known places:
+      `PUT /admin/set-store-plan` validation (accept LUMINA), Go Live's plan check ("must be
+      SPARK / NOVA"), `GET /store/public/plans` and the checklist's plan list, admin
+      get-all-stores and overview counts per plan, the commission report and its CSV `Plan`
+      column, custom domains (gated on `customDomain`), `commissionInEffect` (a store with no
+      plan still pays Spark's fee), billing emails and templates.
+- [x] Q.2b `planFromLookupKey` / `planPriceLookupKey`: `ceseelia_lumina_cad` and friends work
+      without changes (regex `[a-z]+`). Add tests to make sure.
+
+### Q.3 Commission behaviour (BE)
+- [x] Q.3a Nova's fee goes through the same `application_fee_amount` path. Check that small
+      orders are capped at the order total (a Nova order of $0.50 → fee $0.50).
+- [x] Q.3b Lumina with fee 0: check that `order-checkout` handles a 0 fee the way it did for the
+      old Nova (no `application_fee_amount`, or 0, whichever Stripe accepts). Check that the
+      commission report's Stripe check counts only orders with a fee, so Lumina stores show as
+      matching.
+- [x] Q.3c An admin's CUSTOM commission still wins on every plan, Lumina included.
+- [x] Q.3d Switching plans while a shopper is in checkout: the order keeps the commission it
+      copied when it was created (5.4c). Test both directions.
+
+### Q.4 Switching plans (BE)
+- [ ] Q.4a Subscription sync: going up to Lumina (the price changes now) moves
+      `lifecycle.plan` on `customer.subscription.updated`.
+- [ ] Q.4b Going down at the period's end: the portal schedules it (a subscription schedule /
+      pending update). The sync must not change the plan until Stripe actually switches the
+      price, and must change it when Stripe does. Find out which events Stripe sends for this and
+      test with recorded fixtures.
+- [ ] Q.4c `GET /store/billing/status` adds `pendingPlan` and `pendingPlanAt` when a downgrade
+      is scheduled, so the UI can show "Switches to Spark on Dec 17". Mirror it in the WA
+      interface.
+- [ ] Q.4d Cancel, failed payment (7 days' grace) and ENDED work the same on Lumina (the rules
+      in `layers/core/billing` don't depend on the plan; add Lumina cases anyway).
+- [ ] Q.4e The subscription's currency stays the store's country currency on a switch (no
+      CAD → USD surprises).
+- [ ] Q.4f Plan changes made by an admin (`set-store-plan`) between all three plans, and
+      `planSetByAdmin` against a later subscription.
+
+### Q.5 Stripe setup (OPS, Claude: dev in test mode first, then prod in live mode)
+- [ ] Q.5a `npm run build`, then `scripts/setup-billing-prices.mjs` as a dry run, then
+      `--write`. It creates the "Ceseelia Lumina" product and its 3 prices. Nova's prices don't
+      change, so nothing moves.
+- [ ] Q.5b `scripts/setup-billing-portal.mjs`: make it set `subscription_update.products` from
+      `PLANS` (every product and price), so the portal offers Spark, Nova and Lumina and can't
+      drift from the code. Keep `always_invoice` and moving down at the period's end. Dry run,
+      then `--write`.
+- [ ] Q.5c Order on prod: prices → backend + webapp deploy (owner confirms the prod push) →
+      portal products. If the portal offered Lumina before the backend knew LUMINA, the sync
+      would read it as no plan. If the backend shipped before the prices existed, choosing
+      Lumina would get a 503.
+
+### Q.6 Tests (BE, `npm test`, lint, typecheck all green)
+- [ ] Q.6a `plans-lifecycle.test.ts`: the catalogue values for all 3 plans, lookup keys in both
+      directions, `planRank`, an unknown or old plan → NONE.
+- [ ] Q.6b Fees: Spark 195/145, Nova 95/75, Lumina 0 per currency; capped at the order total;
+      CUSTOM FIXED / PERCENT overrides on each plan; a store with no plan → Spark's fee.
+- [ ] Q.6c `billing.test.ts`: `planEffect` and `lifecycleAfter` for each plan; every switch
+      (Spark↔Nova, Nova↔Lumina, Spark↔Lumina); cancel from Lumina; grace on Lumina; a stale
+      event after a switch doesn't undo it (`mayReplace`).
+- [ ] Q.6d Webhook end to end with fixture events: an upgrade, a scheduled downgrade arriving
+      at the period's end, a portal switch.
+- [ ] Q.6e An order created before a switch keeps its fee; one created after uses the new fee.
+- [ ] Q.6f Routes: public plans returns 3 plans in order; Go Live on LUMINA; set-store-plan
+      LUMINA; billing status `pendingPlan`; commission report and CSV with a Lumina store.
+
+### Q.7 Stores already on Nova (OPS, Claude)
+- [ ] Q.7a List prod subscriptions by plan (Stripe live, read only) and tell the owner.
+- [ ] Q.7b Do what Q.0c decided (an admin CUSTOM 0 per store, or a notice email), before the
+      deploy.
+
+### Q.8 End-to-end QA in Stripe test mode (owner + Claude, before the prod push)
+- [ ] Q.8a Go live on each plan from a CA, a US and an AU store: the right price and
+      currency, and the GST/HST line on Ceseelia's invoice.
+- [ ] Q.8b Spark → Nova → Lumina in the portal: a prorated invoice each time, and the plan
+      changes in the app at once.
+- [ ] Q.8c Lumina → Spark: scheduled, the app shows the coming switch, then it changes at the
+      period's end (Stripe test clock).
+- [ ] Q.8d Cancel on Lumina (live until the period's end, then a draft); a failing card
+      (`4000 0000 0000 0341`) → grace → draft.
+- [ ] Q.8e A shopper order on each plan: the application fee in the Stripe dashboard is
+      1.95 / 0.95 / none, and the admin commission report matches (with `reconcile=1`).
+- [ ] Q.8f An admin gives Lumina; an admin CUSTOM commission on Lumina.
+
+### Q.9 Release (Claude; the prod push only after the owner confirms)
+- [ ] Q.9a Push dev (backend + webapp), CI green.
+- [ ] Q.9b Prod: Q.5a on live → owner OK → merge into `prod_v1.0.0` and push both repos → watch
+      `gh run watch` → Q.5b on live → SITE deploy (WA §6b Q.S) → smoke test (the plans route
+      returns 3 plans, the Go Live sheet shows Lumina, the portal offers it).
+- [ ] Q.9c Changelog row, tick here and in the webapp.
 
 ---
 

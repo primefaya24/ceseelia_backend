@@ -88,7 +88,7 @@ describe("admin overview numbers (L.8 / 8.1)", () => {
       "UTC"
     );
     expect(stats.stores).toEqual({ total: 3, live: 1, draft: 1, inReview: 1, suspended: 1 });
-    expect(stats.plans).toEqual({ SPARK: 1, NOVA: 1 });
+    expect(stats.plans).toEqual({ SPARK: 1, NOVA: 1, LUMINA: 0 });
     expect(stats.subscriptionsPastDue).toBe(1);
     expect(stats.merchants).toBe(3);
     expect(stats.last30.orders).toBe(3);
@@ -167,6 +167,17 @@ describe("commission report (L.8 / 8.4)", () => {
     expect(reconcileRow(row, fees.get("acct_A"), 3).matches).toBe(false);
     expect(reconcileRow(row, undefined, 2)).toMatchObject({ matches: false, stripe: { count: 0 } });
     expect(fees.get("acct_X")).toEqual({ count: 1, fees: [{ currency: "USD", minor: 99 }], refunded: [] });
+  });
+
+  it("a Lumina store (no commission) has sales but no fees, and matches Stripe's empty list (Q.3b)", () => {
+    const { start, end } = monthRange("2026-11", "UTC");
+    const row = commissionRow({ storeId: "L", storeName: "Glow", plan: "LUMINA" }, [
+      order(start + 1, { storeOrderPlatformFeeMinor: 0 }),
+      order(start + 2, { storeOrderPlatformFeeMinor: 0 }),
+    ], start, end);
+    expect(row).toMatchObject({ orders: 2, sales: [{ currency: "CAD", minor: 10000 }], commission: [] });
+    expect(reconcileRow(row, undefined, 0).matches).toBe(true);
+    expect(commissionCsv("2026-11", [row]).split("\n")[1]).toBe("2026-11,Glow,L,LUMINA,CAD,2,100.00,0.00,0.00");
   });
 
   it("CSV: a row per store and currency; a store name can't run as a formula", () => {

@@ -175,12 +175,16 @@ describe("goLiveChecklist (P.4a)", () => {
     expect(opts.map((o) => [o.id, o.available, o.unavailableReason])).toEqual([
       ["SPARK", false, "PLAN_NOT_AVAILABLE"],
       ["NOVA", false, "PLAN_NOT_AVAILABLE"],
+      ["LUMINA", false, "PLAN_NOT_AVAILABLE"],
     ]);
     expect(opts[0]).toMatchObject({ monthlyPriceMinor: 1900, commissionMinor: 145 });
     expect(planOptions(null)[0]).toMatchObject({ monthlyPriceMinor: null, commissionMinor: null });
-    expect(planOptions("CAD", "NOVA").map((o) => o.available)).toEqual([false, true]);
+    expect(opts.map((o) => o.commissionMinor)).toEqual([145, 75, 0]);
+    expect(opts.map((o) => o.monthlyPriceMinor)).toEqual([1900, 3900, 6500]);
+    expect(planOptions("CAD", "NOVA").map((o) => o.available)).toEqual([false, true, false]);
+    expect(planOptions("CAD", "LUMINA").map((o) => o.available)).toEqual([false, false, true]);
     setPaidPlansEnabledForTests(true);
-    expect(planOptions("CAD").map((o) => o.available)).toEqual([true, true]);
+    expect(planOptions("CAD").map((o) => o.available)).toEqual([true, true, true]);
   });
 });
 
@@ -247,7 +251,7 @@ describe("POST /store/go-live (P.4b)", () => {
 
   it("409 PLAN_NOT_AVAILABLE while plans are switched off", async () => {
     setPaidPlansEnabledForTests(false);
-    for (const plan of ["SPARK", "NOVA"]) {
+    for (const plan of ["SPARK", "NOVA", "LUMINA"]) {
       const res = await goLive({ storeId: STORE, plan });
       expect([res.status, res.body.code]).toEqual([409, "PLAN_NOT_AVAILABLE"]);
     }
@@ -352,7 +356,7 @@ describe("GET /store/go-live/checklist/:storeId (P.4a)", () => {
       res.body.steps.filter((s: { ok: boolean }) => !s.ok).map((s: { id: string }) => s.id)
     ).toEqual(["ITEMS"]);
     expect(res.body.billingCurrency).toBe("CAD");
-    expect(res.body.plans).toHaveLength(2);
+    expect(res.body.plans.map((p: { id: string }) => p.id)).toEqual(["SPARK", "NOVA", "LUMINA"]);
     expect(res.body.plans[0]).toMatchObject({
       id: "SPARK",
       monthlyPriceMinor: 2500,
@@ -364,7 +368,7 @@ describe("GET /store/go-live/checklist/:storeId (P.4a)", () => {
   it("store ADMINs can go live", async () => {
     const res = await checklist();
     expect(res.body).toMatchObject({ canGoLive: true, ready: true });
-    expect(res.body.plans.map((p: { available: boolean }) => p.available)).toEqual([true, true]);
+    expect(res.body.plans.map((p: { available: boolean }) => p.available)).toEqual([true, true, true]);
   });
 
   it("gives the store's own domain only while it's live (the Live button points there)", async () => {
@@ -413,7 +417,9 @@ describe("P.4 data rules", () => {
     ).toEqual([
       ["SPARK", false],
       ["NOVA", false],
+      ["LUMINA", false],
     ]);
+    expect(res.body.plans[2].monthlyPriceMinor).toEqual({ CAD: 7900, AUD: 7900, USD: 6500 });
     expect(res.body.plans[1].monthlyPriceMinor).toEqual({ CAD: 4900, AUD: 4900, USD: 3900 });
   });
 });

@@ -2,7 +2,8 @@ import { CURRENCY_CODES } from "../../../constants/input-limits";
 import { PAID_PLANS_ENABLED } from "../../../config";
 
 /*
- * Store plans (progress.md P.1; Free dropped by the owner 2026-11-13). Plans are per store and
+ * Store plans (progress.md P.1; Free dropped by the owner 2026-11-13; Lumina added and Nova given a
+ * commission in Q.1, 2026-11-17). Plans are per store and
  * every plan is paid: a store has no plan ("NONE") until it subscribes, and only a store with a
  * plan is live. Going live and subscribing are one step (Go Live → Stripe Checkout); when the
  * plan ends the store goes back to a draft. This file is the only place plan prices and
@@ -13,7 +14,8 @@ import { PAID_PLANS_ENABLED } from "../../../config";
  * Stripe account country (assumption A1 in progress.md §6a).
  */
 
-export const STORE_PLANS = ["SPARK", "NOVA"] as const;
+/** Every plan, cheapest first: the order the webapp shows them in and the order of `planRank`. */
+export const STORE_PLANS = ["SPARK", "NOVA", "LUMINA"] as const;
 export type StorePlan = (typeof STORE_PLANS)[number];
 /** A store that has no plan: a draft, never live (also what a store saved on the old FREE plan reads as). */
 export const NO_PLAN = "NONE" as const;
@@ -45,10 +47,22 @@ export const PLANS: Readonly<Record<StorePlan, Readonly<PlanDefinition>>> = Obje
     id: "NOVA",
     name: "Nova",
     monthlyPriceMinor: Object.freeze({ CAD: 4900, AUD: 4900, USD: 3900 }),
+    commissionMinor: Object.freeze({ CAD: 95, AUD: 95, USD: 75 }),
+    customDomain: true,
+  }),
+  LUMINA: Object.freeze({
+    id: "LUMINA",
+    name: "Lumina",
+    monthlyPriceMinor: Object.freeze({ CAD: 7900, AUD: 7900, USD: 6500 }),
     commissionMinor: Object.freeze({ CAD: 0, AUD: 0, USD: 0 }),
     customDomain: true,
   }),
 });
+
+/** A plan's place in the lineup (SPARK 1 < NOVA 2 < LUMINA 3; no plan 0): a higher rank is an upgrade. */
+export function planRank(plan: unknown): number {
+  return isStorePlan(plan) ? STORE_PLANS.indexOf(plan) + 1 : 0;
+}
 
 /**
  * Whether plans can be subscribed to today. They need Stripe Billing set up (P.5), switched on
@@ -72,7 +86,7 @@ export function isStorePlan(v: unknown): v is StorePlan {
   return typeof v === "string" && (STORE_PLANS as readonly string[]).includes(v);
 }
 
-/** A saved plan as the store has it: SPARK / NOVA, anything else (old FREE, unknown) is NONE. */
+/** A saved plan as the store has it: one of STORE_PLANS, anything else (old FREE, unknown) is NONE. */
 export function toStorePlanOrNone(v: unknown): StorePlanOrNone {
   return isStorePlan(v) ? v : NO_PLAN;
 }

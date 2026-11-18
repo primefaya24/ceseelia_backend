@@ -17,6 +17,7 @@ import {
   PLANS,
   planFromLookupKey,
   planPriceLookupKey,
+  planRank,
   STORE_PLANS,
   toStorePlanOrNone,
 } from "../layers/core/plans";
@@ -33,8 +34,8 @@ beforeEach(() => {
 });
 
 describe("plan catalogue (P.1)", () => {
-  it("has the owner's prices and commissions; no Free plan (2026-11-13)", () => {
-    expect(STORE_PLANS).toEqual(["SPARK", "NOVA"]);
+  it("has the owner's prices and commissions; no Free plan (2026-11-13); Lumina (Q.1, 2026-11-17)", () => {
+    expect(STORE_PLANS).toEqual(["SPARK", "NOVA", "LUMINA"]);
     expect(PLANS).not.toHaveProperty("FREE");
     expect(PLANS.SPARK).toMatchObject({
       monthlyPriceMinor: { CAD: 2500, AUD: 2500, USD: 1900 },
@@ -43,9 +44,32 @@ describe("plan catalogue (P.1)", () => {
     });
     expect(PLANS.NOVA).toMatchObject({
       monthlyPriceMinor: { CAD: 4900, AUD: 4900, USD: 3900 },
+      commissionMinor: { CAD: 95, AUD: 95, USD: 75 },
+      customDomain: true,
+    });
+    expect(PLANS.LUMINA).toMatchObject({
+      id: "LUMINA",
+      name: "Lumina",
+      monthlyPriceMinor: { CAD: 7900, AUD: 7900, USD: 6500 },
       commissionMinor: { CAD: 0, AUD: 0, USD: 0 },
       customDomain: true,
     });
+  });
+
+  it("ranks the plans cheapest first: a higher rank is an upgrade", () => {
+    expect(STORE_PLANS.map(planRank)).toEqual([1, 2, 3]);
+    for (const none of ["NONE", "FREE", "", null, undefined]) expect(planRank(none)).toBe(0);
+  });
+
+  it("each plan is the cheapest in its band of orders a month (owner's positioning, Q.0b)", () => {
+    const cheapest = (cur: "CAD" | "AUD" | "USD", orders: number) =>
+      [...STORE_PLANS]
+        .map((id) => ({ id, total: PLANS[id].monthlyPriceMinor[cur] + PLANS[id].commissionMinor[cur] * orders }))
+        .sort((a, b) => a.total - b.total || planRank(a.id) - planRank(b.id))[0].id;
+    for (const cur of ["CAD", "AUD"] as const) {
+      expect([10, 23, 25, 31, 32, 100].map((n) => cheapest(cur, n))).toEqual(["SPARK", "SPARK", "NOVA", "NOVA", "LUMINA", "LUMINA"]);
+    }
+    expect([10, 28, 29, 34, 35].map((n) => cheapest("USD", n))).toEqual(["SPARK", "SPARK", "NOVA", "NOVA", "LUMINA"]);
   });
 
   it("can't be changed at runtime", () => {
@@ -64,12 +88,19 @@ describe("plan catalogue (P.1)", () => {
       expect(toStorePlanOrNone(bad)).toBe("NONE");
     }
     expect(toStorePlanOrNone("NOVA")).toBe("NOVA");
+    expect(toStorePlanOrNone("LUMINA")).toBe("LUMINA");
   });
 
   it("every plan has a Stripe lookup key per currency, and back", () => {
     expect(planPriceLookupKey("SPARK", "CAD")).toBe("ceseelia_spark_cad");
     expect(planPriceLookupKey("NOVA", "USD")).toBe("ceseelia_nova_usd");
     expect(planFromLookupKey("ceseelia_nova_aud")).toEqual({ plan: "NOVA", currency: "AUD" });
+    expect(planPriceLookupKey("LUMINA", "CAD")).toBe("ceseelia_lumina_cad");
+    for (const plan of STORE_PLANS) {
+      for (const currency of ["CAD", "AUD", "USD"] as const) {
+        expect(planFromLookupKey(planPriceLookupKey(plan, currency))).toEqual({ plan, currency });
+      }
+    }
     expect(planFromLookupKey("ceseelia_free_cad")).toBeNull();
     expect(planFromLookupKey("ceseelia_spark_eur")).toBeNull();
   });

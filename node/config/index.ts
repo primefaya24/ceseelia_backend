@@ -104,7 +104,7 @@ export const ADMIN_ALERT_EMAIL: string = env("ADMIN_ALERT_EMAIL", appConstants.A
 export const APP_SECRET_ID: string = env("APP_SECRET_ID", `ceseelia/${STAGE}`);
 
 /*
-* Paid plans (P.5): SPARK / NOVA can be picked only when this is on, which needs the Billing
+* Paid plans (P.5): plans can be picked only when this is on, which needs the Billing
 * prices to exist in Stripe (`scripts/setup-billing-prices.mjs`). On by default in dev; prod
 * must turn it on with PAID_PLANS_ENABLED=true once the prices, webhook and portal are set up.
 */
