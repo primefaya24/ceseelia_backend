@@ -21,6 +21,14 @@ import { handleConnectWebhook } from './layers/payments/order-webhook';
 * CORS: explicit allow-list from CORS_ORIGINS plus every store's own address (STORE_URL_TEMPLATE,
 * 9.8 phase 1: `https://<slug>.ceseelia.com`); in dev with no list, reflect any origin.
 */
+/* A preflight asking to reach a private network (Chrome) gets a yes. Used in dev only. */
+export function allowPrivateNetwork(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    if (req.method === 'OPTIONS' && req.get('Access-Control-Request-Private-Network') === 'true') {
+        res.set('Access-Control-Allow-Private-Network', 'true');
+    }
+    next();
+}
+
 export function buildCorsOptions(
     allowedOrigins: string[] = CORS_ORIGINS,
     inDev: boolean = IN_DEV,
@@ -78,6 +86,10 @@ export function createApp(): Express {
         res.send({ ok: true });
     });
 
+    // Dev only: dev.ceseelia.com (a public https site) calls the backend on the developer's own
+    // machine (http://localhost:3100). Chrome's private-network check sends a preflight asking for
+    // this header; newer Chrome versions ask the user once instead (owner, 2026-11-17).
+    if (IN_DEV) app.use(allowPrivateNetwork);
     app.use(cors(buildCorsOptions()));
 
     // Stripe webhooks need the raw body (the signature is over it): registered before express.json().

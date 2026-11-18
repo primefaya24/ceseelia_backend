@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import request from "supertest";
-import { buildCorsOptions, createApp, markShuttingDown } from "../app";
+import { allowPrivateNetwork, buildCorsOptions, createApp, markShuttingDown } from "../app";
 import { isAllowedApiHost } from "../middleware";
 
 function originAllowed(options: ReturnType<typeof buildCorsOptions>, origin: string | undefined) {
@@ -68,5 +68,21 @@ describe("security headers and /healthz (S.14, 9.3)", () => {
     markShuttingDown();
     const down = await request(app).get("/healthz");
     expect(down.status).toBe(503);
+  });
+});
+
+describe("allowPrivateNetwork (dev: dev.ceseelia.com → the local backend)", () => {
+  const run = (method: string, headers: Record<string, string>) => {
+    const set = vi.fn();
+    const next = vi.fn();
+    allowPrivateNetwork({ method, get: (h: string) => headers[h] } as never, { set } as never, next);
+    return { set, next };
+  };
+  it("says yes to a private-network preflight, and only to that", () => {
+    const yes = run("OPTIONS", { "Access-Control-Request-Private-Network": "true" });
+    expect(yes.set).toHaveBeenCalledWith("Access-Control-Allow-Private-Network", "true");
+    expect(yes.next).toHaveBeenCalled();
+    expect(run("OPTIONS", {}).set).not.toHaveBeenCalled();
+    expect(run("GET", { "Access-Control-Request-Private-Network": "true" }).set).not.toHaveBeenCalled();
   });
 });

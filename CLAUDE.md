@@ -67,6 +67,10 @@ npm run lint       # eslint (0 errors required; legacy warnings tolerated)
 npm run typecheck  # tsc --noEmit
 ```
 
+The dev site (https://dev.ceseelia.com) calls the backend on your own machine at
+`http://localhost:3100`: run `npm run dev` and open dev.ceseelia.com in a browser on the same machine
+(Chrome asks once to let it reach this device; `allowPrivateNetwork` answers its preflight in dev).
+
 Config comes from env vars (see `node/.env.example`): `STAGE` (dev|prod), `ALLOWED_API_HOSTS`,
 `CORS_ORIGINS` (required in prod), `WEBAPP_URL` (links in emails), `STORE_URL_TEMPLATE` (store
 addresses, 9.8), plus optional overrides for
