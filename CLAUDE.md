@@ -72,7 +72,10 @@ The dev site (https://dev.ceseelia.com) calls the backend on your own machine at
 (Chrome asks once to let it reach this device; `allowPrivateNetwork` answers its preflight in dev).
 
 Full local testing: `npm run kickstart` in the webapp (`tools/kickstart.sh`) runs this backend with
-`WEBAPP_URL=http://localhost:4200`, `STORE_URL_TEMPLATE=http://{slug}.localhost:4200` and
+`WEBAPP_URL=http://<ip-with-dashes>.sslip.io:4200`, `STORE_URL_TEMPLATE=http://{slug}.<ip-with-dashes>.sslip.io:4200`
+(this machine's wifi address, so phones on the same wifi can be shoppers; the webapp calls the API at
+`http://<wifi-ip>:3100`, which `isAllowedApiHost` accepts in dev; `KICKSTART_LAN=0` keeps it to
+`http://localhost:4200` / `http://{slug}.localhost:4200`) and
 `STRIPE_LISTEN_SECRET` (the `stripe listen` signing secret; in dev it replaces both webhook secrets,
 and prod refuses to start with it set), plus `stripe listen` forwarding the events in
 `scripts/stripe-webhooks.mjs` (the same list `setup-stripe-account.mjs` gives the real endpoints).
