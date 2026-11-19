@@ -74,7 +74,8 @@ The dev site (https://dev.ceseelia.com) calls the backend on your own machine at
 Full local testing: `npm run kickstart` in the webapp (`tools/kickstart.sh`) runs this backend with
 `WEBAPP_URL=http://<ip-with-dashes>.sslip.io:4200`, `STORE_URL_TEMPLATE=http://{slug}.<ip-with-dashes>.sslip.io:4200`
 (this machine's wifi address, so phones on the same wifi can be shoppers; the webapp calls the API at
-`http://<wifi-ip>:3100`, which `isAllowedApiHost` accepts in dev; `KICKSTART_LAN=0` keeps it to
+`<app address>/api/v1`, which `ng serve` passes on to :3100, so `ALLOWED_API_HOSTS` is the app's host
+name (its `X-Forwarded-Host`); `KICKSTART_LAN=0` keeps it to
 `http://localhost:4200` / `http://{slug}.localhost:4200`) and
 `STRIPE_LISTEN_SECRET` (the `stripe listen` signing secret; in dev it replaces both webhook secrets,
 and prod refuses to start with it set), plus `stripe listen` forwarding the events in
