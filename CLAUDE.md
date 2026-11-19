@@ -76,7 +76,8 @@ Full local testing: `npm run kickstart` in the webapp (`tools/kickstart.sh`) run
 (this machine's wifi address, so phones on the same wifi can be shoppers; the webapp calls the API at
 `<app address>/api/v1`, which `ng serve` passes on to :3100, so `ALLOWED_API_HOSTS` is the app's host
 name (its `X-Forwarded-Host`); `KICKSTART_LAN=0` keeps it to
-`http://localhost:4200` / `http://{slug}.localhost:4200`) and
+`http://localhost:4200` / `http://{slug}.localhost:4200`; `npm run kickstart:tunnel` serves it at a
+Cloudflare quick tunnel's https address with stores at `/s/<slug>` and `TRUST_PROXY_HOPS=2`) and
 `STRIPE_LISTEN_SECRET` (the `stripe listen` signing secret; in dev it replaces both webhook secrets,
 and prod refuses to start with it set), plus `stripe listen` forwarding the events in
 `scripts/stripe-webhooks.mjs` (the same list `setup-stripe-account.mjs` gives the real endpoints).
