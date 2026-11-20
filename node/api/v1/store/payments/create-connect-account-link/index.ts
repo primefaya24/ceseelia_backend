@@ -53,6 +53,26 @@ export function onboardingReturnUrl(storeId: string, outcome: "return" | "refres
   return `${WEBAPP_URL}/store/storefront/${storeId}?payments=${outcome}`;
 }
 
+/** How long a Connect account creation key lasts: covers double clicks and quick retries. */
+export const ACCOUNT_KEY_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * The idempotency key for creating a store's Stripe account. A double click (or a retry) in the
+ * same 10-minute window gets the same account back; a store that disconnected its old account
+ * gets a new key. The window is in the key because Stripe replays the saved response for 24 h,
+ * errors included: without it, one refusal (e.g. before the live platform profile was
+ * finished, 2026-11-19) came back on every click for a day.
+ */
+export function accountIdempotencyKey(
+  storeId: string,
+  disconnectedAt: number | undefined,
+  country: string,
+  now: number = Date.now()
+): string {
+  const window = Math.floor(now / ACCOUNT_KEY_WINDOW_MS);
+  return `store-${storeId}-account-${disconnectedAt ?? 0}-${country}-${window}`;
+}
+
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     const storeId: string = req.body.storeId;
@@ -68,11 +88,9 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
           .send({ message: "Choose the country your business is in.", code: "COUNTRY_REQUIRED" });
         return;
       }
-      // The key makes a double click (or a retry) return the same account for 24 h; a store
-      // that disconnected its old account gets a new key.
       const account = await stripe.accounts.create(
         { type: "standard", country, metadata: { storeId } },
-        { idempotencyKey: `store-${storeId}-account-${payments.disconnectedAt ?? 0}-${country}` }
+        { idempotencyKey: accountIdempotencyKey(storeId, payments.disconnectedAt, country) }
       );
       accountId = await saveStoreStripeAccount(storeId, account.id);
     }

@@ -43,6 +43,10 @@ import {
   PaymentsNotConfiguredError,
 } from "../layers/payments/stripe";
 import { createApp } from "../app";
+import {
+  ACCOUNT_KEY_WINDOW_MS,
+  accountIdempotencyKey,
+} from "../api/v1/store/payments/create-connect-account-link";
 
 
 const ddb = mockClient(DynamoDBDocumentClient);
@@ -93,7 +97,7 @@ describe("POST /store/payments/create-connect-account-link", () => {
     });
     expect(stripe.accounts.create).toHaveBeenCalledWith(
       { type: "standard", country: "CA", metadata: { storeId: STORE } },
-      { idempotencyKey: `store-${STORE}-account-0-CA` }
+      { idempotencyKey: expect.stringMatching(new RegExp(`^store-${STORE}-account-0-CA-\\d+$`)) }
     );
     const input = ddb.commandCalls(UpdateCommand)[0].args[0].input;
     expect(input.ConditionExpression).toBe(
@@ -135,8 +139,16 @@ describe("POST /store/payments/create-connect-account-link", () => {
     ddb.on(UpdateCommand).resolves({});
     await createLink({ country: "AU" });
     expect(stripe.accounts.create.mock.calls[0][1]).toEqual({
-      idempotencyKey: `store-${STORE}-account-42-AU`,
+      idempotencyKey: expect.stringMatching(new RegExp(`^store-${STORE}-account-42-AU-\\d+$`)),
     });
+  });
+
+  it("idempotency key: same within 10 minutes, new after, so a cached Stripe error can't stick", () => {
+    const t = 1_795_000_000_000 - (1_795_000_000_000 % ACCOUNT_KEY_WINDOW_MS);
+    const key = (now: number) => accountIdempotencyKey(STORE, undefined, "CA", now);
+    expect(key(t)).toBe(key(t + ACCOUNT_KEY_WINDOW_MS - 1));
+    expect(key(t)).not.toBe(key(t + ACCOUNT_KEY_WINDOW_MS));
+    expect(key(t)).toBe(`store-${STORE}-account-0-CA-${t / ACCOUNT_KEY_WINDOW_MS}`);
   });
 
   it("400 COUNTRY_REQUIRED without an account or country; 400 for other countries", async () => {
