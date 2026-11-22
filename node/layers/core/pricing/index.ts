@@ -17,7 +17,7 @@ import {
   chargesAnyCanadaTax,
   provinceFromPostalCode,
 } from "../tax/canada";
-import { findVariant, hasVariants, isVariantParam, variantKey, variantsReady } from "../variants";
+import { findVariant, hasVariants, isVariantParam, variantCombinations, variantKey } from "../variants";
 
 /*
  * The one pricing function (progress.md 4.1). `POST /customer/quote` (4.3) and order creation
@@ -190,6 +190,18 @@ export function percentOf(amountMinor: number, percent: number): number {
   return Number((BigInt(amountMinor) * milli + BigInt(50_000)) / BigInt(100_000));
 }
 
+/*
+ * Can a variant item be bought at all? Public data (what the quote and create-order price) leaves
+ * out rows that aren't sold, so "every combination has a row" (`variantsReady`, which public data
+ * already applied) isn't asked again here: that made any item with one unsold option unbuyable
+ * (found in Stage R.14). A combination with no row is OPTION_UNAVAILABLE below. Here only: a
+ * table over the cap, or no rows at all (saved before 2.7, or nothing for sale).
+ */
+function variantsBuyable(item: StoreItem): boolean {
+  if (!hasVariants(item)) return true;
+  return variantCombinations(item.storeItemCustomParams).length > 0 && (item.storeItemVariants ?? []).length > 0;
+}
+
 /**
  * Check one line's picks against the item's params. Returns the picks in the item's order, or
  * the first problem: an unknown param or option, two picks on a single choice, a duplicate, or a
@@ -312,7 +324,7 @@ export function priceLines(
       isItemHiddenByReview(item) ||
       !category ||
       !category.storeCategoryIsActive ||
-      !variantsReady(item)
+      !variantsBuyable(item)
     ) {
       return fail({ code: "ITEM_NOT_FOUND", message: "This item is no longer available." });
     }

@@ -320,6 +320,19 @@ describe("quote (2.7)", () => {
     expect(priceLines(s, [l("M", "White")], "USD").lines[0].error?.code).toBe("ITEM_NOT_FOUND");
   });
 
+  it("public data (unsold rows left out): the item still sells its other options (R.14)", () => {
+    const s = store([item()]);
+    const pub = toPublicInventory(s);
+    expect(pub.items).toHaveLength(1);
+    const rowsLeft = pub.items[0].storeItemVariants.length;
+    expect(rowsLeft).toBeLessThan(s.items[0].storeItemVariants.length);
+    const sold = pub.items[0].storeItemVariants[0].storeVariantOptions;
+    const q = priceLines(pub, [l(sold.Size, sold.Color)], "USD");
+    expect(q.lines[0].error).toBeNull();
+    const unsold = s.items[0].storeItemVariants.find((v) => !v.storeVariantIsActive)!.storeVariantOptions;
+    expect(priceLines(pub, [l(unsold.Size, unsold.Color)], "USD").lines[0].error?.code).toBe("OPTION_UNAVAILABLE");
+  });
+
   it("finds rows by labels, whatever order the picks come in", () => {
     expect(findVariant(item(), { Color: "Black", Size: "M", Extras: "Wrap" })?.storeVariantStock).toBe(1);
   });

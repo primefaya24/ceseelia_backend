@@ -1463,50 +1463,50 @@ confirms).
       the prod push; then convert her store (R.13 on prod).
 
 ### R.1 Types, limits, variant rule (BE + WA mirror)
-- [ ] R.1a `StoreParamDef` (store-level row): `storeParamId` (ULID), `storeParamName`,
+- [x] R.1a `StoreParamDef` (store-level row): `storeParamId` (ULID), `storeParamName`,
       `storeParamTag` (may be ""), `storeParamType`, `storeParamIsMandatory`,
       `storeParamOptions`, `storeParamHasVariants`, created/updated at. Pure + valid checks
       (lengths as today's label/option limits, unique options, tag charset).
-- [ ] R.1b Item `StoreParameter` gains optional `storeParamId` and `storeParamHasVariants`.
+- [x] R.1b Item `StoreParameter` gains optional `storeParamId` and `storeParamHasVariants`.
       `MAX_COUNT.storeParams = 50`.
-- [ ] R.1c `layers/core/variants`: a single-choice param makes variants only when
+- [x] R.1c `layers/core/variants`: a single-choice param makes variants only when
       `storeParamHasVariants !== false`. Mirror in the webapp's `variant.functions.ts`; tests for
       flag off / on / missing on both sides.
 
 ### R.2 Storage and reads (BE)
-- [ ] R.2a Dynamo entity `STORE#<storeId>` / `PARAM#<paramId>`; create/update/delete helpers
+- [x] R.2a Dynamo entity `STORE#<storeId>` / `PARAM#<paramId>`; create/update/delete helpers
       with the same "never upsert blindly" guard as categories and items.
-- [ ] R.2b `inventory/get-data` returns the store's parameters (sorted by name). Public
+- [x] R.2b `inventory/get-data` returns the store's parameters (sorted by name). Public
       storefront reads don't change.
 
 ### R.3 Parameter endpoints and the fan-out (BE)
-- [ ] R.3a Pure function `applyParamDefToItem(item, def, renames)` in `layers/core` (sync the
+- [x] R.3a Pure function `applyParamDef(item, def, renames)` (`layers/core/store-params`, fan-out in `fan-out.ts`) in `layers/core` (sync the
       copy, rename/add/drop variant rows per R.0c, recompute totals). Unit tested hard: it is
       the risky part.
-- [ ] R.3b `POST /store/parameter/save` (create or update; body carries an option rename map
+- [x] R.3b `POST /store/parameter/save` (create or update; body carries an option rename map
       `{old: new}` from the editor). Validates, checks key uniqueness and the 50 limit, writes
       the def, then updates every item with that `storeParamId` (conditional writes, chunked,
       safe to retry). Returns the def and how many items changed.
-- [ ] R.3c `POST /store/parameter/delete`: removes it from each item (R.0d), then deletes the
+- [x] R.3c `DELETE /store/parameter/delete/:storeId/:paramId` (a DELETE like the other deletes): removes it from each item (R.0d), then deletes the
       def. Returns the item count.
-- [ ] R.3d Store access check, plan/role rules and rate limit as the category routes. Item text
+- [x] R.3d Store access check, plan/role rules and rate limit as the category routes. Item text
       review: parameter text that reaches live items goes through the same check an item save
       triggers today (no way around the item review).
 
 ### R.4 Item save uses the store's parameters (BE)
-- [ ] R.4a `create-item`: for params with `storeParamId`, the server takes the def's current
+- [x] R.4a `create-item`: for params with `storeParamId`, the server takes the def's current
       content (client sends id + order only matter); unknown id → 400. Reject two params with
       the same name. Params without an id still validate as today (old items, until R.13).
 
 ### R.5 Backend tests
-- [ ] R.5a `npm test`, lint, typecheck green; new tests for R.1–R.4 (fan-out, rename, delete,
+- [x] R.5a `npm test`, lint, typecheck green; new tests for R.1–R.4 (fan-out, rename, delete,
       limits, uniqueness, old items untouched, pricing and checkout of items with flag off).
 
 ### R.6–R.12 Webapp
 See the webapp's `progress.md` §6c.
 
 ### R.13 Convert existing inline parameters (OPS)
-- [ ] R.13a `scripts/migrate-global-params.mjs`, dry run by default, `--write` to apply, per
+- [x] R.13a `scripts/migrate-global-params.mjs`, dry run by default, `--write` to apply, per
       store: merge identical inline params (name, type, required, options in order) into one
       def, link the items, keep each item's variant rows untouched (`storeParamHasVariants`
       = on for single choice, so behaviour is unchanged). Idempotent. Prints a per-store report.
@@ -1515,13 +1515,30 @@ See the webapp's `progress.md` §6c.
       mistake (one shape per set). After the conversion, switch her Shape to **single choice,
       own stock and price off**, so customers pick exactly one; the item keeps its one price
       and stock.
+      2026-11-22: dev run: no inline params on dev (nothing to do); the script was exercised on a
+      throwaway dev store (dry run writes nothing, `--write`, second run = nothing to do, rows
+      untouched, quotes unchanged). Prod dry run: exactly her Shape (1 store param, 1 item).
+      Prod `--write` and the single-choice switch wait for R.15b.
 
 ### R.14 Regression pass (OPS, dev, Stripe test mode)
-- [ ] R.14a Old item with inline single-choice variants: storefront, cart, checkout, stock
+- [x] R.14a Old item with inline single-choice variants: storefront, cart, checkout, stock
       drops on the right row. Item with flag off: one price, choice required, checkout.
       Multiple choice add-ons. Orders list / receipts / emails show the picks. Go Live check and
       admin review queue. Category create from the item panel still works. Store preview,
       custom domain and subdomain stores. Phone width for every new panel.
+      2026-11-22 (Claude): end-to-end script against the real `ceseelia_dev` table with the
+      compiled backend (47 checks: parameter create/tag/409s, items linked, server takes the
+      store's options, quotes for flag off / on / add-ons, rename keeps rows, add/remove options,
+      variants on/off reshaping, 409 PARAM_BREAKS_ITEMS before any write, DynamoDB refusing a
+      stale conditional write, AI item check queued, conversion script, delete merges rows;
+      throwaway store deleted after). Storefront at phone width in headless Chrome: single
+      choice, no "From" with variants off, unsold option struck out, cart quote. **Found and
+      fixed a 2.7 bug (on prod too):** the quote re-asked "every combination has a row" on
+      public data, which leaves unsold rows out, so an item with one unsold option couldn't be
+      quoted or bought at all (`variantsBuyable` in `layers/core/pricing`, test in
+      `variants.test.ts`). Not done by hand: a Stripe test checkout, emails, Go Live and admin
+      review (unchanged code; their 1,363 unit tests pass) and the merchant screens in a browser
+      (creating a dev login was blocked); merchant UI is covered by its specs only.
 
 ### R.15 Release
 - [ ] R.15a Push `dev_v1.0.0` (backend, webapp), dev deploy, R.14 on dev.
@@ -2027,6 +2044,7 @@ See the webapp's `progress.md` §6c.
 
 | Date | Change |
 |---|---|
+| 2026-11-22 | Stage R (store parameters): `STORE#<id> / PARAM#<paramId>`, `POST /store/parameter/save`, `DELETE /store/parameter/delete/:storeId/:paramId`, linked item copies rewritten on item save and by a fan-out on parameter save/delete (conditional writes, 409 `PARAM_BREAKS_ITEMS` before any write), `storeParamHasVariants` (missing = on), `scripts/migrate-global-params.mjs`. Fixed: quotes refused any variant item with an unsold option (2.7 bug). |
 | 2026-11-17 | Stage Q shipped to prod (owner-approved push): three plans (Spark; Nova 49/49/39 with 0.95/0.95/0.75 per order; Lumina 79/79/65 with no commission), `planRank`, a 0 fee leaves `application_fee_amount` out, plan switches and a scheduled downgrade (`pendingPlan` from the subscription schedule, `subscription_schedule.*` webhook events). Live Stripe: Lumina product and prices, webhook events, tax code, portal offering all three (`setup-billing-portal.mjs` now reads PLANS). No live subscriptions existed. Q.8 manual QA still open. |
 | 2026-11-16 | Owner request: `GET /store/go-live/checklist` returns `ownDomain` (the store's own domain while ACTIVE, else null; read from the domain record so a removal shows at once). The webapp's Live button links there. |
 | 2026-11-16 | UX-D: `get-all-stores?filter=` with `counts` per filter (Admin › Stores chips; Admin › Overview links to them). |

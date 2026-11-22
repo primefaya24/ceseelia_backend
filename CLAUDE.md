@@ -35,7 +35,7 @@ ceseelia_backend/
     ├── tests/             # vitest specs
     ├── config/index.ts    # env-driven config (STAGE, hosts, CORS, Cognito, table/bucket)
     ├── constants/index.ts # appConstants (entity names, HTTP codes, limits, etc.); input-limits.ts, slug.ts
-    ├── scripts/           # one-off maintenance scripts (slug backfill, category item recount, item price migration, Free plan migration)
+    ├── scripts/           # one-off maintenance scripts (slug backfill, category item recount, item price migration, Free plan migration, store parameters migration)
     ├── api/v1/<area>/<route>/index.ts   # one file per endpoint
     └── layers/
         ├── core/http      # validateAndExecuteHttpApiRoute (auth + validation wrapper); api-limits (9.2), rate-limit (per route)
@@ -144,6 +144,7 @@ export default function registerRoute(router: Router): void {
   | Review queue | `APP_REVIEW` | `STORE#<storeId>` (one row per store IN_REVIEW, written with it by Go Live; removed by the decision, P.8) |
   | Category | `STORE#<storeId>` | `CATEGORY#<categoryId>` |
   | Item | `STORE#<storeId>` | `ITEM#<itemId>` |
+  | Store parameter (Stage R) | `STORE#<storeId>` | `PARAM#<paramId>` (`StoreParamDef`: name, tag, type, required, options, `storeParamHasVariants`; ≤ 50 per store; key `name#tag` unique ignoring case) |
   | User profile | `USER#<uuid>` | `PROFILE#INFO`, `PROFILE#COGNITO_DATA#<cognitoId>`, `PROFILE#NOTIFICATION_SETTINGS` (written by the CloudFormation sign-up Lambda) |
   | Store member | `STORE#<storeId>` | `MEMBER#<userId>` (role `ADMIN`/`MERCHANT`) |
   | User's store (reverse) | `USER#<userId>` | `STORE#<storeId>` (same role; written with the member row in one transaction) |
@@ -200,7 +201,8 @@ export default function registerRoute(router: Router): void {
 | Category | `POST /store/category/create` (create + update via `isUpdate`) | ✅ |
 | Category | `DELETE /store/category/delete/:storeId/:storeCategoryId` | ✅ only when the category has no items, else 409 `CATEGORY_NOT_EMPTY` `{message, itemCount}`; then deletes its banner |
 | Category | `GET /store/category/get-banner-upload-url/:storeId/:categoryId/:imageType` | ✅ 404 unless the category exists |
-| Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing; prices are `storeItemPrices` in whole cents per currency (2.5); variants (2.7): `storeItemVariants` = one row per combination of the single-choice params' options (stock, prices, sold), item stock/prices worked out from them by `withVariantTotals` (`layers/core/variants`) |
+| Inventory | `POST /store/inventory/create-item` (create + update) | ✅ keeps `storeCategoryItemCount` in the same transaction (+1 on create, +1/−1 on a move); 404 if the category is missing; prices are `storeItemPrices` in whole cents per currency (2.5); variants (2.7): `storeItemVariants` = one row per combination of the options of the single-choice params with `storeParamHasVariants !== false` (`isVariantParam`; missing = on, Stage R) (stock, prices, sold), item stock/prices worked out from them by `withVariantTotals` (`layers/core/variants`) |
+| Parameters (Stage R) | `POST /store/parameter/save` `{storeId, isUpdate, param, renames?}` → `{param, itemsUpdated, itemsFailed}`, `DELETE /store/parameter/delete/:storeId/:paramId` → `{itemsUpdated, itemsFailed}` (store members) | ✅ store-wide parameters (`layers/core/store-params`): each item keeps a linked copy (`storeParamId`), rewritten by create-item from the store's current def (400 `PARAM_NOT_FOUND`) and by a fan-out on save/delete: every affected item planned and checked first (409 `PARAM_BREAKS_ITEMS` `{items:[{itemId,itemName,problem}]}` before any write), then conditional writes (params/rows/stock/prices unchanged, re-read and retried), item check queued. Renames keep rows; new options copy the first row's price; variants off or delete merge rows (stock summed, first sold price). 409 `PARAM_KEY_TAKEN` / `PARAM_LIMIT`. `get-data` returns `params`; public reads don't. `scripts/migrate-global-params.mjs` links pre-Stage R item params |
 | Inventory | `DELETE /store/inventory/delete-item/:storeId/:storeItemId` | ✅ −1 on its category, then deletes its images |
 | Inventory | `GET /store/inventory/get-data/:storeId` (auth) | ✅ categories + items + settings |
 | Inventory | `GET /store/inventory/get-data-public/:storeId` (no auth) | ✅ active items in active categories only (counts match), no admin block, `storeId`, geo-IP default currency if the store offers it; 404 `STORE_NOT_FOUND` / `STORE_UNAVAILABLE` (suspended); a DRAFT / IN_REVIEW store is a 200 "Coming soon" body (`settings.storeStatus`, name and look only, no items; P.2), and its item links, quotes and Contact us are 404 `STORE_NOT_LIVE` |
@@ -334,7 +336,7 @@ Each step should be small enough for one PR. "WA" = matching work in `ceseelia_w
     conversion); replaces `storeItemPrice`. `scripts/migrate-item-prices.mjs` moves old prices.
 2.6 ✅ Stock semantics: `STOCK_UNLIMITED` (-1) vs. a tracked count (0 = sold out); `hasStockFor`
     is the check for quotes and the paid-order decrement (Stage 5).
-2.7 ✅ Variants: single-choice params (always required) make `storeItemVariants`, a row per option
+2.7 ✅ Variants: single-choice params (always required) with stock and price per option (`storeParamHasVariants`, missing = on; Stage R) make `storeItemVariants`, a row per option
     combination with its own stock, price per currency and sold flag (≤ 100); multiple-choice
     params are add-ons with no stock or price. Public data hides unsold rows and items whose
     table isn't filled in; the quote prices and stocks by combination (`OPTION_UNAVAILABLE`).
