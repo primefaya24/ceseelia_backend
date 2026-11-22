@@ -1510,7 +1510,7 @@ See the webapp's `progress.md` §6c.
       store: merge identical inline params (name, type, required, options in order) into one
       def, link the items, keep each item's variant rows untouched (`storeParamHasVariants`
       = on for single choice, so behaviour is unchanged). Idempotent. Prints a per-store report.
-- [ ] R.13b Run on dev, check, then on prod after the release (R.15). Her store today: 1 item,
+- [x] R.13b Run on dev, check, then on prod after the release (R.15). Her store today: 1 item,
       `Shape` (multiple choice, required, 10 options). Owner 2026-11-22: multiple choice was her
       mistake (one shape per set). After the conversion, switch her Shape to **single choice,
       own stock and price off**, so customers pick exactly one; the item keeps its one price
@@ -1519,6 +1519,12 @@ See the webapp's `progress.md` §6c.
       throwaway dev store (dry run writes nothing, `--write`, second run = nothing to do, rows
       untouched, quotes unchanged). Prod dry run: exactly her Shape (1 store param, 1 item).
       Prod `--write` and the single-choice switch wait for R.15b.
+      2026-11-22 (owner-approved): prod `--write` (her partition backed up first): Shape became
+      store parameter `01M82MCB4WZZCSV094CMHW12RW`, "Cute N Spooky" linked; then Shape switched
+      to single choice, own stock and price off, required (through the save route's own steps).
+      Item stock 2 and price 60.00 USD unchanged; checked on her real data: one shape quotes
+      60.00, two shapes INVALID_PARAM, none MISSING_PARAM. Her store is still a DRAFT, so the
+      public storefront shows "Coming soon" as before.
 
 ### R.14 Regression pass (OPS, dev, Stripe test mode)
 - [x] R.14a Old item with inline single-choice variants: storefront, cart, checkout, stock
@@ -1542,8 +1548,10 @@ See the webapp's `progress.md` §6c.
 
 ### R.15 Release
 - [x] R.15a Push `dev_v1.0.0` (backend, webapp), dev deploy, R.14 on dev. 2026-11-22: backend CI and webapp dev deploy green.
-- [ ] R.15b **Ask the owner**, then merge into `prod_v1.0.0` and push (backend first, webapp
+- [x] R.15b **Ask the owner**, then merge into `prod_v1.0.0` and push (backend first, webapp
       after); watch the runs; R.13 `--write` on prod; check her store and storefront.
+      2026-11-22: owner approved; both repos fast-forwarded to `prod_v1.0.0`, both prod deploys
+      green, `api.ceseelia.com/healthz` ok, new routes answer (401 without a token).
 
 ## 7. Stage 5 — Checkout, orders & payments
 
@@ -2044,6 +2052,7 @@ See the webapp's `progress.md` §6c.
 
 | Date | Change |
 |---|---|
+| 2026-11-22 | Stage R released to prod (owner-approved): backend and webapp deployed; her store converted (Shape → store parameter, single choice, stock and price per option off). |
 | 2026-11-22 | Stage R (store parameters): `STORE#<id> / PARAM#<paramId>`, `POST /store/parameter/save`, `DELETE /store/parameter/delete/:storeId/:paramId`, linked item copies rewritten on item save and by a fan-out on parameter save/delete (conditional writes, 409 `PARAM_BREAKS_ITEMS` before any write), `storeParamHasVariants` (missing = on), `scripts/migrate-global-params.mjs`. Fixed: quotes refused any variant item with an unsold option (2.7 bug). |
 | 2026-11-17 | Stage Q shipped to prod (owner-approved push): three plans (Spark; Nova 49/49/39 with 0.95/0.95/0.75 per order; Lumina 79/79/65 with no commission), `planRank`, a 0 fee leaves `application_fee_amount` out, plan switches and a scheduled downgrade (`pendingPlan` from the subscription schedule, `subscription_schedule.*` webhook events). Live Stripe: Lumina product and prices, webhook events, tax code, portal offering all three (`setup-billing-portal.mjs` now reads PLANS). No live subscriptions existed. Q.8 manual QA still open. |
 | 2026-11-16 | Owner request: `GET /store/go-live/checklist` returns `ownDomain` (the store's own domain while ACTIVE, else null; read from the domain record so a removal shows at once). The webapp's Live button links there. |
