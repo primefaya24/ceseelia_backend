@@ -1437,7 +1437,7 @@ confirms).
       (`storeParamHasVariants`), **off by default** for new parameters: one option must be
       picked, the item keeps one price and stock. On = today's variant rows. Missing flag on an
       old item param = on (today's behaviour), so nothing old changes. Multiple choice never has
-      variants. (Recommended by Claude; owner can still veto.)
+      variants. (Owner confirmed 2026-11-22: include it, off by default.)
 - [x] R.0c Variant edge cases from a linked edit: a new option adds rows to every item (price =
       the item's base price, stock = unlimited if the item's stock is unlimited, else 0 and the
       item shows "needs stock"); a renamed option renames its rows; a removed option drops its
