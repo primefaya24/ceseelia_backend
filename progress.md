@@ -278,6 +278,14 @@ Nothing here blocks paying users. Claude's items first, then the owner's.
       meaningful, to skip the conversion fee; AUD keeps converting to CAD.
 - [ ] Z9. **Trade name (owner):** ask the accountant or a registry agent whether "Ceseelia" needs
       an Alberta trade name registration under Primefaya Computer Services.
+- [ ] Z10. **Photo storage: S3 or Cloudflare R2 (Claude, check monthly):** stay on S3 for now
+      (owner asked 2026-11-21). At launch prod holds a few KB; CloudFront's free 1 TB/month and
+      S3 → CloudFront transfer cover bandwidth, so R2 would save only cents. Revisit when image
+      traffic passes ≈ 1 TB/month or storage reaches hundreds of GB. A move needs: presigned PUT
+      instead of presigned POST (R2 has no POST uploads, so the 5 MB / type limits must be
+      enforced another way), a new pending-upload clean-up (R2 has no object tags; e.g. a
+      `pending/` prefix + lifecycle, copy on save), R2 access keys in the stage secret (no IAM
+      role), and new CloudFront/CSP/CloudFormation entries for the storage domain.
 
 ## 1. Where things stand
 
