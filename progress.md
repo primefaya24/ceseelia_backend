@@ -1541,7 +1541,7 @@ See the webapp's `progress.md` §6c.
       (creating a dev login was blocked); merchant UI is covered by its specs only.
 
 ### R.15 Release
-- [ ] R.15a Push `dev_v1.0.0` (backend, webapp), dev deploy, R.14 on dev.
+- [x] R.15a Push `dev_v1.0.0` (backend, webapp), dev deploy, R.14 on dev. 2026-11-22: backend CI and webapp dev deploy green.
 - [ ] R.15b **Ask the owner**, then merge into `prod_v1.0.0` and push (backend first, webapp
       after); watch the runs; R.13 `--write` on prod; check her store and storefront.
 
