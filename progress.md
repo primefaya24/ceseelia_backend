@@ -1420,6 +1420,112 @@ passed). Test mode is set up for it: Lumina prices, portal with three plans, sch
 
 ---
 
+## 6c. Stage R — Store parameters: global, linked to items (owner, 2026-11-22)
+
+Merchants define parameters (Shape, Size…) once per store and pick them on items, instead of
+typing the same options on every item (first real client, `pressed-by-hanadi`, sells nails with
+the same 10 shapes on every item). Each task names its side: **BE** (this repo), **WA** (webapp,
+its `progress.md` §6c), **OPS** (Claude: scripts, deploys; the prod push only after the owner
+confirms).
+
+### R.0 Decisions (owner, 2026-11-22: all settled)
+- [x] R.0a **Linked**, not copied: editing a store parameter updates every item that uses it.
+      Each item still keeps its own copy of the parameter (plus `storeParamId`), so storefront,
+      cart, pricing, orders and the Go Live check keep reading the item as today. The backend
+      rewrites the copies on every parameter save.
+- [x] R.0b A single-choice parameter gets **"Each option has its own stock and price"**
+      (`storeParamHasVariants`), **off by default** for new parameters: one option must be
+      picked, the item keeps one price and stock. On = today's variant rows. Missing flag on an
+      old item param = on (today's behaviour), so nothing old changes. Multiple choice never has
+      variants. (Recommended by Claude; owner can still veto.)
+- [x] R.0c Variant edge cases from a linked edit: a new option adds rows to every item (price =
+      the item's base price, stock = unlimited if the item's stock is unlimited, else 0 and the
+      item shows "needs stock"); a renamed option renames its rows; a removed option drops its
+      rows; turning variants on/off rebuilds rows with the item editor's existing rules.
+- [x] R.0d **Delete = confirm and remove**: the panel says "Used by N items"; on confirm the
+      parameter is removed from those items (variant rows regroup as in R.0c). Past orders keep
+      their labels (they store text), so history is unaffected.
+- [x] R.0e **No per-item exceptions in v1**, but keep the door open: an item's link is an object
+      (`{ storeParamId, … }` inside its param copy), so a later `storeParamHiddenOptions` (or
+      similar) per item is an additive field, not a migration.
+- [x] R.0f **No new item-only parameters**: the item panel only picks store parameters. Its "+"
+      opens the parameter panel on top (like category create today); the new parameter is
+      picked automatically on save. Existing inline params are converted by a script (R.13).
+- [x] R.0g **Name + tag**: a parameter has a name ("Size", what customers see) and an optional
+      tag ("Rings", empty by default). Its key is `Size#Rings`, or just `Size` with no tag. Keys
+      are unique per store (case-insensitive). The merchant UI shows "Size #Rings". One item
+      can't use two parameters with the same name (variant rows match by name).
+- [x] R.0h Inventory tabs become **Categories | Parameters | Items**, with named query values
+      (`?tab=categories|parameters|items`); the old numbers keep working (0 = categories,
+      1 = items).
+- [x] R.0i Limits: 50 parameters per store; still 10 per item and 30 options per parameter.
+- [x] R.0j Release bar: nothing else may break. Full regression pass (R.14) before asking for
+      the prod push; then convert her store (R.13 on prod).
+
+### R.1 Types, limits, variant rule (BE + WA mirror)
+- [ ] R.1a `StoreParamDef` (store-level row): `storeParamId` (ULID), `storeParamName`,
+      `storeParamTag` (may be ""), `storeParamType`, `storeParamIsMandatory`,
+      `storeParamOptions`, `storeParamHasVariants`, created/updated at. Pure + valid checks
+      (lengths as today's label/option limits, unique options, tag charset).
+- [ ] R.1b Item `StoreParameter` gains optional `storeParamId` and `storeParamHasVariants`.
+      `MAX_COUNT.storeParams = 50`.
+- [ ] R.1c `layers/core/variants`: a single-choice param makes variants only when
+      `storeParamHasVariants !== false`. Mirror in the webapp's `variant.functions.ts`; tests for
+      flag off / on / missing on both sides.
+
+### R.2 Storage and reads (BE)
+- [ ] R.2a Dynamo entity `STORE#<storeId>` / `PARAM#<paramId>`; create/update/delete helpers
+      with the same "never upsert blindly" guard as categories and items.
+- [ ] R.2b `inventory/get-data` returns the store's parameters (sorted by name). Public
+      storefront reads don't change.
+
+### R.3 Parameter endpoints and the fan-out (BE)
+- [ ] R.3a Pure function `applyParamDefToItem(item, def, renames)` in `layers/core` (sync the
+      copy, rename/add/drop variant rows per R.0c, recompute totals). Unit tested hard: it is
+      the risky part.
+- [ ] R.3b `POST /store/parameter/save` (create or update; body carries an option rename map
+      `{old: new}` from the editor). Validates, checks key uniqueness and the 50 limit, writes
+      the def, then updates every item with that `storeParamId` (conditional writes, chunked,
+      safe to retry). Returns the def and how many items changed.
+- [ ] R.3c `POST /store/parameter/delete`: removes it from each item (R.0d), then deletes the
+      def. Returns the item count.
+- [ ] R.3d Store access check, plan/role rules and rate limit as the category routes. Item text
+      review: parameter text that reaches live items goes through the same check an item save
+      triggers today (no way around the item review).
+
+### R.4 Item save uses the store's parameters (BE)
+- [ ] R.4a `create-item`: for params with `storeParamId`, the server takes the def's current
+      content (client sends id + order only matter); unknown id → 400. Reject two params with
+      the same name. Params without an id still validate as today (old items, until R.13).
+
+### R.5 Backend tests
+- [ ] R.5a `npm test`, lint, typecheck green; new tests for R.1–R.4 (fan-out, rename, delete,
+      limits, uniqueness, old items untouched, pricing and checkout of items with flag off).
+
+### R.6–R.12 Webapp
+See the webapp's `progress.md` §6c.
+
+### R.13 Convert existing inline parameters (OPS)
+- [ ] R.13a `scripts/migrate-global-params.mjs`, dry run by default, `--write` to apply, per
+      store: merge identical inline params (name, type, required, options in order) into one
+      def, link the items, keep each item's variant rows untouched (`storeParamHasVariants`
+      = on for single choice, so behaviour is unchanged). Idempotent. Prints a per-store report.
+- [ ] R.13b Run on dev, check, then on prod after the release (R.15). Her store today: 1 item,
+      `Shape` (multiple choice, required, 10 options). Tell the owner: Shape probably should be
+      single choice with variants off (one shape per order); her call, one edit in the new tab.
+
+### R.14 Regression pass (OPS, dev, Stripe test mode)
+- [ ] R.14a Old item with inline single-choice variants: storefront, cart, checkout, stock
+      drops on the right row. Item with flag off: one price, choice required, checkout.
+      Multiple choice add-ons. Orders list / receipts / emails show the picks. Go Live check and
+      admin review queue. Category create from the item panel still works. Store preview,
+      custom domain and subdomain stores. Phone width for every new panel.
+
+### R.15 Release
+- [ ] R.15a Push `dev_v1.0.0` (backend, webapp), dev deploy, R.14 on dev.
+- [ ] R.15b **Ask the owner**, then merge into `prod_v1.0.0` and push (backend first, webapp
+      after); watch the runs; R.13 `--write` on prod; check her store and storefront.
+
 ## 7. Stage 5 — Checkout, orders & payments
 
 - [x] 5.1 Decision (2026-11-11): **Stripe Connect, Standard accounts**, direct charges. Recorded
