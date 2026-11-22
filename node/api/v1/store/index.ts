@@ -3,6 +3,7 @@ import { Router } from "express";
 import dotenv from "dotenv";
 import storeInventoryRouter from "./inventory";
 import storeCategoryRouter from "./category";
+import storeParameterRouter from "./parameter";
 import storePublicRouter from "./public";
 import storePaymentsRouter from "./payments";
 import storeGoLiveRouter from "./go-live";
@@ -36,6 +37,7 @@ route_update_info(storeRouter);
 route_overview(storeRouter); // L.6 Store Overview
 // Paths
 storeRouter.use("/category", storeCategoryRouter);
+storeRouter.use("/parameter", storeParameterRouter); // Stage R
 storeRouter.use("/inventory", storeInventoryRouter);
 storeRouter.use("/public", storePublicRouter);
 storeRouter.use("/payments", storePaymentsRouter);

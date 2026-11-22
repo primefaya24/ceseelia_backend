@@ -22,6 +22,8 @@ export const MAX_LENGTH = {
   hashtagId: 40,
   paramLabel: 40,
   paramOption: 40,
+  /** Stage R: a store parameter's tag ("Rings" in Size #Rings), merchant-only. */
+  paramTag: 30,
   rewardsLabel: 30,
   pickupAddress: 200,
   promoRunnerText: 150,
@@ -73,6 +75,8 @@ export const MAX_COUNT = {
   itemHashtags: 30,
   itemParams: 10,
   paramOptions: 30,
+  /** Stage R: store parameters (Shape, Size…) a store may define. */
+  storeParams: 50,
   // Option combinations (variants) per item (2.7): Size × Color… rows, each with stock and prices
   itemVariants: 100,
   categoryHashtags: 30,

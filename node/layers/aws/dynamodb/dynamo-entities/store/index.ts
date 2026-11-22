@@ -28,6 +28,7 @@ import {
   StoreInventoryData,
   StoreItem,
   StoreOverview,
+  StoreParamDef,
   StoreParameter,
   StorePayments,
   StoreSettings,
@@ -56,7 +57,7 @@ const DEFAULT_TABLE_NAME: string | undefined = DB_TABLE_NAME;
 
 /* Thrown when a write targets a store, category or item that doesn't exist. Routes map it to 404. */
 export class StoreRecordNotFoundError extends Error {
-  constructor(what: "Store" | "Category" | "Item") {
+  constructor(what: "Store" | "Category" | "Item" | "Parameter") {
     super(`${what} not found`);
     this.name = "StoreRecordNotFoundError";
   }
@@ -569,8 +570,155 @@ export async function deleteStoreCategory(
   }
 }
 
+/*
+ * Store parameters (Stage R): `STORE#<storeId> / PARAM#<paramId>`.
+ */
+const paramRowKey = (storeId: string, paramId: string) =>
+  storeKey(storeId, appConstants.DYNAMO_ENTITY_PARAM + "#" + paramId);
+
+const toParamDef = (record: Record<string, any>): StoreParamDef => {
+  const { pk: _pk, sk: _sk, ...rest } = record;
+  return rest as StoreParamDef;
+};
+
+/** The store's parameters, by name then tag. */
+export async function listStoreParams(storeId: string): Promise<StoreParamDef[]> {
+  const records = await queryAllWithPrefix(
+    appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+    appConstants.DYNAMO_ENTITY_PARAM + "#"
+  );
+  return records
+    .map(toParamDef)
+    .sort(
+      (a, b) =>
+        a.storeParamName.localeCompare(b.storeParamName, undefined, { sensitivity: "base" }) ||
+        a.storeParamTag.localeCompare(b.storeParamTag, undefined, { sensitivity: "base" })
+    );
+}
+
+/*
+ * Create or update a store parameter, never upserting blindly (same rule as categories and
+ * items): create = a fresh ULID, only if the store exists; update = only if the row exists.
+ * Returns the saved parameter. Throws StoreRecordNotFoundError ("Store" / "Parameter").
+ */
+export async function putStoreParam(storeId: string, def: StoreParamDef, isUpdate: boolean): Promise<StoreParamDef> {
+  const id = isUpdate ? def.storeParamId : ULID.ulid();
+  const saved: StoreParamDef = { ...def, storeParamId: id, storeParamUpdatedAt: Date.now() };
+  const put = {
+    TableName: DEFAULT_TABLE_NAME,
+    Item: { ...paramRowKey(storeId, id), ...saved },
+  };
+  try {
+    if (isUpdate) {
+      await dynamoDbDocumentClient.send(new PutCommand({ ...put, ConditionExpression: "attribute_exists(pk)" }));
+    } else {
+      await dynamoDbDocumentClient.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              ConditionCheck: {
+                TableName: DEFAULT_TABLE_NAME,
+                Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS),
+                ConditionExpression: "attribute_exists(pk)",
+              },
+            },
+            { Put: { ...put, ConditionExpression: "attribute_not_exists(pk)" } },
+          ],
+        })
+      );
+    }
+  } catch (e) {
+    if (isUpdate && isConditionalCheckFailure(e)) throw new StoreRecordNotFoundError("Parameter");
+    if (!isUpdate && isStoreMissingInTransaction(e)) throw new StoreRecordNotFoundError("Store");
+    throw e;
+  }
+  return saved;
+}
+
+/** Delete a store parameter (a missing one is a no-op). */
+export async function deleteStoreParam(storeId: string, paramId: string): Promise<void> {
+  await dynamoDbDocumentClient.send(
+    new DeleteCommand({ TableName: DEFAULT_TABLE_NAME, Key: paramRowKey(storeId, paramId) })
+  );
+}
+
+/** Every item of the store (Stage R fan-out). */
+export async function listStoreItems(storeId: string): Promise<StoreItem[]> {
+  const records = await queryAllWithPrefix(
+    appConstants.DYNAMO_ENTITY_STORE + "#" + storeId,
+    appConstants.DYNAMO_ENTITY_ITEM + "#"
+  );
+  return records.map((record) => {
+    const { pk: _pk, sk: _sk, ...rest } = record;
+    return rest as StoreItem;
+  });
+}
+
+/** One item, read consistently (null when it's gone). */
+export async function getStoreItem(storeId: string, itemId: string): Promise<StoreItem | null> {
+  const r = await dynamoDbDocumentClient.send(
+    new GetCommand({ TableName: DEFAULT_TABLE_NAME, Key: itemKey(storeId, itemId), ConsistentRead: true })
+  );
+  if (!r.Item) return null;
+  const { pk: _pk, sk: _sk, ...rest } = r.Item;
+  return rest as StoreItem;
+}
+
+/*
+ * Write an item's params, rows, stock and prices after a parameter save or delete (Stage R),
+ * only if those four are still what `before` had: a paid order lowering stock, or the merchant
+ * saving the item meanwhile, makes it fail (false) so the caller re-reads and tries again.
+ */
+export async function updateItemParamsIfUnchanged(storeId: string, before: StoreItem, after: StoreItem): Promise<boolean> {
+  const names: Record<string, string> = {
+    "#p": "storeItemCustomParams",
+    "#v": "storeItemVariants",
+    "#s": "storeItemStock",
+    "#pr": "storeItemPrices",
+  };
+  const values: Record<string, unknown> = {
+    ":p": after.storeItemCustomParams,
+    ":v": after.storeItemVariants ?? [],
+    ":s": after.storeItemStock,
+    ":pr": after.storeItemPrices,
+    ":op": before.storeItemCustomParams,
+    ":os": before.storeItemStock,
+  };
+  const conds = ["attribute_exists(pk)", "#p = :op", "#s = :os"];
+  if (before.storeItemVariants === undefined) {
+    conds.push("attribute_not_exists(#v)");
+  } else {
+    conds.push("#v = :ov");
+    values[":ov"] = before.storeItemVariants;
+  }
+  if (before.storeItemPrices === undefined) {
+    conds.push("attribute_not_exists(#pr)");
+  } else {
+    conds.push("#pr = :opr");
+    values[":opr"] = before.storeItemPrices;
+  }
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        Key: itemKey(storeId, before.storeItemId),
+        UpdateExpression: "SET #p = :p, #v = :v, #s = :s, #pr = :pr",
+        ConditionExpression: conds.join(" AND "),
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      })
+    );
+    return true;
+  } catch (e) {
+    if (isConditionalCheckFailure(e)) return false;
+    throw e;
+  }
+}
+
 export async function getStoreInventoryData(
-  storeId: string
+  storeId: string,
+  /** Stage R: also the store's parameters (the members' inventory screen only). */
+  opts: { withParams?: boolean } = {}
 ): Promise<StoreInventoryData> {
   try {
     const storePk = appConstants.DYNAMO_ENTITY_STORE + "#" + storeId;
@@ -582,10 +730,11 @@ export async function getStoreInventoryData(
       },
     });
 
-    const [categoryRecords, itemRecords, settingsResult] = await Promise.all([
+    const [categoryRecords, itemRecords, settingsResult, params] = await Promise.all([
       queryAllWithPrefix(storePk, appConstants.DYNAMO_ENTITY_CATEGORY + "#"),
       queryAllWithPrefix(storePk, appConstants.DYNAMO_ENTITY_ITEM + "#"),
       dynamoDbDocumentClient.send(settingsCommand),
+      opts.withParams ? listStoreParams(storeId) : Promise.resolve(undefined),
     ]);
 
     const categories: StoreCategory[] = categoryRecords.map(
@@ -612,6 +761,7 @@ export async function getStoreInventoryData(
       categories,
       items,
       settings,
+      ...(params ? { params } : {}),
     };
   } catch (e) {
     log.error({ err: e }, "In getStoreInventoryData");

@@ -17,7 +17,7 @@ import {
   chargesAnyCanadaTax,
   provinceFromPostalCode,
 } from "../tax/canada";
-import { findVariant, hasVariants, variantKey, variantsReady } from "../variants";
+import { findVariant, hasVariants, isVariantParam, variantKey, variantsReady } from "../variants";
 
 /*
  * The one pricing function (progress.md 4.1). `POST /customer/quote` (4.3) and order creation
@@ -324,9 +324,10 @@ export function priceLines(
       return fail({ code: "INVALID_QUANTITY", message: `Choose a quantity from 1 to ${MAX_QUANTITY_PER_LINE}.` });
     }
     const variantItem = hasVariants(item);
-    // Variant params are always required, also on items saved before that rule (2.7).
+    // Variant params are always required, also on items saved before that rule (2.7). A
+    // single-choice param with variants off (Stage R) keeps its own required flag.
     const itemParams = (item.storeItemCustomParams ?? []).map((p) =>
-      variantItem && p.storeParamType !== "MULTI_SELECT" ? { ...p, storeParamIsMandatory: true } : p
+      isVariantParam(p) ? { ...p, storeParamIsMandatory: true } : p
     );
     const checked = checkParams(itemParams, line.params ?? []);
     if ("error" in checked) return fail(checked.error);

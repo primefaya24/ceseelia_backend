@@ -1123,11 +1123,27 @@ export function isStoreItemPricesValid(prices: StoreItemPrices): boolean {
   );
 }
 
+/*
+ * A parameter as an item holds it. Since Stage R it is usually the item's copy of a store
+ * parameter (`storeParamId`, see `StoreParamDef` and `layers/core/store-params`): the server
+ * writes the copy from the store parameter on every item save and every parameter save, so
+ * storefront, pricing, orders and the AI check read the item alone. Items saved before Stage R
+ * may still hold item-only params (no id) until `scripts/migrate-global-params.mjs` links them.
+ */
 export interface StoreParameter {
+  /** What shoppers see ("Size"). Variant rows are matched by it, so it is unique per item. */
   storeParamLabel: string;
   storeParamType: STORE_PARAM_TYPE;
   storeParamIsMandatory: boolean;
   storeParamOptions: string[];
+  /** Stage R: the store parameter this is a copy of. Missing on item-only params. */
+  storeParamId?: string;
+  /**
+   * Stage R (R.0b): single choice only. true = each option has its own stock and price (a
+   * variant param, 2.7); false = the shopper picks one, the item keeps one price and stock.
+   * Missing = true, the behaviour before Stage R. Multiple choice never has variants.
+   */
+  storeParamHasVariants?: boolean;
 }
 
 export function isStoreParameterPure(storeParameter: StoreParameter): boolean {
@@ -1136,7 +1152,9 @@ export function isStoreParameterPure(storeParameter: StoreParameter): boolean {
     typeof storeParameter.storeParamType === "string" &&
     typeof storeParameter.storeParamIsMandatory === "boolean" &&
     Array.isArray(storeParameter.storeParamOptions) &&
-    storeParameter.storeParamOptions.every((o) => typeof o === "string")
+    storeParameter.storeParamOptions.every((o) => typeof o === "string") &&
+    (storeParameter.storeParamId === undefined || typeof storeParameter.storeParamId === "string") &&
+    (storeParameter.storeParamHasVariants === undefined || typeof storeParameter.storeParamHasVariants === "boolean")
   );
 }
 
@@ -1158,6 +1176,61 @@ export function isStoreParameterValid(storeParameter: StoreParameter): boolean {
   ) {
     return false;
   }
+  if (storeParameter.storeParamId !== undefined && !isUlid(storeParameter.storeParamId)) {
+    return false;
+  }
+  return true;
+}
+
+/*
+ * A store parameter (Stage R): `STORE#<storeId> / PARAM#<paramId>`. Defined once, picked on
+ * items; every item using it keeps a copy (`StoreParameter` with `storeParamId`).
+ */
+export interface StoreParamDef {
+  storeParamId: string;
+  /** What shoppers see ("Size"). */
+  storeParamName: string;
+  /** Merchant-only, to tell two parameters with the same name apart ("Rings"); "" = none. */
+  storeParamTag: string;
+  storeParamType: STORE_PARAM_TYPE;
+  storeParamIsMandatory: boolean;
+  storeParamOptions: string[];
+  /** R.0b: single choice only; always false for multiple choice. */
+  storeParamHasVariants: boolean;
+  storeParamUpdatedAt?: number;
+}
+
+export function isStoreParamDefPure(d: unknown): boolean {
+  if (!isObject(d)) return false;
+  const p = d as unknown as StoreParamDef;
+  return (
+    typeof p.storeParamId === "string" &&
+    typeof p.storeParamName === "string" &&
+    typeof p.storeParamTag === "string" &&
+    typeof p.storeParamType === "string" &&
+    typeof p.storeParamIsMandatory === "boolean" &&
+    Array.isArray(p.storeParamOptions) &&
+    p.storeParamOptions.every((o) => typeof o === "string") &&
+    typeof p.storeParamHasVariants === "boolean"
+  );
+}
+
+/*
+ * Value checks for a store parameter, already trimmed (`cleanParamDef`): a name, an optional
+ * tag, neither with "#" (the key is name#tag); 1–30 options, unique ignoring case; variants only
+ * on single choice. The id is checked by the route (empty on create).
+ */
+export function isStoreParamDefValid(p: StoreParamDef): boolean {
+  const name = p.storeParamName;
+  const tag = p.storeParamTag;
+  if (name.length === 0 || !isMaxLength(name, MAX_LENGTH.paramLabel) || name.includes("#")) return false;
+  if (!isMaxLength(tag, MAX_LENGTH.paramTag) || tag.includes("#")) return false;
+  if (p.storeParamType !== "SINGLE_SELECT" && p.storeParamType !== "MULTI_SELECT") return false;
+  if (p.storeParamType === "MULTI_SELECT" && p.storeParamHasVariants) return false;
+  const options = p.storeParamOptions;
+  if (options.length === 0 || options.length > MAX_COUNT.paramOptions) return false;
+  if (!options.every((o) => o.length > 0 && isMaxLength(o, MAX_LENGTH.paramOption))) return false;
+  if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) return false;
   return true;
 }
 
@@ -1165,12 +1238,15 @@ export interface StoreInventoryData {
   categories: StoreCategory[];
   items: StoreItem[];
   settings: StoreSettings;
+  /** Stage R: the store's parameters, by name. Members' inventory data only (never public). */
+  params?: StoreParamDef[];
 }
 
 export function initStoreInventoryData(): StoreInventoryData {
   return {
     categories: [],
     items: [],
+    params: [],
     settings: initStoreSettings(),
   };
 }

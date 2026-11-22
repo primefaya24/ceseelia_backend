@@ -4,7 +4,8 @@ import type { StoreItem, StoreItemPrices, StoreItemVariant, StoreParameter } fro
 /*
  * Variants: stock and price per option combination (progress.md 2.7).
  *
- *   - A single-choice param with at least one option is a *variant param* (Size, Color). An item
+ *   - A single-choice param with at least one option is a *variant param* (Size, Color), unless
+ *     its `storeParamHasVariants` is false (Stage R: "pick one", no own stock or price). An item
  *     with any variant params has a row in `storeItemVariants` for every combination of their
  *     options (Size × Color): its own stock, its own price per currency, and whether it's sold
  *     at all ("we don't make XS in Red"). Variant params are always required.
@@ -30,9 +31,16 @@ const clean = (s: string): string => (typeof s === "string" ? s.trim() : "");
 export const paramOptionList = (p: StoreParameter): string[] =>
   (p.storeParamOptions ?? []).map(clean).filter((o) => o.length > 0);
 
-/** The params that make variants: single choice, with options. In the item's param order. */
+/**
+ * Whether a param makes variants: single choice, with options, and not switched off (Stage R,
+ * `storeParamHasVariants: false`; missing = on, the rule before Stage R).
+ */
+export const isVariantParam = (p: StoreParameter): boolean =>
+  p.storeParamType !== "MULTI_SELECT" && p.storeParamHasVariants !== false && paramOptionList(p).length > 0;
+
+/** The params that make variants. In the item's param order. */
 export function variantParams(params: StoreParameter[] | undefined): StoreParameter[] {
-  return (params ?? []).filter((p) => p.storeParamType !== "MULTI_SELECT" && paramOptionList(p).length > 0);
+  return (params ?? []).filter(isVariantParam);
 }
 
 export const hasVariants = (item: Pick<StoreItem, "storeItemCustomParams">): boolean =>
@@ -111,7 +119,7 @@ export function variantTotals(variants: StoreItemVariant[]): { stock: number; pr
  */
 export function withVariantTotals(item: StoreItem): StoreItem {
   const params = (item.storeItemCustomParams ?? []).map((p) => {
-    const isVariant = p.storeParamType !== "MULTI_SELECT" && paramOptionList(p).length > 0;
+    const isVariant = isVariantParam(p);
     return {
       ...p,
       storeParamLabel: clean(p.storeParamLabel),

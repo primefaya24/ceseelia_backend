@@ -47,7 +47,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
 
     // Fetch store inventory data. The admin block (commission, store live) is for admins only
     // (progress.md 1.6); they edit it in Admin › Stores.
-    const storeInventoryData = await getStoreInventoryData(storeId);
+    const storeInventoryData = await getStoreInventoryData(storeId, { withParams: true });
 
     // Respond to user
     // L.2: merchants see that an item is hidden and why in general terms, never the reasons.

@@ -9,7 +9,8 @@ import {
   isStoreItemValid,
 } from "../../../../../layers/core/interfaces/store";
 import { withVariantTotals } from "../../../../../layers/core/variants";
-import { StoreRecordNotFoundError, updateStoreItem } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { listStoreParams, StoreRecordNotFoundError, updateStoreItem } from "../../../../../layers/aws/dynamodb/dynamo-entities/store";
+import { syncItemParams, UnknownStoreParamError } from "../../../../../layers/core/store-params";
 import { deleteS3Keys, listPrefixFiles } from "../../../../../layers/aws/s3";
 import { cleanUpS3Folder, isUlid, isUlidOrEmpty } from "../../../../../layers/core/utils";
 import { markImagesKept } from "../../../../../layers/aws/s3/image-upload";
@@ -65,9 +66,26 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
   try {
     // Fetch data
     const storeId = req.body.storeId;
-    const storeItem = req.body.storeItem;
+    let storeItem = req.body.storeItem;
     const storeItemId = req.body.storeItemId;
     const isUpdate = req.body.isUpdate;
+
+    // Stage R (R.4): linked params are written from the store's parameters, never from the
+    // client (it only picks which ones and their order). Then the saved shape is checked again.
+    if ((storeItem.storeItemCustomParams ?? []).some((p: { storeParamId?: string }) => p.storeParamId !== undefined)) {
+      try {
+        storeItem = withVariantTotals(syncItemParams(storeItem, await listStoreParams(storeId)));
+      } catch (e) {
+        if (!(e instanceof UnknownStoreParamError)) throw e;
+        res.status(appConstants.HTTP_STATUS_CODE_BAD_REQUEST).send({ code: "PARAM_NOT_FOUND", message: "A parameter on this item no longer exists. Reload and try again." });
+        return;
+      }
+      const ids = storeItem.storeItemCustomParams.map((p: { storeParamId?: string }) => p.storeParamId).filter(Boolean);
+      if (new Set(ids).size !== ids.length || !isStoreItemValid(storeItem, storeId, isUpdate ? storeItemId : undefined)) {
+        res.status(appConstants.HTTP_STATUS_CODE_BAD_REQUEST).send({ message: appConstants.HTTP_ERROR_MSG_INVALID_REQUEST_PARAMS });
+        return;
+      }
+    }
 
     // Keep the images this save uses (clear their pending tag, 2.3d) before saving them
     await markImagesKept(storeItem?.storeItemImageUris ?? []);
