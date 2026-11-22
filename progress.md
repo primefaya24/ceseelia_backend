@@ -1511,8 +1511,10 @@ See the webapp's `progress.md` §6c.
       def, link the items, keep each item's variant rows untouched (`storeParamHasVariants`
       = on for single choice, so behaviour is unchanged). Idempotent. Prints a per-store report.
 - [ ] R.13b Run on dev, check, then on prod after the release (R.15). Her store today: 1 item,
-      `Shape` (multiple choice, required, 10 options). Tell the owner: Shape probably should be
-      single choice with variants off (one shape per order); her call, one edit in the new tab.
+      `Shape` (multiple choice, required, 10 options). Owner 2026-11-22: multiple choice was her
+      mistake (one shape per set). After the conversion, switch her Shape to **single choice,
+      own stock and price off**, so customers pick exactly one; the item keeps its one price
+      and stock.
 
 ### R.14 Regression pass (OPS, dev, Stripe test mode)
 - [ ] R.14a Old item with inline single-choice variants: storefront, cart, checkout, stock
