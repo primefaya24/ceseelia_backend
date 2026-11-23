@@ -4,8 +4,8 @@ import { CACHE_CONTROL, setCacheControl } from "../../../../layers/core/http/cac
 import { appConstants } from "../../../../constants";
 import { AdminOverviewData } from "../../../../layers/core/interfaces/admin";
 import { StoreOverview } from "../../../../layers/core/interfaces/store";
-import { isTimeZone } from "../../../../layers/core/store-stats";
-import { AdminStoreInput, adminStatsWindowStart, computeAdminOverview, mapLimit } from "../../../../layers/core/admin-stats";
+import { isTimeZone, toRangeDays } from "../../../../layers/core/store-stats";
+import { ADMIN_STATS_DAYS, AdminStoreInput, adminStatsWindowStart, computeAdminOverview, mapLimit } from "../../../../layers/core/admin-stats";
 import { getAllStores } from "../../../../layers/aws/dynamodb/dynamo-entities/admin";
 import { getStoreSummaries, listReviewQueue } from "../../../../layers/aws/dynamodb/dynamo-entities/store-admin";
 import { listStatsOrders } from "../../../../layers/aws/dynamodb/dynamo-entities/order";
@@ -16,13 +16,16 @@ import { countOpenTickets } from "../../../../layers/aws/dynamodb/dynamo-entitie
 import { log } from "../../../../layers/core/logger";
 
 /*
- * GET /admin/get-overview-data?tz=<IANA>  (admins; L.8 / 8.1) → { stats, allStores }
+ * GET /admin/get-overview-data?tz=<IANA>&days=7|30|90  (admins; L.8 / 8.1; `days` and the
+ * recent orders added with the overview redesign, 2026-11-22) → { stats, allStores }
  * `stats` (`layers/core/admin-stats`): stores by status, merchants (people in at least one store),
  * plans, past-due subscriptions, the last 30 days against the 30 before (paid orders, sales,
  * commission), a day-by-day chart, the top 5 stores, and the admin to-do counts. Reads each
  * store's orders of the last 60 days (at most 3,000 a store; `partial` says when a store had
- * more), 8 stores at a time. Cached 60 s per time zone.
+ * more), 8 stores at a time; with `days=90`, the last 180 days. Cached 30 s per zone and range.
  */
+/** The page polls every 30 s; one platform read serves every admin in that time. */
+export const ADMIN_OVERVIEW_CACHE_MS = 30_000;
 const cache = new Map<string, { at: number; body: AdminOverviewData }>();
 export const resetAdminOverviewCacheForTests = () => cache.clear();
 
@@ -31,8 +34,8 @@ export default function registerRoute(router: Router): void {
     validateAndExecuteHttpApiRoute(
       req,
       res,
-      (r) => r.query.tz === undefined || typeof r.query.tz === "string",
-      (r) => r.query.tz === undefined || isTimeZone(r.query.tz),
+      (r) => (r.query.tz === undefined || typeof r.query.tz === "string") && (r.query.days === undefined || typeof r.query.days === "string"),
+      (r) => (r.query.tz === undefined || isTimeZone(r.query.tz)) && (r.query.days === undefined || toRangeDays(r.query.days) !== null),
       executeRouteCore,
       true,
       true
@@ -40,7 +43,7 @@ export default function registerRoute(router: Router): void {
   });
 }
 
-async function build(tz: string): Promise<AdminOverviewData> {
+async function build(tz: string, rangeDays: number): Promise<AdminOverviewData> {
   const now = Date.now();
   const allStores: StoreOverview[] = await getAllStores();
   const ids = allStores.map((s) => String(s.storeId));
@@ -51,7 +54,7 @@ async function build(tz: string): Promise<AdminOverviewData> {
     listReviewReports(),
     countOpenTickets(),
   ]);
-  const from = adminStatsWindowStart(now, tz);
+  const from = adminStatsWindowStart(now, tz, rangeDays);
   let partial = false;
   const members = new Set<string>();
   const inputs: AdminStoreInput[] = await mapLimit(allStores, 8, async (s) => {
@@ -78,7 +81,8 @@ async function build(tz: string): Promise<AdminOverviewData> {
       partial,
     },
     now,
-    tz
+    tz,
+    rangeDays
   );
   return { stats, allStores };
 }
@@ -86,14 +90,17 @@ async function build(tz: string): Promise<AdminOverviewData> {
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
   setCacheControl(res, CACHE_CONTROL.none);
   const tz = String(req.query.tz ?? "UTC");
+  const rangeDays = toRangeDays(req.query.days) ?? ADMIN_STATS_DAYS;
+  const key = `${tz}|${rangeDays}`;
   try {
-    const hit = cache.get(tz);
-    if (hit && Date.now() - hit.at < 60_000) {
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < ADMIN_OVERVIEW_CACHE_MS) {
       res.send(hit.body);
       return;
     }
-    const body = await build(tz);
-    cache.set(tz, { at: Date.now(), body });
+    const body = await build(tz, rangeDays);
+    if (cache.size > 200) cache.clear();
+    cache.set(key, { at: Date.now(), body });
     res.send(body);
   } catch (e) {
     log.error({ err: e }, "In admin/get-overview-data");

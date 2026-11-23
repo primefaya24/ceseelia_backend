@@ -21,6 +21,7 @@ import { appConstants } from "../../../../../constants";
 import { STOCK_UNLIMITED } from "../../../../../constants/input-limits";
 import { DB_TABLE_NAME } from "../../../../../config";
 import { refundSpendInTransaction } from "../rewards";
+import { forgetStoreOverview } from "../../../../core/store-stats/overview-cache";
 import {
   StoreItem,
   StoreOrder,
@@ -257,6 +258,13 @@ export type MarkPaidResult = "PAID" | "PAID_SHORT" | "ALREADY";
  * `storeOrderStockShortfall` with no stock change ("PAID_SHORT").
  */
 export async function markOrderPaid(order: StoreOrder, paymentIntentId: string, now = Date.now()): Promise<MarkPaidResult> {
+  const result = await recordOrderPaid(order, paymentIntentId, now);
+  // Store › Overview shows it on its next read (the dashboard reloads on the new-order alert).
+  if (result !== "ALREADY") forgetStoreOverview(order.storeId);
+  return result;
+}
+
+async function recordOrderPaid(order: StoreOrder, paymentIntentId: string, now: number): Promise<MarkPaidResult> {
   const itemIds = [...new Set(order.storeOrderLines.map((l) => l.itemId))];
   const rows = await dynamGetManyItems(
     TABLE,

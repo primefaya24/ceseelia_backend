@@ -16,7 +16,8 @@ vi.mock("../layers/aws/dynamodb/dynamo-entities/membership", async (orig) => ({
 
 import { verifyCognitoAccessToken } from "../layers/aws/cognito";
 import { createApp } from "../app";
-import { computeStoreOverview, isTimeZone, StatsOrder } from "../layers/core/store-stats";
+import { buildActivity, computeStoreOverview, isTimeZone, StatsOrder, statsWindowStart, toRangeDays } from "../layers/core/store-stats";
+import { forgetStoreOverview } from "../layers/core/store-stats/overview-cache";
 import { listStatsOrders } from "../layers/aws/dynamodb/dynamo-entities/order";
 import { resetOverviewCacheForTests } from "../api/v1/store/overview/index";
 
@@ -101,6 +102,60 @@ describe("computeStoreOverview (L.6)", () => {
     expect(s.bestSellers).toEqual([]);
   });
 
+  it("a range: the asked days, the same days before, and best sellers over it", () => {
+    const orders = [o(NOW - 2 * D), o(NOW - 20 * D), o(NOW - 40 * D), o(NOW - 70 * D)];
+    const s = computeStoreOverview(orders, NOW, TZ, false, { rangeDays: 30, bestSellerDays: 30 });
+    expect(s.rangeDays).toBe(30);
+    expect(s.days).toHaveLength(30);
+    expect(s.days[29].date).toBe("2026-11-15");
+    expect(s.current.orders).toBe(2);
+    expect(s.previous.orders).toBe(1);
+    // The 7-day numbers stay for older webapps.
+    expect(s.last7.orders).toBe(1);
+    expect(s.bestSellers[0].quantity).toBe(2);
+    const q = computeStoreOverview(orders, NOW, TZ, false, { rangeDays: 90, bestSellerDays: 90 });
+    expect(q.current.orders).toBe(4);
+    expect(q.bestSellers[0].quantity).toBe(4);
+  });
+
+  it("recent orders (newest first, refunded ones left out) and orders still to do", () => {
+    const orders = [
+      o(NOW - 3 * H, { storeOrderId: "O1", storeOrderCode: "PB-1001", storeOrderType: "PICKUP", storeOrderStatus: "COMPLETED" }),
+      o(NOW - 1 * H, { storeOrderId: "O2", storeOrderCode: "PB-1002", storeOrderType: "DELIVERY", storeOrderRefundedMinor: 400 }),
+      o(NOW - 2 * H, { storeOrderId: "O3", storeOrderStatus: "REFUNDED" }),
+      o(NOW - 4 * H, { storeOrderId: "O4", storeOrderStatus: "READY" }),
+      o(undefined, { storeOrderId: "O5", storeOrderStatus: "PENDING_PAYMENT" }),
+    ];
+    const s = computeStoreOverview(orders, NOW, TZ);
+    expect(s.recentOrders.map((r) => r.orderId)).toEqual(["O2", "O1", "O4"]);
+    expect(s.recentOrders[0]).toEqual({ orderId: "O2", code: "PB-1002", totalMinor: 600, currency: "CAD", type: "DELIVERY", paidAt: NOW - H });
+    expect(s.ordersToDo).toBe(2);
+  });
+
+  it("buildActivity mixes orders, reviews and messages, newest first, and shortens long text", () => {
+    const a = buildActivity(
+      [{ orderId: "O1", code: "PB-1", totalMinor: 500, currency: "CAD", type: "PICKUP", paidAt: 30 }],
+      [{ createdAt: 20, rating: 5, comment: "x".repeat(200), authorName: "Ann L." }],
+      [{ conversationId: "C1", lastAt: 40, customerName: "Bo", preview: "Hi" }],
+      2
+    );
+    expect(a.map((x) => x.kind)).toEqual(["message", "order"]);
+    const r = buildActivity([], [{ createdAt: 1, rating: 4, comment: "y".repeat(200), authorName: "Z" }], []);
+    expect(r[0].kind === "review" && r[0].comment.length).toBe(120);
+  });
+
+  it("toRangeDays and the read window", () => {
+    expect(toRangeDays("7")).toBe(7);
+    expect(toRangeDays("90")).toBe(90);
+    expect(toRangeDays("14")).toBeNull();
+    expect(toRangeDays(30)).toBeNull();
+    const day = 24 * 3600 * 1000;
+    // 90 days and the 90 before.
+    expect(Math.round((NOW - statsWindowStart(NOW, "UTC", 90, 90)) / day)).toBe(180);
+    // Without a range: the 30 best-seller days.
+    expect(Math.round((NOW - statsWindowStart(NOW, "UTC")) / day)).toBe(30);
+  });
+
   it("isTimeZone accepts IANA names only", () => {
     expect(isTimeZone("Australia/Sydney")).toBe(true);
     expect(isTimeZone("Mars/Base")).toBe(false);
@@ -135,21 +190,37 @@ describe("GET /store/overview/:storeId", () => {
     vi.mocked(verifyCognitoAccessToken).mockResolvedValue({ sub: "sub-1", "cognito:groups": [] } as any);
   });
 
-  it("answers in the asked zone (unknown zone → UTC), no-store, and caches for 30 s", async () => {
+  it("answers in the asked zone (unknown zone → UTC), no-store, and caches per range until an order is paid", async () => {
     ddb.on(QueryCommand).resolves({ Items: [{ pk: "p", sk: "s", ...o(Date.now() - 60_000) }] });
     const r = await get("?tz=Mars/Base");
     expect(r.status).toBe(200);
     expect(r.body.tz).toBe("UTC");
     expect(r.body.today.orders).toBe(1);
+    expect(r.body.rangeDays).toBe(7);
+    expect(r.body.bestSellerDays).toBe(30);
     expect(r.headers["cache-control"]).toMatch(/no-store/);
+    const reads = ddb.commandCalls(QueryCommand).length;
     await get("?tz=Mars/Base");
-    expect(ddb.commandCalls(QueryCommand)).toHaveLength(1);
+    expect(ddb.commandCalls(QueryCommand)).toHaveLength(reads);
+    // Another range is another answer.
+    const m = await get("?tz=Mars/Base&days=30");
+    expect(m.body.rangeDays).toBe(30);
+    expect(m.body.days).toHaveLength(30);
+    expect(m.body.bestSellerDays).toBe(30);
+    expect(ddb.commandCalls(QueryCommand).length).toBeGreaterThan(reads);
+    // A paid order forgets the store's answers.
+    const before = ddb.commandCalls(QueryCommand).length;
+    forgetStoreOverview(STORE);
+    await get("?tz=Mars/Base");
+    expect(ddb.commandCalls(QueryCommand).length).toBeGreaterThan(before);
     const t = await get(`?tz=${encodeURIComponent(TZ)}`);
     expect(t.body.tz).toBe(TZ);
   });
 
-  it("400 on a repeated tz; 500 when the read fails", async () => {
+  it("400 on a repeated tz or a range other than 7, 30 or 90; 500 when the read fails", async () => {
     expect((await get("?tz=UTC&tz=UTC")).status).toBe(400);
+    expect((await get("?days=14")).status).toBe(400);
+    expect((await get("?days=30&days=7")).status).toBe(400);
     ddb.on(QueryCommand).rejects(new Error("boom"));
     expect((await get()).status).toBe(500);
   });

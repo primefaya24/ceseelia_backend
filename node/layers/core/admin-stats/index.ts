@@ -15,10 +15,26 @@ import { STORE_PLANS } from "../plans";
 export const ADMIN_STATS_DAYS = 30;
 export const TOP_STORES = 5;
 
+export const RECENT_PLATFORM_ORDERS = 8;
+
 export type AdminStatsOrder = Pick<
   StoreOrder,
   "storeOrderStatus" | "storeOrderPaidAt" | "storeOrderTotalMinor" | "storeOrderRefundedMinor" | "storeOrderCurrency" | "storeOrderPlatformFeeMinor"
->;
+> &
+  Partial<Pick<StoreOrder, "storeOrderId" | "storeOrderCode" | "storeOrderType">>;
+
+/** A paid order anywhere on the platform, for the admin's live activity list. */
+export interface PlatformRecentOrder {
+  storeId: string;
+  storeName: string;
+  orderId: string;
+  code: string;
+  totalMinor: number;
+  currency: string;
+  commissionMinor: number;
+  type: StoreOrder["storeOrderType"] | null;
+  paidAt: number;
+}
 
 export interface Money {
   currency: string;
@@ -51,10 +67,17 @@ export interface AdminOverviewStats {
   subscriptionsPastDue: number;
   last30: AdminPeriod;
   previous30: AdminPeriod;
-  /** The last 30 days, oldest first; today is last. */
-  days: { date: string; orders: number; sales: Money[] }[];
+  /** The asked range (`?days=`, 30 by default) and the same number of days before it. */
+  rangeDays: number;
+  current: AdminPeriod;
+  previous: AdminPeriod;
+  /** The range's days, oldest first; today is last. */
+  days: { date: string; orders: number; sales: Money[]; commission: Money[] }[];
+  /** Top stores over the range. */
   topStores: { storeId: string; storeName: string; orders: number; sales: Money[] }[];
   queues: { storeReviews: number; itemReviews: number; reviewReports: number; openTickets: number };
+  /** Newest paid orders across all stores. */
+  recentOrders: PlatformRecentOrder[];
   /** Some store had more orders than were read: its numbers cover the newest ones. */
   partial: boolean;
   generatedAt: number;
@@ -95,9 +118,10 @@ const fullyRefunded = (o: AdminStatsOrder) =>
   o.storeOrderStatus === "REFUNDED" || (o.storeOrderRefundedMinor ?? 0) >= o.storeOrderTotalMinor;
 const netMinor = (o: AdminStatsOrder) => Math.max(0, o.storeOrderTotalMinor - (o.storeOrderRefundedMinor ?? 0));
 
-/** Where the order reads begin: the first day of the previous 30. */
-export function adminStatsWindowStart(now: number, tz: string): number {
-  return moment.tz(now, tz).startOf("day").subtract(2 * ADMIN_STATS_DAYS - 1, "days").valueOf();
+/** Where the order reads begin: the first day of the period before the range (30 days at least). */
+export function adminStatsWindowStart(now: number, tz: string, rangeDays = ADMIN_STATS_DAYS): number {
+  const days = 2 * Math.max(rangeDays, ADMIN_STATS_DAYS);
+  return moment.tz(now, tz).startOf("day").subtract(days - 1, "days").valueOf();
 }
 
 const PAST_DUE = new Set(["past_due", "unpaid"]);
@@ -106,17 +130,24 @@ export function computeAdminOverview(
   stores: AdminStoreInput[],
   extra: { merchants: number; queues: AdminOverviewStats["queues"]; partial: boolean },
   now: number,
-  tz: string
+  tz: string,
+  rangeDays = ADMIN_STATS_DAYS
 ): AdminOverviewStats {
   const today = moment.tz(now, tz).startOf("day");
   const dayKey = (ms: number) => moment.tz(ms, tz).format("YYYY-MM-DD");
-  const last30Start = today.clone().subtract(ADMIN_STATS_DAYS - 1, "days").valueOf();
-  const prev30Start = today.clone().subtract(2 * ADMIN_STATS_DAYS - 1, "days").valueOf();
+  const back = (n: number) => today.clone().subtract(n, "days").valueOf();
+  const last30Start = back(ADMIN_STATS_DAYS - 1);
+  const prev30Start = back(2 * ADMIN_STATS_DAYS - 1);
+  const rangeStart = back(rangeDays - 1);
+  const prevRangeStart = back(2 * rangeDays - 1);
 
   const last30 = new Period();
   const previous30 = new Period();
+  const current = new Period();
+  const previous = new Period();
   const days = new Map<string, Period>();
-  for (let i = ADMIN_STATS_DAYS - 1; i >= 0; i--) days.set(dayKey(today.clone().subtract(i, "days").valueOf()), new Period());
+  for (let i = rangeDays - 1; i >= 0; i--) days.set(dayKey(back(i)), new Period());
+  const recent: PlatformRecentOrder[] = [];
   const perStore: { storeId: string; storeName: string; p: Period }[] = [];
 
   const storeCounts = { total: stores.length, live: 0, draft: 0, inReview: 0, suspended: 0 };
@@ -136,11 +167,26 @@ export function computeAdminOverview(
       if (!counts(o)) continue;
       const paid = o.storeOrderPaidAt!;
       if (paid > now) continue;
-      if (paid >= last30Start) {
-        last30.add(o);
+      if (paid >= last30Start) last30.add(o);
+      else if (paid >= prev30Start) previous30.add(o);
+      if (paid >= rangeStart) {
+        current.add(o);
         mine.add(o);
         days.get(dayKey(paid))?.add(o);
-      } else if (paid >= prev30Start) previous30.add(o);
+      } else if (paid >= prevRangeStart) previous.add(o);
+      if (!fullyRefunded(o)) {
+        recent.push({
+          storeId: s.storeId,
+          storeName: s.storeName,
+          orderId: o.storeOrderId ?? "",
+          code: o.storeOrderCode ?? "",
+          totalMinor: netMinor(o),
+          currency: o.storeOrderCurrency,
+          commissionMinor: Math.max(0, o.storeOrderPlatformFeeMinor ?? 0),
+          type: o.storeOrderType ?? null,
+          paidAt: paid,
+        });
+      }
     }
     if (mine.orders > 0) perStore.push({ storeId: s.storeId, storeName: s.storeName, p: mine });
   }
@@ -153,12 +199,16 @@ export function computeAdminOverview(
     subscriptionsPastDue: pastDue,
     last30: last30.stats(),
     previous30: previous30.stats(),
-    days: [...days.entries()].map(([date, p]) => ({ date, orders: p.orders, sales: p.sales.list() })),
+    rangeDays,
+    current: current.stats(),
+    previous: previous.stats(),
+    days: [...days.entries()].map(([date, p]) => ({ date, orders: p.orders, sales: p.sales.list(), commission: p.commission.list() })),
     topStores: perStore
       .sort((a, b) => b.p.orders - a.p.orders || b.p.sales.top() - a.p.sales.top() || a.storeName.localeCompare(b.storeName))
       .slice(0, TOP_STORES)
       .map(({ storeId, storeName, p }) => ({ storeId, storeName, orders: p.orders, sales: p.sales.list() })),
     queues: extra.queues,
+    recentOrders: recent.sort((a, b) => b.paidAt - a.paidAt).slice(0, RECENT_PLATFORM_ORDERS),
     partial: extra.partial,
     generatedAt: now,
   };

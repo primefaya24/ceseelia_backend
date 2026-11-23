@@ -101,6 +101,37 @@ describe("admin overview numbers (L.8 / 8.1)", () => {
     expect(stats.queues.openTickets).toBe(4);
   });
 
+  it("a range: current vs previous, days and top stores over it; last 30 kept; newest orders across stores", () => {
+    const stats = computeAdminOverview(
+      [
+        store("A", [
+          order(NOW - 1000, { storeOrderId: "A1", storeOrderCode: "AA-1001", storeOrderType: "PICKUP" }),
+          order(NOW - 10 * DAY, { storeOrderId: "A2" }),
+          order(NOW - 3 * DAY, { storeOrderId: "A3", storeOrderStatus: "REFUNDED", storeOrderRefundedMinor: 5000 }),
+        ]),
+        store("B", [order(NOW - 2 * DAY, { storeOrderId: "B1" }), order(NOW - 50 * DAY, { storeOrderId: "B2" })]),
+      ],
+      extra,
+      NOW,
+      "UTC",
+      7
+    );
+    expect(stats.rangeDays).toBe(7);
+    expect(stats.days).toHaveLength(7);
+    expect(stats.days.at(-1)).toMatchObject({ orders: 1, commission: [{ currency: "CAD", minor: 125 }] });
+    expect(stats.current.orders).toBe(2);
+    expect(stats.previous.orders).toBe(1);
+    expect(stats.last30.orders).toBe(3);
+    expect(stats.topStores.map((t) => t.storeId)).toEqual(["A", "B"]);
+    expect(stats.recentOrders.map((r) => r.orderId)).toEqual(["A1", "B1", "A2", "B2"]);
+    expect(stats.recentOrders[0]).toEqual({
+      storeId: "A", storeName: "Store A", orderId: "A1", code: "AA-1001", totalMinor: 5000, currency: "CAD", commissionMinor: 125, type: "PICKUP", paidAt: NOW - 1000,
+    });
+    const q = computeAdminOverview([store("B", [order(NOW - 50 * DAY)])], extra, NOW, "UTC", 90);
+    expect(q.current.orders).toBe(1);
+    expect(q.days).toHaveLength(90);
+  });
+
   it("days are the admin's: 23:30 UTC on the 14th is the 15th in Halifax... and the 14th in UTC", () => {
     const paid = Date.UTC(2026, 10, 14, 23, 30);
     const utc = computeAdminOverview([store("A", [order(paid)])], extra, NOW, "UTC");
@@ -296,6 +327,7 @@ describe("admin support routes", () => {
     expect((await call("get", "/admin/commission-report?month=2026-13")).status).toBe(400);
     expect((await call("get", "/admin/commission-report?month=2026-11&tz=Mars/Base")).status).toBe(400);
     expect((await call("get", "/admin/get-overview-data?tz=nope")).status).toBe(400);
+    expect((await call("get", "/admin/get-overview-data?days=14")).status).toBe(400);
   });
 });
 
