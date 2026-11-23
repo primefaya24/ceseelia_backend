@@ -176,6 +176,11 @@ export interface StoreSettings {
      */
     taxMode?: TaxMode;
     canadaTax?: CanadaTaxSettings;
+    /**
+     * T.2: the merchant saved the Tax and delivery card at least once (confirmed or changed the
+     * tax setting). Go Live's FULFILMENT step needs it; missing = not yet.
+     */
+    taxReviewed?: boolean;
   };
 
   // Admin
@@ -676,7 +681,8 @@ export function isStoreSettingsPure(storeSettings: StoreSettings): boolean {
     (g.deliveryEnabled !== undefined && typeof g.deliveryEnabled !== "boolean") ||
     (g.deliveryFees !== undefined && !isObject(g.deliveryFees)) ||
     (g.taxMode !== undefined && typeof g.taxMode !== "string") ||
-    (g.canadaTax !== undefined && !isObject(g.canadaTax))
+    (g.canadaTax !== undefined && !isObject(g.canadaTax)) ||
+    (g.taxReviewed !== undefined && typeof g.taxReviewed !== "boolean")
   ) return false;
 
   if (s.customize !== undefined && !isObject(s.customize)) return false;
@@ -772,6 +778,7 @@ export function fulfilmentSettings(general: Partial<StoreSettings["general"]> | 
     deliveryFees: (general?.deliveryFees ?? {}) as StoreItemPrices,
     taxMode: (general?.taxMode ?? "FLAT") as TaxMode,
     canadaTax: general?.canadaTax ?? null,
+    taxReviewed: general?.taxReviewed === true,
   };
 }
 

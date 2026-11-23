@@ -72,7 +72,7 @@ function readyStore(patch: (d: StoreInventoryData) => void = () => {}): StoreInv
     settings: {
       ...s,
       storeInfo: { ...s.storeInfo, storeName: "Northern Hoop" },
-      general: { ...s.general, pickupEnabled: true, pickupAddress: "1 Main St" },
+      general: { ...s.general, pickupEnabled: true, pickupAddress: "1 Main St", taxReviewed: true },
       lifecycle: { status: "DRAFT", plan: "NONE" },
     },
     categories: [{ ...initStoreCategory(CAT, "Hoops"), storeCategoriyId: CAT, storeCategoryIsActive: true }],
@@ -159,6 +159,25 @@ describe("goLiveChecklist (P.4a)", () => {
       d.settings.general = { ...d.settings.general, pickupEnabled: false, pickupAddress: "", deliveryEnabled: true };
     });
     expect(ids(deliveryOnly)).toEqual([]);
+  });
+
+  it("Tax and delivery (T.2): the tax card must have been saved once; the hint says what's missing", () => {
+    const msg = (d: StoreInventoryData) => goLiveChecklist(d, { chargesEnabled: true }).find((s) => s.id === "FULFILMENT")!;
+    const unreviewed = readyStore((d) => (d.settings.general.taxReviewed = undefined));
+    expect(ids(unreviewed)).toEqual(["FULFILMENT"]);
+    expect(msg(unreviewed).message).toBe("Check your tax setting and save it.");
+    const neither = readyStore((d) => {
+      d.settings.general.taxReviewed = false;
+      d.settings.general.pickupAddress = "";
+    });
+    expect(msg(neither).message).toBe("Check your tax setting, and add your pickup address or turn on delivery.");
+    const noWay = readyStore((d) => {
+      d.settings.general = { ...d.settings.general, pickupEnabled: false, deliveryEnabled: false };
+    });
+    expect(msg(noWay).message).toBe("Turn on pickup or delivery.");
+    expect(msg(readyStore((d) => (d.settings.general.pickupAddress = ""))).message).toBe(
+      "Add your pickup address or turn on delivery."
+    );
   });
 
   it("bills in the Stripe country's currency (A1)", () => {

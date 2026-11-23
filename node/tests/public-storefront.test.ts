@@ -152,6 +152,13 @@ describe("toPublicInventory prices (2.5)", () => {
     expect(out.categories[0].storeCategoryItemCount).toBe(1);
   });
 
+  it("sold-out items (stock 0) are still sent; the storefront shows them as sold out (T.1b)", () => {
+    const data = withCurrencies(["USD"], [{ USD: 100 }, { USD: 200 }]);
+    data.items[0] = { ...data.items[0], storeItemStock: 0 };
+    data.items[1] = { ...data.items[1], storeItemStock: -1 };
+    expect(toPublicInventory(data).items.map((i) => i.storeItemStock)).toEqual([0, -1]);
+  });
+
   it("a free item (0) is still for sale", () => {
     expect(toPublicInventory(withCurrencies(["USD"], [{ USD: 0 }])).items).toHaveLength(1);
   });

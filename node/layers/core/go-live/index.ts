@@ -29,13 +29,20 @@ export function goLiveChecklist(data: StoreInventoryData, opts: { chargesEnabled
       shown > 0,
       "Add at least one active item, in an active category, with a price in one of your currencies."
     ),
-    step(
-      "FULFILMENT",
-      pickupReady || f.deliveryEnabled,
-      f.pickupEnabled ? "Add your pickup address, or turn on delivery." : "Turn on pickup or delivery."
-    ),
+    step("FULFILMENT", f.taxReviewed && (pickupReady || f.deliveryEnabled), fulfilmentHint(f.taxReviewed, pickupReady || f.deliveryEnabled, f.pickupEnabled)),
     step("PAYMENTS", opts.chargesEnabled, "Connect Stripe and finish its setup so you can take payments."),
   ];
+}
+
+/*
+ * T.2: the "Tax and delivery" step's hint. It's done once the merchant has saved the Tax and
+ * delivery card (taxReviewed) and pickup (with an address) or delivery is on.
+ */
+function fulfilmentHint(taxReviewed: boolean, fulfilmentReady: boolean, pickupEnabled: boolean): string {
+  const fulfil = pickupEnabled ? "add your pickup address or turn on delivery" : "turn on pickup or delivery";
+  if (!taxReviewed && !fulfilmentReady) return `Check your tax setting, and ${fulfil}.`;
+  if (!taxReviewed) return "Check your tax setting and save it.";
+  return fulfil.charAt(0).toUpperCase() + fulfil.slice(1) + ".";
 }
 
 /** A subscription is billed in the currency of the store's Stripe account country (A1). */

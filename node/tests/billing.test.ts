@@ -146,7 +146,7 @@ function readyStore(): StoreInventoryData {
     settings: {
       ...s,
       storeInfo: { ...s.storeInfo, storeName: "Hoop" },
-      general: { ...s.general, pickupEnabled: true, pickupAddress: "1 Main St" },
+      general: { ...s.general, pickupEnabled: true, pickupAddress: "1 Main St", taxReviewed: true },
       lifecycle: { status: "DRAFT", plan: "NONE" },
     },
     categories: [{ ...initStoreCategory(cat, "Hoops"), storeCategoriyId: cat, storeCategoryIsActive: true }],

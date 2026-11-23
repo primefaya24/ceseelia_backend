@@ -142,6 +142,9 @@ describe("b. numbers", () => {
     ["a non-number price", { storeItemPrices: { USD: "100" } }],
     ["prices not an object", { storeItemPrices: 100 }],
     ["the old single price", { storeItemPrices: undefined, storeItemPrice: 19.99 }],
+    ["missing stock (T.1a)", { storeItemStock: undefined }],
+    ["null stock (T.1a)", { storeItemStock: null }],
+    ["stock as text (T.1a)", { storeItemStock: "" }],
     ["fractional stock", { storeItemStock: 1.5 }],
     ["stock below -1", { storeItemStock: -2 }],
     ["discount over 100", { storeItemDiscountPercent: 101 }],
@@ -325,7 +328,13 @@ describe("f. tax and fulfilment (4.2)", () => {
       deliveryFees: {},
       taxMode: "FLAT",
       canadaTax: null,
+      taxReviewed: false,
     });
+  });
+
+  it("taxReviewed (T.2) is an optional boolean", () => {
+    expect(settingsOk(settings((s) => (s.general.taxReviewed = true)))).toBe(true);
+    expect(settingsOk(settings((s) => ((s.general as any).taxReviewed = "yes")))).toBe(false);
   });
 
   it("accepts tax 0–30% (decimals too) and delivery with a fee for every offered currency", () => {
