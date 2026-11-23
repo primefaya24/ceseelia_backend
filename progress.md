@@ -1553,6 +1553,98 @@ See the webapp's `progress.md` §6c.
       2026-11-22: owner approved; both repos fast-forwarded to `prod_v1.0.0`, both prod deploys
       green, `api.ceseelia.com/healthz` ok, new routes answer (401 without a token).
 
+## 6d. Stage T — Stock required, sold-out items shown, currency made simple (owner, 2026-11-23)
+
+Three problems seen with the first client: an item saved with a blank Stock box became 0 and
+vanished from the storefront; sold-out items disappear instead of showing as sold out; every new
+store starts in USD (she's Canadian), and adding a second currency means typing a price for it
+on every item. Each task names its side: **BE** (this repo), **WA** (webapp, its `progress.md`
+§6d), **OPS** (Claude; the prod push only after the owner confirms).
+
+### T.0 Decisions (owner, 2026-11-23: all settled)
+- [x] T.0a **Stock is required**: a number (0 allowed, on purpose) or Unlimited on. A blank box
+      can't be saved. Unlimited greys out the box (already so). Items with options keep their
+      per-option stock.
+- [x] T.0b **Sold-out items stay on the storefront**, dimmed with a "Sold out" badge, **moved to
+      the bottom of their category**. Tapping one shows a **short message** ("This item is
+      currently unavailable."), no item sheet. An item with options is sold out when every
+      option is; partly sold-out items open as today with the sold-out choices greyed.
+- [x] T.0c **Default currency from the merchant's location at store creation**: Canada → CAD,
+      US → USD, Australia → AUD, anywhere else → USD. The create-store form shows it prefilled
+      and changeable. The merchant can add other currencies later.
+- [x] T.0d **"My prices were in another currency"**: changing the main currency can keep the
+      numbers (34.99 USD → 34.99 CAD on every item, variant row and delivery fee), no
+      conversion. A button in Settings › Currencies with a confirmation.
+- [x] T.0e **Other currencies are automatic**: an item stores its price in the main currency
+      plus any prices the merchant sets by hand. Every other offered currency is converted at
+      the day's exchange rate and rounded per currency (exact, whole, or ending in .99). A price
+      set by hand always wins. Same for variant rows and delivery fees. No item shows "Not sold
+      in …" any more.
+- [x] T.0f **Item form**: asks for the main-currency price only; other currencies are folded
+      ("CAD: automatic (≈ 47.99) · Set your own").
+- [x] T.0g **Go Live tracker step 3** is "Tax and delivery" (it opens the Tax and delivery
+      card); its hint asks for the tax setting and pickup/delivery.
+- [x] T.0h Her store (`pressed-by-hanadi`) stays as it is: she isn't sure her prices meant CAD;
+      if she adds CAD, T.0e converts it for her.
+
+### T.1 Stock required (BE)
+- [ ] T.1a The item validator already requires a whole number ≥ −1; the blank box became 0 in
+      the webapp (WA T.6). Add a spec that a missing or null `storeItemStock` is refused (400).
+- [ ] T.1b Public inventory: confirm sold-out items are sent (only the webapp hid them) and
+      checkout still refuses them (`OUT_OF_STOCK`); add a spec.
+
+### T.2 Tracker step 3 wording (BE)
+- [ ] T.2a `layers/core/go-live/index.ts` FULFILMENT hint: "Check your tax setting, and add your
+      pickup address or turn on delivery." (and the no-pickup variant). The step's done rule is
+      unchanged unless the owner decides otherwise. Specs updated.
+
+### T.3 Default currency at store creation (BE)
+- [ ] T.3a `currencyForCountry()`: CA → CAD, US → USD, AU → AUD, else USD (replaces the unused
+      `getWebsiteCurrency`; `resolveCurrencyFromGeo` uses it too).
+- [ ] T.3b `GET /merchant/suggested-currency` (auth): the caller's currency from their IP, for
+      the form's prefill.
+- [ ] T.3c Store create (`api/v1/store/create`, merchant and admin) takes an optional
+      `currencyCode` (one of CURRENCY_CODES); missing → from the caller's IP. `initStoreCurrency`
+      takes the code (sign, float per currency). Specs.
+
+### T.4 Automatic currency conversion (BE)
+- [ ] T.4a **Rates**: a daily fetch of USD/CAD/AUD rates from a free public source (ECB via
+      Frankfurter, no key), stored in one DynamoDB row (`APP_FX`, `LATEST`: rates + date). Run
+      by the API's daily scheduler; on failure keep the last rates and log; an alarm if they're
+      over 3 days old (Z1). A seed for dev/tests.
+- [ ] T.4b **Settings**: `StoreCurrency` gains `currencyRounding: "EXACT" | "WHOLE" |
+      "NINETY_NINE"` (default NINETY_NINE for added currencies; unused on the main one).
+      Validator + old settings default safely.
+- [ ] T.4c **One conversion function** (pure): main-currency minor units + rate + rounding →
+      minor units. Used for item prices, variant rows and delivery fees.
+- [ ] T.4d **Effective prices**: a helper fills every offered currency for an item (hand-set
+      price, else converted). `toPublicInventory` sends effective prices (the webapp storefront
+      needs no rates); the merchant inventory gets them flagged `auto` vs `set`.
+- [ ] T.4e **Pricing** (`layers/core/pricing`): takes the rates; quote and order use effective
+      prices and delivery fees, so quote = charge. The quote and the order record the rate and
+      its date per line (`fx`). `NOT_SOLD_IN_CURRENCY` only when no rate exists.
+- [ ] T.4f **Validators relaxed**: an item needs a price in the **main** currency only; delivery
+      fees likewise; Go Live's "something to sell" counts items priced in the main currency.
+- [ ] T.4g **Audit** every per-currency money field (item and variant prices, delivery fees,
+      commission minimums stay admin-set, rewards, receipts/emails/PDF show the charged
+      amounts) and the AI check (prices it reads).
+
+### T.5 Change the main currency (BE)
+- [ ] T.5a `POST /store/currencies/main` `{ currencyCode, mode: "KEEP_NUMBERS" | "CONVERT" }`:
+      KEEP_NUMBERS relabels the old main prices (items, variant rows, delivery fees) to the new
+      code; CONVERT makes the new code main, keeping hand-set prices in it and freezing
+      converted ones. Prices in other currencies set by hand stay. Settings and all items in
+      one batch (transaction chunks), idempotent; adds the currency if it isn't offered yet.
+- [ ] T.5b Specs: her shape of store (USD only, 30 items, variants, delivery fee) both modes.
+
+### T.9 Tests and release (BE + OPS)
+- [ ] T.9a `npm test`, lint, typecheck green.
+- [ ] T.9b Regression on dev (Stripe test mode): new store in CA/US/AU (prefill), item save with
+      blank / 0 / unlimited stock, sold-out item on the storefront, add AUD to a CAD store →
+      automatic prices on storefront, quote, checkout, receipt; set one by hand; switch main
+      currency both modes; delivery fee converted; orders record the rate.
+- [ ] T.9c Push dev, deploy dev, T.9b. **Ask the owner**, then prod (backend first, webapp after).
+
 ## 7. Stage 5 — Checkout, orders & payments
 
 - [x] 5.1 Decision (2026-11-11): **Stripe Connect, Standard accounts**, direct charges. Recorded
