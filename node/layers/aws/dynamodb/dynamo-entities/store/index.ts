@@ -18,6 +18,7 @@ import { S3_STORAGE_BUCKET_NAME } from "../../../../../config";
 import { DB_TABLE_NAME } from "../../../../../config";
 import {
   initStore,
+  initStoreCurrency,
   initStoreSettings,
   normalizeAdminSettings,
   normalizeStoreLifecycle,
@@ -141,13 +142,16 @@ export async function createStore(
   storeName: string,
   storeSlug: string,
   /** Self-serve (P.3): the signed-in user who becomes the store's ADMIN, in the same transaction. */
-  owner?: { userId: string }
+  owner?: { userId: string },
+  /** T.3c: the store's main currency (one of CURRENCY_CODES); USD when not given. */
+  currencyCode = "USD"
 ): Promise<StoreOverview> {
   try {
     const storeId: string = ULID.ulid();
     const now = Date.now();
     const storeOverview: StoreOverview = initStore(storeId, storeName, storeSlug);
     const storeSettings: StoreSettings = initStoreSettings();
+    storeSettings.currencies = [initStoreCurrency(currencyCode)];
     storeSettings.lifecycle = { ...initStoreLifecycle(now), ...(owner ? { createdByUserId: owner.userId } : {}) };
     // The storefront shows storeInfo.storeName, so a new store starts with the name it was given.
     storeSettings.storeInfo = { ...storeSettings.storeInfo, storeName };

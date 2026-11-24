@@ -78,6 +78,33 @@ describe("POST /merchant/create-store (P.3)", () => {
     expect(reverse.Put!.Item).toMatchObject({ pk: `USER#${USER}`, sk: `STORE#${storeId}`, storeMemberPermission: "ADMIN" });
   });
 
+  it("T.3c: the store's currency is the one picked, else the caller's location's", async () => {
+    ddb.on(TransactWriteCommand).resolves({});
+    expect((await post({ ...valid, currencyCode: "CAD" })).status).toBe(200);
+    const picked = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems![1].Put!.Item!;
+    expect(picked.currencies).toEqual([{ currencyCode: "CAD", currencySign: "C$", currencyFloat: "LEFT", currencyIsDefault: true }]);
+    ddb.resetHistory();
+    belongsTo([]);
+    expect((await post(valid)).status).toBe(200);
+    // In dev the client IP is a fixed Australian test address (CLAUDE.md §5.6).
+    const located = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems![1].Put!.Item!;
+    expect(located.currencies.map((c: { currencyCode: string }) => c.currencyCode)).toEqual(["AUD"]);
+  });
+
+  it("T.3c: an unknown or malformed currency is a 400", async () => {
+    expect((await post({ ...valid, currencyCode: "EUR" })).status).toBe(400);
+    expect((await post({ ...valid, currencyCode: 5 })).status).toBe(400);
+    expect(ddb.commandCalls(TransactWriteCommand)).toHaveLength(0);
+  });
+
+  it("T.3b: GET /merchant/suggested-currency answers the caller's location's currency; needs sign-in", async () => {
+    const res = await request(app).get("/api/v1/merchant/suggested-currency").set("Host", "localhost").set("Authorization", "Bearer t");
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ currencyCode: "AUD" });
+    const anon = await request(app).get("/api/v1/merchant/suggested-currency").set("Host", "localhost");
+    expect(anon.status).toBe(401);
+  });
+
   it("ignores anything else in the body: no way to pick a status, plan or owner", async () => {
     ddb.on(TransactWriteCommand).resolves({});
     const res = await post({ ...valid, status: "LIVE", plan: "NOVA", lifecycle: { status: "LIVE" }, userId: "someone-else" });
@@ -154,5 +181,20 @@ describe("POST /merchant/create-store (P.3)", () => {
     expect(res.status).toBe(429);
     expect(res.body.code).toBe("RATE_LIMITED");
     expect(Number(res.headers["retry-after"])).toBeGreaterThan(0);
+  });
+});
+
+describe("currencyForCountry (T.3a)", () => {
+  it("Canada CAD, US USD, Australia AUD, anywhere else or unknown USD", async () => {
+    const { currencyForCountry } = await import("../layers/core/utils");
+    expect(["CA", "us", "AU", "GB", "", null, undefined].map((c) => currencyForCountry(c))).toEqual([
+      "CAD",
+      "USD",
+      "AUD",
+      "USD",
+      "USD",
+      "USD",
+      "USD",
+    ]);
   });
 });

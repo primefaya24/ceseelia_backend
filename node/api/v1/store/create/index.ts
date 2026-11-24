@@ -11,6 +11,8 @@ import { listPrefixFiles } from "../../../../layers/aws/s3";
 import { isValidSlug } from "../../../../constants/slug";
 import { SlugTakenError } from "../../../../layers/aws/dynamodb/dynamo-entities/slug";
 import { log } from "../../../../layers/core/logger";
+import { isCurrencyCode } from "../../merchant/create-store";
+import { shopperCurrency } from "../../../../layers/core/http/public-storefront";
 dotenv.config();
 
 /*
@@ -40,7 +42,8 @@ export default function registerRoute(router: Router): void {
 function pureRequestParams(req: Request): boolean {
   return (
     typeof req.body.storeName === "string" &&
-    typeof req.body.storeSlug === "string"
+    typeof req.body.storeSlug === "string" &&
+    (req.body.currencyCode === undefined || typeof req.body.currencyCode === "string")
   );
 }
 
@@ -52,7 +55,8 @@ function validRequestParams(req: Request): boolean {
   return (
     storeName.trim().length > 0 &&
     storeName.length <= MAX_LENGTH.storeName &&
-    isValidSlug(storeSlug)
+    isValidSlug(storeSlug) &&
+    (req.body.currencyCode === undefined || isCurrencyCode(req.body.currencyCode))
   );
 }
 
@@ -66,9 +70,12 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     const storeSlug = req.body.storeSlug;
 
     // Create store
+    // T.3c: the currency the admin picked, else the one for where they are.
     const storeOverview: StoreOverview = await createStore(
       storeName,
-      storeSlug
+      storeSlug,
+      undefined,
+      req.body.currencyCode ?? shopperCurrency(req)
     );
 
     // Respond to user

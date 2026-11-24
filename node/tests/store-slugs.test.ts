@@ -106,6 +106,14 @@ describe("create reserves the slug (1.8b)", () => {
     expect(res.body.message).toBe("That slug is already taken.");
   });
 
+  it("T.3c: the admin's create takes a currency (400 for an unknown one)", async () => {
+    ddb.on(TransactWriteCommand).resolves({});
+    expect((await call("post", "/store/create", { storeName: "Shop", storeSlug: "my-shop", currencyCode: "CAD" })).status).toBe(200);
+    const settings = ddb.commandCalls(TransactWriteCommand)[0].args[0].input.TransactItems![1].Put!.Item!;
+    expect(settings.currencies.map((c: { currencyCode: string }) => c.currencyCode)).toEqual(["CAD"]);
+    expect((await call("post", "/store/create", { storeName: "Shop", storeSlug: "my-shop", currencyCode: "EUR" })).status).toBe(400);
+  });
+
   it("other transaction failures are still 500", async () => {
     ddb.on(TransactWriteCommand).rejects(cancelled(["ConditionalCheckFailed", "None", "None"]));
     expect((await call("post", "/store/create", { storeName: "Shop", storeSlug: "my-shop" })).status).toBe(500);

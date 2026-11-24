@@ -1,6 +1,6 @@
 import { Request, Response, Router } from "express";
 import { appConstants } from "../../../../constants";
-import { MAX_LENGTH } from "../../../../constants/input-limits";
+import { CURRENCY_CODES, MAX_LENGTH } from "../../../../constants/input-limits";
 import { isValidSlug } from "../../../../constants/slug";
 import { getAuth, validateAndExecuteHttpApiRoute } from "../../../../layers/core/http";
 import { createRateLimiter } from "../../../../layers/core/http/rate-limit";
@@ -10,10 +10,16 @@ import { SlugTakenError } from "../../../../layers/aws/dynamodb/dynamo-entities/
 import { findUserIdByCognitoId, UserDeactivatedError } from "../../../../layers/aws/dynamodb/dynamo-entities/user";
 import { ACCOUNT_DEACTIVATED, PROFILE_NOT_FOUND } from "../../user/user-errors";
 import { log } from "../../../../layers/core/logger";
+import { shopperCurrency } from "../../../../layers/core/http/public-storefront";
+
+/** T.3c: one of the currencies stores can sell in. */
+export function isCurrencyCode(code: unknown): boolean {
+  return typeof code === "string" && (CURRENCY_CODES as readonly string[]).includes(code);
+}
 
 /*
  * POST /merchant/create-store (any signed-in user, progress.md P.3)
- * Body: { storeName, storeSlug } → 200 { storeId, storeName, storeSlug, status: "DRAFT", plan: "NONE" }
+ * Body: { storeName, storeSlug, currencyCode? } → 200 { storeId, storeName, storeSlug, status: "DRAFT", plan: "NONE" }
  *
  * Self-serve: anyone with an account builds a store without committing. The store is a
  * DRAFT with no plan (shoppers see "Coming soon"; the plan comes with Go Live), and the caller becomes its ADMIN in the same transaction.
@@ -27,6 +33,8 @@ import { log } from "../../../../layers/core/logger";
  *   already belongs to a store, in any role, 409 ALREADY_IN_A_STORE. A second store needs a
  *   second account.
  * - 5 creates per account per hour: 429 RATE_LIMITED with Retry-After.
+ * - currencyCode (T.3c): the store's main currency, one of CURRENCY_CODES; missing = the one for
+ *   where the caller is (geo-IP: Canada CAD, US USD, Australia AUD, else USD).
  * - Slug already reserved: 409 SLUG_TAKEN. Same name / slug rules as the admin's /store/create.
  */
 export const createStoreLimits = {
@@ -40,12 +48,21 @@ export default function registerRoute(router: Router): void {
 }
 
 function pureRequestParams(req: Request): boolean {
-  return typeof req.body.storeName === "string" && typeof req.body.storeSlug === "string";
+  return (
+    typeof req.body.storeName === "string" &&
+    typeof req.body.storeSlug === "string" &&
+    (req.body.currencyCode === undefined || typeof req.body.currencyCode === "string")
+  );
 }
 
 function validRequestParams(req: Request): boolean {
   const name = req.body.storeName.trim();
-  return name.length > 0 && name.length <= MAX_LENGTH.storeName && isValidSlug(req.body.storeSlug);
+  return (
+    name.length > 0 &&
+    name.length <= MAX_LENGTH.storeName &&
+    isValidSlug(req.body.storeSlug) &&
+    (req.body.currencyCode === undefined || isCurrencyCode(req.body.currencyCode))
+  );
 }
 
 async function executeRouteCore(req: Request, res: Response): Promise<void> {
@@ -76,7 +93,8 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
     }
 
     const storeName = req.body.storeName.trim();
-    const overview = await createStore(storeName, req.body.storeSlug, { userId });
+    const currencyCode = req.body.currencyCode ?? shopperCurrency(req);
+    const overview = await createStore(storeName, req.body.storeSlug, { userId }, currencyCode);
     res.send({
       storeId: overview.storeId,
       storeName: overview.storeName,

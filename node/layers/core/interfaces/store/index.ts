@@ -874,10 +874,14 @@ export interface StoreCurrency {
   currencyIsDefault: boolean;
 }
 
-export function initStoreCurrency(): StoreCurrency {
+/** The sign the webapp gives each currency (its store settings' currency picker). */
+export const CURRENCY_SIGNS: Record<string, string> = { USD: "$", CAD: "C$", AUD: "A$" };
+
+/** A store's main currency (T.3c: a new store's comes from where its creator is; USD by default). */
+export function initStoreCurrency(currencyCode = "USD"): StoreCurrency {
   return {
-    currencyCode: "USD",
-    currencySign: "$",
+    currencyCode,
+    currencySign: CURRENCY_SIGNS[currencyCode] ?? "$",
     currencyFloat: "LEFT",
     currencyIsDefault: true,
   };

@@ -305,22 +305,6 @@ export function getDaysBetweenTimestamps(
   return Math.ceil(differenceInMilliseconds / millisecondsPerDay); // Always round up
 }
 
-export function getWebsiteCurrency(businessLocale: any): string {
-  let currency;
-  switch (businessLocale) {
-    case appConstants.BUSINESS_LOCALE_CA:
-      currency = appConstants.CURRENCY_CAD;
-      break;
-    case appConstants.BUSINESS_LOCALE_US:
-      currency = appConstants.CURRENCY_USD;
-      break;
-    default:
-      currency = appConstants.CURRENCY_USD;
-      break;
-  }
-  return currency;
-}
-
 export function formatAmountForStripe(amount: string | number): number {
   return Math.round(Number(amount) * 100);
 }
@@ -522,21 +506,24 @@ export function getClientIp(req: ExpressRequest): string | undefined {
   return ip.startsWith("::ffff:") ? ip.slice("::ffff:".length) : ip;
 }
 
-export function resolveCurrencyFromGeo(geo: geoip.Lookup | null): string {
-  if (!geo?.country) {
-    return "USD";
-  }
-
-  switch (geo.country) {
+/*
+ * T.3a: a country's currency among the ones stores can sell in: Canada → CAD, the US → USD,
+ * Australia → AUD, anywhere else (or unknown) → USD. Used for a shopper's default currency and a
+ * new store's currency.
+ */
+export function currencyForCountry(country: string | null | undefined): "USD" | "CAD" | "AUD" {
+  switch ((country ?? "").toUpperCase()) {
     case "CA":
       return "CAD";
     case "AU":
       return "AUD";
-    case "US":
-      return "USD";
     default:
       return "USD";
   }
+}
+
+export function resolveCurrencyFromGeo(geo: geoip.Lookup | null): string {
+  return currencyForCountry(geo?.country);
 }
 
 /** The Canadian province a geo-IP lookup points at; null outside Canada or when unknown. */
