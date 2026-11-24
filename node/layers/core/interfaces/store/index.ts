@@ -3,6 +3,7 @@
  */
 
 import { CanadaTaxSettings, isCanadaTaxSettings } from "../../tax/canada";
+import { CurrencyRounding, isCurrencyRounding } from "../../fx";
 import {
   appConstants,
   PRIORITY,
@@ -783,9 +784,9 @@ export function fulfilmentSettings(general: Partial<StoreSettings["general"]> | 
 }
 
 /*
- * 4.2: tax 0–30%; pickup or delivery (at least one); with delivery on, a whole, in-range fee for
- * every currency the store offers. Fees for other known currencies are allowed (a currency can
- * be removed and added back).
+ * 4.2: tax 0–30%; pickup or delivery (at least one); with delivery on, a whole, in-range fee in
+ * the main currency (T.4f: the other offered currencies' fees are converted unless set). Fees for
+ * other known currencies are allowed (a currency can be removed and added back).
  */
 function isFulfilmentValid(s: StoreSettings): boolean {
   const f = fulfilmentSettings(s.general);
@@ -799,7 +800,9 @@ function isFulfilmentValid(s: StoreSettings): boolean {
     if (!(CURRENCY_CODES as readonly string[]).includes(code)) return false;
     if (!Number.isInteger(fee) || !isInRange(fee as number, NUMBER_RANGE.priceMinor)) return false;
   }
-  if (f.deliveryEnabled && !s.currencies.every((c) => Number.isInteger(f.deliveryFees[c.currencyCode as keyof StoreItemPrices]))) {
+  // T.4f: a fee in the main currency; the others are converted from it unless set.
+  const main = s.currencies.find((c) => c.currencyIsDefault)?.currencyCode ?? s.currencies[0]?.currencyCode;
+  if (f.deliveryEnabled && !Number.isInteger(f.deliveryFees[main as keyof StoreItemPrices])) {
     return false;
   }
   return true;
@@ -853,7 +856,8 @@ export function isStoreCurrencyPure(currency: StoreCurrency): boolean {
     typeof currency.currencyCode === "string" &&
     typeof currency.currencySign === "string" &&
     typeof currency.currencyFloat === "string" &&
-    typeof currency.currencyIsDefault === "boolean"
+    typeof currency.currencyIsDefault === "boolean" &&
+    (currency.currencyRounding === undefined || typeof currency.currencyRounding === "string")
   );
 }
 
@@ -863,7 +867,8 @@ export function isStoreCurrencyValid(currency: StoreCurrency): boolean {
     currency.currencySign.length > 0 &&
     isMaxLength(currency.currencySign, MAX_LENGTH.currencySign) &&
     (currency.currencyFloat === appConstants.STORE_CURRENCY_POSITION_LEFT ||
-      currency.currencyFloat === appConstants.STORE_CURRENCY_POSITION_RIGHT)
+      currency.currencyFloat === appConstants.STORE_CURRENCY_POSITION_RIGHT) &&
+    (currency.currencyRounding === undefined || isCurrencyRounding(currency.currencyRounding))
   );
 }
 
@@ -871,7 +876,13 @@ export interface StoreCurrency {
   currencyCode: string;
   currencySign: string;
   currencyFloat: STORE_CURRENCY_FLOAT;
+  /** The store's main currency (exactly one): prices are set in it, the others follow (T.4). */
   currencyIsDefault: boolean;
+  /**
+   * T.4b: how automatic prices in this currency are rounded (EXACT, WHOLE, NINETY_NINE;
+   * missing = NINETY_NINE). Unused on the main currency.
+   */
+  currencyRounding?: CurrencyRounding;
 }
 
 /** The sign the webapp gives each currency (its store settings' currency picker). */
@@ -1356,6 +1367,8 @@ export interface StoreOrder {
   storeOrderTaxRegion: { province: string; name: string; estimated: boolean } | null;
   storeOrderPricesIncludeTax: boolean;
   storeOrderTotalMinor: number;
+  /** T.4e: the rate an order in another currency than the store's main one was priced at. */
+  storeOrderFx?: { from: string; to: string; rate: number; date: string };
   /** The commission in effect when the order was placed (P.6 / 5.1b), and the fee it gave. */
   storeOrderCommission: CommissionInEffect;
   storeOrderPlatformFeeMinor: number;

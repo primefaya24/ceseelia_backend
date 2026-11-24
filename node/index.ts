@@ -7,6 +7,7 @@ import { sweepItemChecks } from './layers/core/store-validation/item-check';
 import { sweepMessageEmails } from './layers/notifications/message-notify';
 import { refreshLiveDomains, sweepCustomDomains } from './layers/custom-domains';
 import { registerTimer } from './layers/core/utils';
+import { refreshFxRates } from './layers/core/fx/refresh';
 import { log } from "./layers/core/logger";
 
 const app = createApp();
@@ -20,6 +21,10 @@ checkStripeConfig()
     .then(() => {
         const server = app.listen(appConfig.PORT, appConfig.localServerIp, () => {
             log.info({ host: appConfig.localServerIp, port: appConfig.PORT }, '[server] running');
+            // T.4a: the day's exchange rates for automatic prices in a store's other currencies.
+            timers.push(registerTimer(appConfig.FX_REFRESH_INTERVAL, async () => {
+                await refreshFxRates();
+            }));
             // P.5: stores whose payment grace ended lose their plan, live → draft (one server; see progress.md).
             timers.push(registerTimer(appConfig.BILLING_GRACE_SWEEP_INTERVAL, async () => {
                 const n = await sweepExpiredGrace();

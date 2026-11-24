@@ -345,6 +345,31 @@ describe("f. tax and fulfilment (4.2)", () => {
     expect(settingsOk(settings((s) => Object.assign(s.general, { pickupEnabled: false, deliveryEnabled: true, deliveryFees: { USD: 500, AUD: 700 } })))).toBe(true);
   });
 
+  it("T.4f: with a second currency, only the main currency needs a delivery fee", () => {
+    const two = (fees: object) =>
+      settings((s) => {
+        s.currencies = [
+          { currencyCode: "CAD", currencySign: "C$", currencyFloat: "LEFT", currencyIsDefault: true },
+          { currencyCode: "USD", currencySign: "$", currencyFloat: "LEFT", currencyIsDefault: false },
+        ];
+        Object.assign(s.general, { deliveryEnabled: true, deliveryFees: fees });
+      });
+    expect(settingsOk(two({ CAD: 500 }))).toBe(true);
+    expect(settingsOk(two({ CAD: 500, USD: 399 }))).toBe(true);
+    expect(settingsOk(two({ USD: 399 }))).toBe(false);
+  });
+
+  it("T.4b: a currency's rounding is optional and one of EXACT / WHOLE / NINETY_NINE", () => {
+    const withRounding = (r: unknown) =>
+      settings((s) => {
+        s.currencies = [{ ...s.currencies[0], currencyRounding: r as any }];
+      });
+    expect(settingsOk(withRounding("WHOLE"))).toBe(true);
+    expect(settingsOk(withRounding(undefined))).toBe(true);
+    expect(settingsOk(withRounding("UP"))).toBe(false);
+    expect(settingsOk(withRounding(3))).toBe(false);
+  });
+
   it.each([
     ["tax over 30%", { taxPercent: 31 }],
     ["negative tax", { taxPercent: -1 }],

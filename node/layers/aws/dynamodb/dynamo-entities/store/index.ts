@@ -19,6 +19,7 @@ import { DB_TABLE_NAME } from "../../../../../config";
 import {
   initStore,
   initStoreCurrency,
+  StoreItemPrices,
   initStoreSettings,
   normalizeAdminSettings,
   normalizeStoreLifecycle,
@@ -39,6 +40,8 @@ import { getStorageImageUrl } from "../../../../core/utils";
 import { itemCheckKey, itemReviewKey } from "../item-review";
 import { DOMAIN_SK, hostKey as domainHostKey, indexKey as domainIndexKey, queueTenantCleanup } from "../domain";
 import { publicVariants, variantsReady } from "../../../../core/variants";
+import { currentFxRates, FxRates } from "../../../../core/fx";
+import { withEffectiveDeliveryFees, withEffectiveItemPrices } from "../../../../core/fx/inventory";
 import { reserveSlugPut, SlugTakenError, slugKey, transactionFailedAt } from "../slug";
 import { newStoreMembershipItems } from "../membership";
 import { StorePlan } from "../../../../core/plans";
@@ -719,6 +722,43 @@ export async function updateItemParamsIfUnchanged(storeId: string, before: Store
   }
 }
 
+/*
+ * T.5: the store's currencies (and delivery fees, when given), only if the currencies are still
+ * the ones read. False when they changed meanwhile or the store is gone.
+ */
+export async function updateStoreCurrenciesIfUnchanged(
+  storeId: string,
+  before: StoreSettings["currencies"],
+  currencies: StoreSettings["currencies"],
+  deliveryFees?: StoreItemPrices
+): Promise<boolean> {
+  const set = ["#c = :c"];
+  const names: Record<string, string> = { "#c": "currencies" };
+  const values: Record<string, unknown> = { ":c": currencies, ":oc": before };
+  if (deliveryFees) {
+    set.push("#g.#df = :df");
+    names["#g"] = "general";
+    names["#df"] = "deliveryFees";
+    values[":df"] = deliveryFees;
+  }
+  try {
+    await dynamoDbDocumentClient.send(
+      new UpdateCommand({
+        TableName: DEFAULT_TABLE_NAME,
+        Key: storeKey(storeId, appConstants.DYNAMO_ENTITY_SETTINGS),
+        UpdateExpression: "SET " + set.join(", "),
+        ConditionExpression: "attribute_exists(pk) AND #c = :oc" + (deliveryFees ? " AND attribute_exists(#g)" : ""),
+        ExpressionAttributeNames: names,
+        ExpressionAttributeValues: values,
+      })
+    );
+    return true;
+  } catch (e) {
+    if (isConditionalCheckFailure(e)) return false;
+    throw e;
+  }
+}
+
 export async function getStoreInventoryData(
   storeId: string,
   /** Stage R: also the store's parameters (the members' inventory screen only). */
@@ -1020,11 +1060,14 @@ export function toPublicSettings(settings: StoreSettings): StoreSettings {
  * What a shopper may see: no admin block, the email only if shown (toPublicSettings), only active categories, only active items in them
  * (items of a missing or inactive category are left out), and each category's count is the
  * number of items returned, so hidden items aren't given away by the counts.
- * Prices (2.5) are cut to the currencies the store offers; an item priced in none of them can't
- * be bought, so it's left out too. Variant rows (2.7) are cut the same way, and rows that aren't
+ * Prices (2.5) are filled in for every offered currency first (T.4: set by hand, else converted
+ * from the main-currency price at the day's rate), then cut to the currencies the store offers; an
+ * item with no price at all (or none offered while there are no rates) can't be bought, so it's
+ * left out too. Delivery fees are filled in the same way. Variant rows (2.7) are cut the same way, and rows that aren't
  * sold are left out; an item whose variant table isn't filled in is left out.
  */
-export function toPublicInventory(data: StoreInventoryData): StoreInventoryData {
+export function toPublicInventory(data: StoreInventoryData, rates: FxRates | null = currentFxRates()): StoreInventoryData {
+  const currencies = data.settings.currencies;
   const categories = data.categories.filter((c) => c.storeCategoryIsActive === true);
   const activeCategoryIds = new Set(categories.map((c) => c.storeCategoriyId));
   const offered = new Set(data.settings.currencies.map((c) => c.currencyCode));
@@ -1034,6 +1077,7 @@ export function toPublicInventory(data: StoreInventoryData): StoreInventoryData 
     .filter((i) => !isItemHiddenByReview(i))
     // A variant item whose table isn't filled in (saved before 2.7) can't be bought yet.
     .filter((i) => variantsReady(i))
+    .map((i) => withEffectiveItemPrices(i, currencies, rates))
     .map((i) => ({
       ...i,
       storeItemPrices: Object.fromEntries(
@@ -1045,7 +1089,7 @@ export function toPublicInventory(data: StoreInventoryData): StoreInventoryData 
   const counts = new Map<string, number>();
   for (const i of items) counts.set(i.storeItemCategoryId, (counts.get(i.storeItemCategoryId) ?? 0) + 1);
   return withoutAdminSettings({
-    settings: toPublicSettings(data.settings),
+    settings: toPublicSettings(withEffectiveDeliveryFees(data.settings, rates)),
     categories: categories.map((c) => ({ ...c, storeCategoryItemCount: counts.get(c.storeCategoriyId) ?? 0 })),
     items,
   });

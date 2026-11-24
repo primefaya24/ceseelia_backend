@@ -1,4 +1,5 @@
 import { MAX_QUANTITY_PER_LINE } from "../../../constants/input-limits";
+import { AppliedFx, appliedFx, currentFxRates } from "../fx";
 import type { RewardsDiscount } from "../rewards";
 import {
   fulfilmentSettings,
@@ -143,6 +144,11 @@ export interface Quote {
    * everything else is priced, tax is 0.
    */
   error: { code: QuoteErrorCode; message: string } | null;
+  /**
+   * T.4e: in a currency other than the store's main one, the rate its automatic prices used
+   * (absent in the main currency or without rates). Orders keep it (`storeOrderFx`).
+   */
+  fx?: AppliedFx;
 }
 
 export interface PricingStore {
@@ -425,7 +431,13 @@ export function priceLines(
     totalMinor: taxable + (tax.included ? 0 : tax.minor),
     ok: lines.length > 0 && valid.length === lines.length && !!chosen && !error,
     error,
+    ...withFx(store.settings.currencies, currency),
   };
+}
+
+function withFx(currencies: StoreSettings["currencies"], currency: string): { fx?: AppliedFx } {
+  const fx = appliedFx(currencies, currency, currentFxRates());
+  return fx ? { fx } : {};
 }
 
 /** The tax on `taxable` for this store and fulfilment (4.2 flat rate, or 4.4 Canada). */

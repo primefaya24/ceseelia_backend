@@ -85,6 +85,7 @@ const STORE_ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [
   ["post", "/store/domain/set", { storeId: STORE, host: "shop.example.com" }],
   ["post", "/store/domain/check", { storeId: STORE }],
   ["post", "/store/domain/remove", { storeId: STORE }],
+  ["post", "/store/currencies/main", { storeId: STORE, currencyCode: "CAD", mode: "KEEP_NUMBERS" }],
 ];
 const ADMIN_ROUTES: Array<[Method, string, object | undefined]> = [
   ["post", "/store/create", {}],

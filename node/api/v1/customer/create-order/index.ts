@@ -296,6 +296,7 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
       storeOrderTaxRegion: quote.taxRegion,
       storeOrderPricesIncludeTax: quote.pricesIncludeTax,
       storeOrderTotalMinor: quote.totalMinor,
+      ...(quote.fx ? { storeOrderFx: quote.fx } : {}),
       storeOrderCommission: commission,
       storeOrderPlatformFeeMinor: feeMinor,
       storeOrderStripe: { accountId: stripeAccount, checkoutSessionId: sessionId, paymentIntentId: "" },

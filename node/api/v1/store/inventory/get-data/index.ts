@@ -7,6 +7,7 @@ import { getStoreInventoryData, withoutAdminSettings } from "../../../../../laye
 import { isUlid } from "../../../../../layers/core/utils";
 import { StoreInventoryData } from "../../../../../layers/core/interfaces/store";
 import { log } from "../../../../../layers/core/logger";
+import { currentFxRates } from "../../../../../layers/core/fx";
 dotenv.config();
 
 /*
@@ -51,7 +52,10 @@ async function executeRouteCore(req: Request, res: Response): Promise<void> {
 
     // Respond to user
     // L.2: merchants see that an item is hidden and why in general terms, never the reasons.
-    res.send(getAuth(res).isAdmin ? storeInventoryData : forMerchant(withoutAdminSettings(storeInventoryData)));
+    // T.4: today's rates, so the editor can show the automatic prices in the other currencies
+    // (null until the server has some). Stored prices stay as the merchant set them.
+    const body = getAuth(res).isAdmin ? storeInventoryData : forMerchant(withoutAdminSettings(storeInventoryData));
+    res.send({ ...body, fx: currentFxRates() });
   } catch (e) {
     log.error({ err: e }, "In store/inventory/get-data");
     res
