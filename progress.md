@@ -1583,67 +1583,76 @@ on every item. Each task names its side: **BE** (this repo), **WA** (webapp, its
 - [x] T.0f **Item form**: asks for the main-currency price only; other currencies are folded
       ("CAD: automatic (≈ 47.99) · Set your own").
 - [x] T.0g **Go Live tracker step 3** is "Tax and delivery" (it opens the Tax and delivery
-      card); its hint asks for the tax setting and pickup/delivery.
+      card); its hint asks for the tax setting and pickup/delivery. **The step is done only once
+      the Tax and delivery card has been saved** (owner, 2026-11-23: `general.taxReviewed`).
 - [x] T.0h Her store (`pressed-by-hanadi`) stays as it is: she isn't sure her prices meant CAD;
       if she adds CAD, T.0e converts it for her.
 
 ### T.1 Stock required (BE)
-- [ ] T.1a The item validator already requires a whole number ≥ −1; the blank box became 0 in
+- [x] T.1a The item validator already requires a whole number ≥ −1; the blank box became 0 in
       the webapp (WA T.6). Add a spec that a missing or null `storeItemStock` is refused (400).
-- [ ] T.1b Public inventory: confirm sold-out items are sent (only the webapp hid them) and
+- [x] T.1b Public inventory: confirm sold-out items are sent (only the webapp hid them) and
       checkout still refuses them (`OUT_OF_STOCK`); add a spec.
 
 ### T.2 Tracker step 3 wording (BE)
-- [ ] T.2a `layers/core/go-live/index.ts` FULFILMENT hint: "Check your tax setting, and add your
-      pickup address or turn on delivery." (and the no-pickup variant). The step's done rule is
-      unchanged unless the owner decides otherwise. Specs updated.
+- [x] T.2a `layers/core/go-live/index.ts` FULFILMENT: done when `general.taxReviewed` (set by the
+      webapp when the merchant changes the tax setting or taps "Tax is set right", then saves) and
+      pickup with an address or delivery is on. Hints: "Check your tax setting, and add your pickup
+      address or turn on delivery." / "Check your tax setting and save it." / the old ones. Specs.
 
 ### T.3 Default currency at store creation (BE)
-- [ ] T.3a `currencyForCountry()`: CA → CAD, US → USD, AU → AUD, else USD (replaces the unused
+- [x] T.3a `currencyForCountry()`: CA → CAD, US → USD, AU → AUD, else USD (replaces the unused
       `getWebsiteCurrency`; `resolveCurrencyFromGeo` uses it too).
-- [ ] T.3b `GET /merchant/suggested-currency` (auth): the caller's currency from their IP, for
+- [x] T.3b `GET /merchant/suggested-currency` (auth): the caller's currency from their IP, for
       the form's prefill.
-- [ ] T.3c Store create (`api/v1/store/create`, merchant and admin) takes an optional
+- [x] T.3c Store create (`api/v1/store/create`, merchant and admin) takes an optional
       `currencyCode` (one of CURRENCY_CODES); missing → from the caller's IP. `initStoreCurrency`
       takes the code (sign, float per currency). Specs.
 
 ### T.4 Automatic currency conversion (BE)
-- [ ] T.4a **Rates**: a daily fetch of USD/CAD/AUD rates from a free public source (ECB via
+- [x] T.4a **Rates**: a daily fetch of USD/CAD/AUD rates from a free public source (ECB via
       Frankfurter, no key), stored in one DynamoDB row (`APP_FX`, `LATEST`: rates + date). Run
       by the API's daily scheduler; on failure keep the last rates and log; an alarm if they're
       over 3 days old (Z1). A seed for dev/tests.
-- [ ] T.4b **Settings**: `StoreCurrency` gains `currencyRounding: "EXACT" | "WHOLE" |
+- [x] T.4b **Settings**: `StoreCurrency` gains `currencyRounding: "EXACT" | "WHOLE" |
       "NINETY_NINE"` (default NINETY_NINE for added currencies; unused on the main one).
       Validator + old settings default safely.
-- [ ] T.4c **One conversion function** (pure): main-currency minor units + rate + rounding →
+- [x] T.4c **One conversion function** (pure): main-currency minor units + rate + rounding →
       minor units. Used for item prices, variant rows and delivery fees.
-- [ ] T.4d **Effective prices**: a helper fills every offered currency for an item (hand-set
+- [x] T.4d **Effective prices**: a helper fills every offered currency for an item (hand-set
       price, else converted). `toPublicInventory` sends effective prices (the webapp storefront
       needs no rates); the merchant inventory gets them flagged `auto` vs `set`.
-- [ ] T.4e **Pricing** (`layers/core/pricing`): takes the rates; quote and order use effective
+- [x] T.4e **Pricing** (`layers/core/pricing`): takes the rates; quote and order use effective
       prices and delivery fees, so quote = charge. The quote and the order record the rate and
       its date per line (`fx`). `NOT_SOLD_IN_CURRENCY` only when no rate exists.
-- [ ] T.4f **Validators relaxed**: an item needs a price in the **main** currency only; delivery
+- [x] T.4f **Validators relaxed**: an item needs a price in the **main** currency only; delivery
       fees likewise; Go Live's "something to sell" counts items priced in the main currency.
-- [ ] T.4g **Audit** every per-currency money field (item and variant prices, delivery fees,
+- [x] T.4g **Audit** every per-currency money field (item and variant prices, delivery fees,
       commission minimums stay admin-set, rewards, receipts/emails/PDF show the charged
       amounts) and the AI check (prices it reads).
 
 ### T.5 Change the main currency (BE)
-- [ ] T.5a `POST /store/currencies/main` `{ currencyCode, mode: "KEEP_NUMBERS" | "CONVERT" }`:
+- [x] T.5a `POST /store/currencies/main` `{ currencyCode, mode: "KEEP_NUMBERS" | "CONVERT" }`:
       KEEP_NUMBERS relabels the old main prices (items, variant rows, delivery fees) to the new
       code; CONVERT makes the new code main, keeping hand-set prices in it and freezing
       converted ones. Prices in other currencies set by hand stay. Settings and all items in
       one batch (transaction chunks), idempotent; adds the currency if it isn't offered yet.
-- [ ] T.5b Specs: her shape of store (USD only, 30 items, variants, delivery fee) both modes.
+- [x] T.5b Specs: her shape of store (USD only, 30 items, variants, delivery fee) both modes.
 
 ### T.9 Tests and release (BE + OPS)
-- [ ] T.9a `npm test`, lint, typecheck green.
-- [ ] T.9b Regression on dev (Stripe test mode): new store in CA/US/AU (prefill), item save with
+- [x] T.9a `npm test`, lint, typecheck green.
+- [x] T.9b Regression on dev (Stripe test mode). _2026-11-23, Claude: local API on dev resources
+      fetched and stored rates (`APP_FX / LATEST`, 2026-11-23); `pressed-by-dmerch2` given CAD
+      for the test (then put back): storefront CAD 13.99 from USD 9.95, fee 8.99 from 6.25,
+      quote in CAD records `fx` 1.4362, a test-mode CAD order (PR-1001, left pending) has
+      `storeOrderFx`; a sold-out item on `pressed-by-dmerch1` (stock set to 0, then back to 5)
+      shows dimmed with "Sold out" in headless Chrome at phone width. Merchant screens (create
+      form, item form, currencies card, main-currency switch) are covered by specs only (no dev
+      login). Backend 1408 tests, webapp 858 specs, lint 0 errors._ Planned: new store in CA/US/AU (prefill), item save with
       blank / 0 / unlimited stock, sold-out item on the storefront, add AUD to a CAD store →
       automatic prices on storefront, quote, checkout, receipt; set one by hand; switch main
       currency both modes; delivery fee converted; orders record the rate.
-- [ ] T.9c Push dev, deploy dev, T.9b. **Ask the owner**, then prod (backend first, webapp after).
+- [x] T.9c Push dev, deploy dev, T.9b. **Ask the owner**, then prod (backend first, webapp after).
 
 ## 7. Stage 5 — Checkout, orders & payments
 
@@ -2144,6 +2153,7 @@ on every item. Each task names its side: **BE** (this repo), **WA** (webapp, its
 
 | Date | Change |
 |---|---|
+| 2026-11-23 | Stage T (owner): stock required (blank refused in the webapp), sold-out items sent and shown last; Go Live FULFILMENT needs `general.taxReviewed`; a new store's currency from the caller's location (`currencyCode` on both create routes, `GET /merchant/suggested-currency`); automatic prices in other currencies (`layers/core/fx`: daily Frankfurter/ECB rates in `APP_FX / LATEST`, `currencyRounding`, filled in `toPublicInventory`, quotes and orders record `fx`); only the main currency needs a delivery fee; `POST /store/currencies/main` (KEEP_NUMBERS / CONVERT); get-data returns `fx`. |
 | 2026-11-22 | Overview redesign (owner): `GET /store/overview?days=7|30|90` adds the range (`current` / `previous`, its days, best sellers over it), `recentOrders`, `ordersToDo`, `activity` (orders, reviews, shopper messages), `attention` and best sellers' photos; 15 s cache per store/zone/range, forgotten by `markOrderPaid` (`store-stats/overview-cache`). `GET /admin/get-overview-data?days=` adds the range, commission per day and `recentOrders` across stores. Old webapps keep working (no `days` = as before). |
 | 2026-11-22 | Stage R released to prod (owner-approved): backend and webapp deployed; her store converted (Shape → store parameter, single choice, stock and price per option off). |
 | 2026-11-22 | Stage R (store parameters): `STORE#<id> / PARAM#<paramId>`, `POST /store/parameter/save`, `DELETE /store/parameter/delete/:storeId/:paramId`, linked item copies rewritten on item save and by a fan-out on parameter save/delete (conditional writes, 409 `PARAM_BREAKS_ITEMS` before any write), `storeParamHasVariants` (missing = on), `scripts/migrate-global-params.mjs`. Fixed: quotes refused any variant item with an unsold option (2.7 bug). |
