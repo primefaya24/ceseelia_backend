@@ -904,7 +904,16 @@ export function initStoreCurrency(currencyCode = "USD"): StoreCurrency {
 // STORE#STORE_ID, CATEGORY#CATEGORY_ID
 export interface StoreCategory {
   storeCategoriyId: string;
-  storeCategoriyPriority: PRIORITY;
+  /**
+   * Retired (owner, 2026-11-23): the old High / Medium / Default levels. No longer written; kept
+   * on old rows, where it orders categories that haven't been given a place yet.
+   */
+  storeCategoriyPriority?: PRIORITY;
+  /**
+   * The category's place on the storefront (0 first), set by `POST /store/category/reorder`.
+   * Missing = not placed yet: shown after the placed ones (old rows by their old priority).
+   */
+  storeCategoryOrder?: number;
   storeCategoryName: string;
   storeCategoryBannerUri: string;
   storeCategoryIsActive: boolean;
@@ -919,7 +928,6 @@ export function initStoreCategory(
 ): StoreCategory {
   return {
     storeCategoriyId: storeCategoriyId,
-    storeCategoriyPriority: PRIORITY_DEFAULT,
     storeCategoryName: storeCategoryName,
     storeCategoryBannerUri: "",
     storeCategoryIsActive: true,
@@ -933,7 +941,8 @@ export function isStoreCategoryPure(storeCategory: StoreCategory): boolean {
   if (!isObject(storeCategory)) return false;
   const hashtags = storeCategory.storeCategoriyHashtags;
   return (
-    typeof storeCategory.storeCategoriyPriority === "string" &&
+    (storeCategory.storeCategoriyPriority === undefined ||
+      typeof storeCategory.storeCategoriyPriority === "string") &&
     typeof storeCategory.storeCategoryName === "string" &&
     typeof storeCategory.storeCategoryBannerUri === "string" &&
     typeof storeCategory.storeCategoryIsActive === "boolean" &&
@@ -961,7 +970,9 @@ export function isStoreCategoryValid(
   return (
     storeCategory.storeCategoryName.length > 0 &&
     isMaxLength(storeCategory.storeCategoryName, MAX_LENGTH.categoryName) &&
-    PRIORITIES.includes(storeCategory.storeCategoriyPriority) &&
+    // Old webapps still send a priority; it's accepted and ignored (never written).
+    (storeCategory.storeCategoriyPriority === undefined ||
+      PRIORITIES.includes(storeCategory.storeCategoriyPriority)) &&
     isInRange(storeCategory.storeCategoryDiscountPercent, NUMBER_RANGE.percent) &&
     (categoryId
       ? isImageKeyOrEmpty(banner, storeImageFolder.categoryBanner(storeId, categoryId))

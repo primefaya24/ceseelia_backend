@@ -512,11 +512,12 @@ export async function updateStoreCategory(
       isUpdate,
       // The item count is kept by the item writes (2.1): a new category starts at 0, and saving a
       // category never touches it.
-      "SET storeCategoriyId = :storeCategoriyId, storeCategoriyPriority = :storeCategoriyPriority, storeCategoryName = :storeCategoryName, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoriyHashtags = :storeCategoriyHashtags" +
+      // The order (storeCategoryOrder) is only set by reorderStoreCategories; the old priority is
+      // no longer written (owner, 2026-11-23).
+      "SET storeCategoriyId = :storeCategoriyId, storeCategoryName = :storeCategoryName, storeCategoryBannerUri = :storeCategoryBannerUri, storeCategoryIsActive = :storeCategoryIsActive, storeCategoryDiscountPercent = :storeCategoryDiscountPercent, storeCategoriyHashtags = :storeCategoriyHashtags" +
         (isUpdate ? "" : ", storeCategoryItemCount = :storeCategoryItemCount"),
       (id) => ({
         ":storeCategoriyId": id,
-        ":storeCategoriyPriority": storeCategory.storeCategoriyPriority,
         ":storeCategoryName": storeCategory.storeCategoryName,
         ":storeCategoryBannerUri": storeCategory.storeCategoryBannerUri,
         ":storeCategoryIsActive": storeCategory.storeCategoryIsActive,
@@ -529,6 +530,46 @@ export async function updateStoreCategory(
   } catch (e) {
     log.error({ err: e }, "In updateStoreCategory");
     throw e;
+  }
+}
+
+/* Thrown when the order sent doesn't list exactly the store's categories (one was added or
+ * deleted meanwhile). Routes map it to 409 CATEGORIES_CHANGED. */
+export class CategoriesChangedError extends Error {
+  constructor() {
+    super("Your categories changed since the page loaded. Reload and try again.");
+    this.name = "CategoriesChangedError";
+  }
+}
+
+/**
+ * Saves the storefront order of a store's categories: `categoryIds` must list every category the
+ * store has, once, in the new order; each gets `storeCategoryOrder` = its index. Written in
+ * transactions of up to 100, each update only if the category still exists.
+ */
+export async function reorderStoreCategories(storeId: string, categoryIds: string[]): Promise<void> {
+  const pk = appConstants.DYNAMO_ENTITY_STORE + "#" + storeId;
+  const records = await queryAllWithPrefix(pk, appConstants.DYNAMO_ENTITY_CATEGORY + "#");
+  const skById = new Map(records.map((r) => [r.storeCategoriyId as string, r.sk as string]));
+  if (skById.size !== categoryIds.length || categoryIds.some((id) => !skById.has(id))) {
+    throw new CategoriesChangedError();
+  }
+  const updates = categoryIds.map((id, index) => ({
+    Update: {
+      TableName: DEFAULT_TABLE_NAME,
+      Key: { pk, sk: skById.get(id)! },
+      UpdateExpression: "SET storeCategoryOrder = :order",
+      ConditionExpression: "attribute_exists(pk)",
+      ExpressionAttributeValues: { ":order": index },
+    },
+  }));
+  for (let i = 0; i < updates.length; i += 100) {
+    try {
+      await dynamoDbDocumentClient.send(new TransactWriteCommand({ TransactItems: updates.slice(i, i + 100) }));
+    } catch (e) {
+      if ((e as { name?: string })?.name === "TransactionCanceledException") throw new CategoriesChangedError();
+      throw e;
+    }
   }
 }
 

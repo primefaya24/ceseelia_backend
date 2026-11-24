@@ -48,6 +48,7 @@ const MEMBER_ROUTES: Array<[Method, string, object | undefined]> = [
   ["get", `/store/get-header-strip-image-upload-url/${STORE}/png`, undefined],
   ["get", `/store/get-promo-image-upload-urls/${STORE}/1/1`, undefined],
   ["post", "/store/category/create", { storeId: STORE }],
+  ["post", "/store/category/reorder", { storeId: STORE }],
   ["delete", `/store/category/delete/${STORE}/${ID}`, undefined],
   ["post", "/store/parameter/save", { storeId: STORE }],
   ["delete", `/store/parameter/delete/${STORE}/${ID}`, undefined],
